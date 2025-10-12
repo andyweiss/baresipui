@@ -1,0 +1,29 @@
+# Baresip Configuration
+
+# Console listener (TCP control interface)
+cons_listen tcp:0.0.0.0:4444
+
+# Audio modules
+module g711.so
+module opus.so
+
+# Network modules
+module udp.so
+module tcp.so
+
+# Console
+module cons.so
+module stdio.so
+
+# SIP
+sip_listen 0.0.0.0:5060
+
+# Audio settings
+audio_player alsa,default
+audio_source alsa,default
+
+# Enable presence
+module presence.so
+
+# Enable call status
+module menu.so

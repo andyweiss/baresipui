@@ -1,0 +1,6 @@
+# SIP Contacts for auto-connect
+# Format: "Display Name" <sip:user@domain>
+
+# Example contacts:
+# "Contact 1" <sip:contact1@sip.example.com>
+# "Contact 2" <sip:contact2@sip.example.com>

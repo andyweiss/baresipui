@@ -1,0 +1,75 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: baresip-backend
+    ports:
+      - 4000:4000
+    environment:
+      - NODE_ENV=production
+      - BARESIP_HOST=baresip
+      - BARESIP_PORT=4444
+      - WS_PORT=4000
+    depends_on:
+      - baresip
+    restart: unless-stopped
+    networks:
+      - baresip-network
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:4000/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: baresip-frontend
+    ports:
+      - 3000:3000
+    environment:
+      - NUXT_PUBLIC_WS_URL=ws://localhost:4000
+      - NUXT_PUBLIC_API_URL=http://localhost:4000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - baresip-network
+  baresip:
+    image: ghcr.io/baresip/docker/baresip:latest
+    container_name: baresip
+    ports:
+      - 4444:4444
+    volumes:
+      - ./baresip-config:/root/.baresip
+    restart: unless-stopped
+    networks:
+      - baresip-network
+    command:
+      - baresip
+      - -f
+      - /root/.baresip
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: baresip-prometheus
+    ports:
+      - 9090:9090
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    restart: unless-stopped
+    networks:
+      - baresip-network
+networks:
+  baresip-network:
+    driver: bridge
+volumes:
+  prometheus-data: null
