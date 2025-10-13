@@ -1,7 +1,0 @@
-# SIP Account Configuration
-# Format: <sip:user@domain>;auth_pass=password
-
-# Example accounts (replace with your actual SIP credentials):
-# <sip:user1@sip.example.com>;auth_pass=password1
-# <sip:user2@sip.example.com>;auth_pass=password2
-# <sip:user3@sip.example.com>;auth_pass=password3

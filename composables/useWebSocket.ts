@@ -10,7 +10,13 @@ export const useWebSocket = () => {
   const config = useRuntimeConfig();
 
   const connect = () => {
-    const wsUrl = config.public.wsUrl;
+    // Automatisch das richtige Protokoll basierend auf der aktuellen Seite
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsPath = config.public.wsPath || config.public.wsUrl || '/api/ws';
+    const wsUrl = wsPath.startsWith('/') ? `${protocol}//${host}${wsPath}` : wsPath;
+    console.log('WebSocket URL:', wsUrl);
+    console.log('Config:', config.public);
     ws.value = new WebSocket(wsUrl);
 
     ws.value.onopen = () => {

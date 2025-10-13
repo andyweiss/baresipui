@@ -6,8 +6,8 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      wsUrl: process.env.NUXT_PUBLIC_WS_URL || 'ws://localhost:4000',
-      apiUrl: process.env.NUXT_PUBLIC_API_URL || 'http://localhost:4000'
+      wsPath: process.env.NUXT_PUBLIC_WS_PATH || '/ws',
+      apiUrl: process.env.NUXT_PUBLIC_API_URL || '/api'
     }
   },
 

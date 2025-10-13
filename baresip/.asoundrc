@@ -1,0 +1,29 @@
+pcm_slave.ravenna_out {
+    pcm "hw:CARD=RAVENNA"
+    channels 64
+    rate 48000
+    format S16_LE
+}
+
+pcm_slave.ravenna_in {
+    pcm "hw:CARD=RAVENNA"
+    channels 64
+    rate 48000
+    format S16_LE
+}
+
+pcm.in1_2 {
+    type dsnoop
+    ipc_key 0x11111
+    slave ravenna_in
+    bindings.0 0
+    bindings.1 1
+}
+
+pcm.out1_2 {
+    type dmix
+    ipc_key 0x22221
+    slave ravenna_out
+    bindings.0 0
+    bindings.1 1
+}
