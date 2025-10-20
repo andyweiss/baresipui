@@ -49,7 +49,7 @@
 
         <div
           ref="logContainer"
-          class="bg-black rounded p-4 h-[calc(100vh-280px)] overflow-y-auto font-mono text-sm"
+          class="bg-gray-900 rounded p-4 h-[calc(100vh-280px)] overflow-y-auto space-y-2"
         >
           <div v-if="logs.length === 0" class="text-gray-500 text-center py-8">
             Waiting for events...
@@ -57,10 +57,25 @@
           <div
             v-for="(log, index) in logs"
             :key="index"
-            class="py-1 border-b border-gray-800 hover:bg-gray-900"
+            class="p-3 bg-gray-800 rounded-lg border-l-4 hover:bg-gray-750 transition"
+            :class="getLogBorderColor(log.message)"
           >
-            <span class="text-gray-500 text-xs mr-3">{{ formatTime(log.timestamp) }}</span>
-            <span v-html="highlightKeywords(log.message)"></span>
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 mt-0.5">
+                <div class="w-2 h-2 rounded-full" :class="getLogDotColor(log.message)"></div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs text-gray-400">{{ formatTime(log.timestamp) }}</span>
+                  <span v-if="getLogType(log.message)" class="text-xs px-2 py-0.5 rounded font-medium" :class="getLogTypeClass(log.message)">
+                    {{ getLogType(log.message) }}
+                  </span>
+                </div>
+                <div class="text-sm text-gray-200 break-words">
+                  {{ formatLogMessage(log.message) }}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -77,30 +92,63 @@ const logContainer = ref<HTMLElement | null>(null);
 const autoScroll = ref(true);
 
 const formatTime = (timestamp: number) => {
-  return new Date(timestamp).toLocaleTimeString('en-US', { hour12: false });
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString('en-US', {
+    hour12: true,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 };
 
-const highlightKeywords = (message: string) => {
-  const keywords = {
-    'CALL': 'text-green-400',
-    'REGISTER': 'text-blue-400',
-    'ONLINE': 'text-green-400',
-    'ERROR': 'text-red-400',
-    'FAILED': 'text-red-400',
-    'established': 'text-green-400',
-    'terminated': 'text-yellow-400',
-    'ringing': 'text-yellow-400',
-    'registered': 'text-blue-400'
+const getLogType = (message: string) => {
+  if (/call.*established|incoming call/i.test(message)) return 'CALL';
+  if (/register/i.test(message)) return 'REGISTER';
+  if (/error|failed/i.test(message)) return 'ERROR';
+  if (/terminated|hangup/i.test(message)) return 'ENDED';
+  if (/ringing/i.test(message)) return 'RINGING';
+  if (/online/i.test(message)) return 'ONLINE';
+  return '';
+};
+
+const getLogTypeClass = (message: string) => {
+  const type = getLogType(message);
+  const classes = {
+    'CALL': 'bg-green-900 text-green-300',
+    'REGISTER': 'bg-blue-900 text-blue-300',
+    'ERROR': 'bg-red-900 text-red-300',
+    'ENDED': 'bg-yellow-900 text-yellow-300',
+    'RINGING': 'bg-yellow-900 text-yellow-300',
+    'ONLINE': 'bg-green-900 text-green-300'
   };
+  return classes[type] || 'bg-gray-700 text-gray-300';
+};
 
-  let highlighted = message;
+const getLogBorderColor = (message: string) => {
+  if (/call.*established|incoming call/i.test(message)) return 'border-green-500';
+  if (/register/i.test(message)) return 'border-blue-500';
+  if (/error|failed/i.test(message)) return 'border-red-500';
+  if (/terminated|hangup/i.test(message)) return 'border-yellow-500';
+  if (/ringing/i.test(message)) return 'border-yellow-500';
+  if (/online/i.test(message)) return 'border-green-500';
+  return 'border-gray-700';
+};
 
-  for (const [keyword, color] of Object.entries(keywords)) {
-    const regex = new RegExp(`(${keyword})`, 'gi');
-    highlighted = highlighted.replace(regex, `<span class="${color} font-semibold">$1</span>`);
-  }
+const getLogDotColor = (message: string) => {
+  if (/call.*established|incoming call/i.test(message)) return 'bg-green-500';
+  if (/register/i.test(message)) return 'bg-blue-500';
+  if (/error|failed/i.test(message)) return 'bg-red-500';
+  if (/terminated|hangup/i.test(message)) return 'border-yellow-500';
+  if (/ringing/i.test(message)) return 'bg-yellow-500';
+  if (/online/i.test(message)) return 'bg-green-500';
+  return 'bg-gray-500';
+};
 
-  return `<span class="text-gray-300">${highlighted}</span>`;
+const formatLogMessage = (message: string) => {
+  return message
+    .replace(/\[.*?\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 };
 
 const clearLogs = () => {
