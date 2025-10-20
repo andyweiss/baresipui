@@ -36,7 +36,6 @@
             v-for="account in accounts"
             :key="account.uri"
             :account="account"
-            @register="handleRegister"
             @call="handleCall"
             @hangup="handleHangup"
           />
@@ -64,14 +63,6 @@
 
 <script setup lang="ts">
 const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useWebSocket();
-
-const handleRegister = async (uri: string) => {
-  try {
-    await sendCommand(`/ua ${uri} register`);
-  } catch (err) {
-    console.error('Failed to register:', err);
-  }
-};
 
 const handleCall = async (uri: string) => {
   const target = prompt('Enter SIP URI to call:');

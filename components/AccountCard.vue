@@ -30,12 +30,6 @@
 
     <div class="flex gap-2 mt-4 pt-4 border-t border-gray-700">
       <button
-        @click="$emit('register', account.uri)"
-        class="px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 transition"
-      >
-        Register
-      </button>
-      <button
         @click="$emit('call', account.uri)"
         class="px-3 py-1.5 text-xs font-medium rounded bg-green-600 text-white hover:bg-green-700 transition"
       >
@@ -62,7 +56,7 @@ const props = defineProps<{
   account: any;
 }>();
 
-defineEmits(['register', 'call', 'hangup']);
+defineEmits(['call', 'hangup']);
 
 const accountName = computed(() => {
   const match = props.account.uri?.match(/^sip:([^@]+)/);
