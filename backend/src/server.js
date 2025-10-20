@@ -2,6 +2,8 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import net from 'net';
+import fs from 'fs';
+import path from 'path';
 import { register, Counter, Gauge } from 'prom-client';
 
 const app = express();
@@ -100,7 +102,10 @@ function parseBaresipEvent(data) {
       const match = line.match(/<([^>]+)>/);
       if (match) {
         const uri = match[1];
-        updateAccountStatus(uri, { registered: true });
+        updateAccountStatus(uri, { 
+          registered: true,
+          registrationError: null // Lösche vorherige Fehler bei erfolgreicher Registrierung
+        });
         metricsEventsTotal.inc({ type: 'register' });
         metricsAccountRegistered.set({ account: uri }, 1);
       }
@@ -111,6 +116,27 @@ function parseBaresipEvent(data) {
       if (match) {
         const uri = match[1];
         updateAccountStatus(uri, { registered: false });
+        metricsAccountRegistered.set({ account: uri }, 0);
+      }
+    }
+
+    else if (line.includes('reg:') && (line.includes('401 Unauthorized') || line.includes('403 Forbidden') || line.includes('404 Not Found') || line.includes('408 Request Timeout') || line.includes('503 Service Unavailable'))) {
+      const match = line.match(/reg:\s*([^)]+@[^)]+)/);
+      if (match) {
+        const uri = match[1];
+        // Extrahiere nur die Fehlermeldung ohne Code
+        let errorStatus = 'Registration Error';
+        if (line.includes('401 Unauthorized')) errorStatus = 'Unauthorized';
+        else if (line.includes('403 Forbidden')) errorStatus = 'Forbidden';
+        else if (line.includes('404 Not Found')) errorStatus = 'Not Found';
+        else if (line.includes('408 Request Timeout')) errorStatus = 'Timeout';
+        else if (line.includes('503 Service Unavailable')) errorStatus = 'Service Unavailable';
+        
+        updateAccountStatus(uri, { 
+          registered: false, 
+          registrationError: errorStatus,
+          lastRegistrationAttempt: Date.now()
+        });
         metricsAccountRegistered.set({ account: uri }, 0);
       }
     }
@@ -191,7 +217,8 @@ function updateAccountStatus(uri, updates) {
     registered: false,
     callStatus: 'Idle',
     autoConnectStatus: 'Off',
-    lastEvent: Date.now()
+    lastEvent: Date.now(),
+    configured: false
   };
 
   const updated = { ...current, ...updates, lastEvent: Date.now() };
@@ -237,6 +264,47 @@ function updateAutoConnectStatus(contact, status) {
     contact,
     status
   });
+}
+
+function loadConfiguredAccounts() {
+  const accountsPath = '/opt/stacks/baresipui/baresip/config/accounts';
+  
+  try {
+    if (fs.existsSync(accountsPath)) {
+      const content = fs.readFileSync(accountsPath, 'utf8');
+      const lines = content.split('\n').filter(line => 
+        line.trim() && !line.startsWith('#')
+      );
+
+      for (const line of lines) {
+        const match = line.match(/^<([^>]+)>/);
+        if (match) {
+          const uri = match[1];
+          
+          // Nur hinzufügen, wenn der Account noch nicht existiert
+          if (!accounts.has(uri)) {
+            const accountData = {
+              uri,
+              registered: false,
+              callStatus: 'Idle',
+              autoConnectStatus: 'Off',
+              lastEvent: Date.now(),
+              configured: true // Markierung als konfigurierter Account
+            };
+            
+            accounts.set(uri, accountData);
+            console.log(`Loaded configured account: ${uri}`);
+          }
+        }
+      }
+      
+      console.log(`Loaded ${accounts.size} accounts from configuration`);
+    } else {
+      console.log('No accounts configuration file found');
+    }
+  } catch (error) {
+    console.error('Error loading configured accounts:', error);
+  }
 }
 
 function sendBaresipCommand(command) {
@@ -385,6 +453,9 @@ wss.on('connection', (ws) => {
 });
 
 connectToBaresip();
+
+// Lade konfigurierte Accounts beim Start
+loadConfiguredAccounts();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);

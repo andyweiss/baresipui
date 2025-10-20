@@ -10,7 +10,7 @@
           class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium"
           :class="statusColor"
         >
-          {{ account.registered ? 'Registered' : 'Unregistered' }}
+          {{ getStatusText() }}
         </span>
       </div>
     </div>
@@ -28,16 +28,23 @@
       </div>
     </div>
 
+    <div v-if="account.registrationError && !account.registered" class="mb-4 p-2 bg-red-900/30 border border-red-700 rounded">
+      <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Registration Status</p>
+      <p class="text-sm font-medium text-red-400">{{ account.registrationError }}</p>
+    </div>
+
     <div class="flex gap-2 mt-4 pt-4 border-t border-gray-700">
       <button
         @click="$emit('call', account.uri)"
-        class="px-3 py-1.5 text-xs font-medium rounded bg-green-600 text-white hover:bg-green-700 transition"
+        :disabled="!account.registered"
+        :class="callButtonClass"
       >
         Call
       </button>
       <button
         @click="$emit('hangup', account.uri)"
-        class="px-3 py-1.5 text-xs font-medium rounded bg-red-600 text-white hover:bg-red-700 transition"
+        :disabled="!account.registered"
+        :class="hangupButtonClass"
       >
         Hangup
       </button>
@@ -67,13 +74,46 @@ const borderColor = computed(() => {
   if (props.account.callStatus === 'In Call') return 'border-green-500';
   if (props.account.callStatus === 'Ringing') return 'border-yellow-500';
   if (props.account.registered) return 'border-blue-500';
+  if (props.account.configured) return 'border-yellow-400';
   return 'border-gray-300';
 });
 
 const statusColor = computed(() => {
-  return props.account.registered
-    ? 'bg-green-900 text-green-300'
-    : 'bg-gray-700 text-gray-300';
+  if (props.account.registered) {
+    return 'bg-green-900 text-green-300';
+  } else if (props.account.configured) {
+    return 'bg-yellow-900 text-yellow-300';
+  } else {
+    return 'bg-gray-700 text-gray-300';
+  }
+});
+
+const getStatusText = () => {
+  if (props.account.registered) {
+    return 'Registered';
+  } else if (props.account.configured) {
+    return 'Configured';
+  } else {
+    return 'Unregistered';
+  }
+};
+
+const callButtonClass = computed(() => {
+  const baseClass = 'px-3 py-1.5 text-xs font-medium rounded transition';
+  if (props.account.registered) {
+    return `${baseClass} bg-green-600 text-white hover:bg-green-700`;
+  } else {
+    return `${baseClass} bg-gray-600 text-gray-400 cursor-not-allowed`;
+  }
+});
+
+const hangupButtonClass = computed(() => {
+  const baseClass = 'px-3 py-1.5 text-xs font-medium rounded transition';
+  if (props.account.registered) {
+    return `${baseClass} bg-red-600 text-white hover:bg-red-700`;
+  } else {
+    return `${baseClass} bg-gray-600 text-gray-400 cursor-not-allowed`;
+  }
 });
 
 const callStatusColor = computed(() => {
