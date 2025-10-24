@@ -3,6 +3,9 @@ pcm_slave.ravenna_out {
     channels 64
     rate 48000
     format S16_LE
+    period_time 5000
+    buffer_time 20000
+    periods 4
 }
 
 pcm_slave.ravenna_in {
@@ -10,6 +13,9 @@ pcm_slave.ravenna_in {
     channels 64
     rate 48000
     format S16_LE
+    period_time 5000
+    buffer_time 20000
+    periods 4
 }
 
 pcm.in1_2 {

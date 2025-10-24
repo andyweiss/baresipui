@@ -46,7 +46,7 @@ services:
     image: nginx:alpine
     container_name: baresip-nginx
     ports:
-      - 8081:80  # Nginx auf Port 8081 freigeben
+      - 8081:80  
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
@@ -63,7 +63,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
-      - ./.asoundrc:/root/.asoundrc # optional: ALSA PCM config
+      - ./baresip/.asoundrc:/root/.asoundrc # ALSA config for splitting Merging Ravenna sound device
     ports:
       - 8000:8000/tcp
       - 5555:5555/tcp
@@ -81,6 +81,11 @@ services:
       - /dev/tty:/dev/tty
     group_add:
       - audio
+    ulimits:
+      rtprio: 99
+      memlock: -1
+    cap_add:
+      - SYS_NICE
     networks:
       - baresip-network
   prometheus:

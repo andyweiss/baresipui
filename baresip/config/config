@@ -38,8 +38,8 @@ ausrc_format            s16             # s16, float, ..
 auplay_format           s16             # s16, float, ..
 auenc_format            s16             # s16, float, ..
 audec_format            s16             # s16, float, ..
-audio_buffer            20-160          # ms
-audio_buffer_mode       fixed           # fixed, adaptive
+audio_buffer            20-120          # ms
+audio_buffer_mode       fixed          # fixed, adaptive
 audio_silence           -35.0           # in [dB]
 audio_telev_pt          101             # payload type for telephone-event
 
@@ -57,9 +57,9 @@ rtp_tos                 184
 rtp_video_tos           136
 #rtp_ports              10000-20000
 #rtp_bandwidth          512-1024 # [kbit/s]
-audio_jitter_buffer_type        fixed           # off, fixed, adaptive
-audio_jitter_buffer_ms  100-200         # Min. - Max. [ms]
-audio_jitter_buffer_size        50              # [packets]
+audio_jitter_buffer_type        adaptive           # off, fixed, adaptive
+audio_jitter_buffer_ms  5-40         # Min. - Max. [ms]
+audio_jitter_buffer_size        5              # [packets]
 video_jitter_buffer_type        fixed           # off, fixed, adaptive
 video_jitter_buffer_ms  100-200         # Min. - Max. [ms]
 video_jitter_buffer_size        250             # [packets]
