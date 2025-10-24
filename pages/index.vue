@@ -69,15 +69,34 @@ const handleCall = async (uri: string) => {
   
   if (target) {
     try {
-      console.log(`Attempting to call: ${target} from account: ${uri}`);
+      console.log(`Calling ${target} from account: ${uri}`);
       
-      // Verwende den korrekten JSON-Befehl für Baresip
-      const result = await sendCommand(`dial ${target}`);
-      console.log('Call result:', result);
+      // Prevent multiple simultaneous calls
+      if (window.isCallInProgress) {
+        alert('Please wait, another call is in progress...');
+        return;
+      }
+      window.isCallInProgress = true;
+      
+      // Step 1: Use uafind to set the active account
+      const uafindResult = await sendCommand('uafind', uri);
+      
+      if (!uafindResult || uafindResult.error) {
+        throw new Error('Failed to select account: ' + (uafindResult?.error || 'Unknown error'));
+      }
+      
+      // Step 2: Wait, then dial from the selected account
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      
+      const dialResult = await sendCommand('dial', target);
+      console.log('Call result:', dialResult);
+      
+      window.isCallInProgress = false;
       
     } catch (err) {
       console.error('Call failed:', err);
-      alert(`Call failed: ${err}`);
+      alert(`Failed to make call: ${err.message || err}`);
+      window.isCallInProgress = false;
     }
   }
 };
@@ -86,13 +105,20 @@ const handleHangup = async (uri: string) => {
   try {
     console.log(`Attempting to hangup call for account: ${uri}`);
     
-    // Verwende den korrekten JSON-Befehl für Baresip
+    // Use uafind to select the specific account first
+    const findResult = await sendCommand('uafind', uri);
+    console.log('Account find result:', findResult);
+    
+    // Small delay to ensure account is selected
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Then hangup
     const result = await sendCommand('hangup');
     console.log('Hangup result:', result);
     
   } catch (err) {
     console.error('Hangup failed:', err);
-    alert(`Hangup failed: ${err}`);
+    alert(`Hangup failed: ${err.message || err}`);
   }
 };
 

@@ -72,15 +72,21 @@ export const useWebSocket = () => {
     };
   };
 
-  const sendCommand = async (command: string) => {
+  const sendCommand = async (command: string, params?: string) => {
     const apiUrl = config.public.apiUrl;
     try {
       const response = await fetch(`${apiUrl}/command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command })
+        body: JSON.stringify({ command, params })
       });
-      return await response.json();
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      return result;
     } catch (err) {
       console.error('Error sending command:', err);
       throw err;

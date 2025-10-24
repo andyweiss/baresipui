@@ -768,6 +768,15 @@ function sendBaresipCommand(command, params = null, token = null) {
   }
 }
 
+function sendRawBaresipCommand(rawCommand) {
+  if (baresipClient && !baresipClient.destroyed) {
+    baresipClient.write(rawCommand + '\n');
+    console.log(`Sent raw command: ${rawCommand}`);
+  } else {
+    console.log(`Cannot send raw command - client not connected: ${rawCommand}`);
+  }
+}
+
 function connectToBaresip() {
   if (baresipClient) {
     baresipClient.destroy();
@@ -865,19 +874,167 @@ app.post('/command', (req, res) => {
 
   console.log(`Received command from frontend: ${command}${params ? ' with params: ' + params : ''}`);
   
-  // Unterscheide zwischen alten Text-Befehlen und neuen strukturierten Befehlen
-  if (command.startsWith('/') || (!params && typeof command === 'string' && command.includes(' '))) {
-    // Alter Stil: Parse Text-Befehl zu JSON-Format
-    const [cmd, ...paramsParts] = command.replace('/', '').split(' ');
-    const parsedParams = paramsParts.join(' ');
-    sendBaresipCommand(cmd, parsedParams, token);
-  } else {
-    // Neuer Stil: Direkter JSON-Befehl
-    sendBaresipCommand(command, params, token);
+  try {
+    // Unterscheide zwischen alten Text-Befehlen und neuen strukturierten Befehlen
+    if (command.startsWith('/') || (!params && typeof command === 'string' && command.includes(' '))) {
+      // Alter Stil: Parse Text-Befehl zu JSON-Format
+      const [cmd, ...paramsParts] = command.replace('/', '').split(' ');
+      const parsedParams = paramsParts.join(' ');
+      sendBaresipCommand(cmd, parsedParams, token);
+    } else {
+      // Neuer Stil: Direkter JSON-Befehl
+      sendBaresipCommand(command, params, token);
+    }
+    
+    res.json({ success: true, command: command, params: params, timestamp: Date.now() });
+  } catch (error) {
+    console.error('Command execution error:', error);
+    res.status(500).json({ error: 'Command execution failed', details: error.message });
+  }
+});
+
+// New endpoint for raw baresip commands (without JSON wrapping)
+app.post('/raw-command', (req, res) => {
+  const { command } = req.body;
+  
+  if (!command) {
+    return res.status(400).json({ error: 'Raw command required' });
+  }
+
+  console.log(`Received raw command: ${command}`);
+  
+  try {
+    sendRawBaresipCommand(command);
+    res.json({ success: true, command: command, timestamp: Date.now() });
+  } catch (error) {
+    console.error('Raw command execution error:', error);
+    res.status(500).json({ error: 'Raw command execution failed', details: error.message });
+  }
+});
+
+app.post('/dial-from-account', (req, res) => {
+  const { account, target } = req.body;
+  
+  if (!account || !target) {
+    return res.status(400).json({ error: 'Account and target required' });
+  }
+
+  console.log(`Dialing ${target} from account ${account}`);
+  
+  try {
+    // Use uafind to set the active account, then dial
+    sendSequentialCommands([
+      { command: 'uafind', params: account },
+      { command: 'dial', params: target }
+    ]);
+    
+    res.json({ 
+      success: true, 
+      account: account, 
+      target: target, 
+      method: 'uafind + dial',
+      timestamp: Date.now() 
+    });
+    
+  } catch (error) {
+    console.error('Dial from account error:', error);
+    res.status(500).json({ error: 'Dial from account failed', details: error.message });
+  }
+});
+
+function getAccountIndex(accountUri) {
+  // Map account URIs to their indices
+  const accountMap = {
+    'sip:2061618@sip.srgssr.ch': 0,
+    'sip:2061619@sip.srgssr.ch': 1,
+    'sip:2061620@sip.srgssr.ch': 2,
+    'sip:2061621@sip.srgssr.wronguri': 3
+  };
+  
+  return accountMap[accountUri] || -1;
+}
+
+function sendSequentialCommands(commands) {
+  console.log(`Sending sequential commands:`, commands);
+  
+  const client = new net.Socket();
+  let commandIndex = 0;
+  
+  client.connect(BARESIP_PORT, BARESIP_HOST, () => {
+    sendNextCommand();
+  });
+  
+  function sendNextCommand() {
+    if (commandIndex >= commands.length) {
+      client.destroy();
+      return;
+    }
+    
+    const cmd = commands[commandIndex];
+    const jsonMessage = {
+      command: cmd.command,
+      params: cmd.params
+    };
+    
+    const jsonString = JSON.stringify(jsonMessage);
+    const netstring = createNetstring(jsonString);
+    
+    console.log(`Sequential command ${commandIndex + 1}: ${jsonString}`);
+    client.write(netstring);
   }
   
-  res.json({ success: true, command: command, params: params, timestamp: Date.now() });
-});
+  client.on('data', (data) => {
+    console.log(`Sequential response ${commandIndex + 1}:`, data.toString());
+    commandIndex++;
+    
+    // Wait a bit before sending next command
+    setTimeout(() => {
+      sendNextCommand();
+    }, 300);
+  });
+  
+  client.on('error', (err) => {
+    console.error('Sequential command error:', err);
+    client.destroy();
+  });
+  
+  client.on('close', () => {
+    console.log('Sequential command connection closed');
+  });
+}
+
+function sendRawSocketCommand(command) {
+  console.log(`Sending raw socket command: ${command}`);
+  
+  const client = new net.Socket();
+  
+  client.connect(BARESIP_PORT, BARESIP_HOST, () => {
+    // Wrap the command in JSON format
+    const jsonMessage = {
+      command: command
+    };
+    
+    const jsonString = JSON.stringify(jsonMessage);
+    const netstring = createNetstring(jsonString);
+    
+    client.write(netstring);
+    console.log(`Sent JSON-wrapped raw command: ${jsonString} (as netstring: ${netstring})`);
+  });
+  
+  client.on('data', (data) => {
+    console.log(`Raw command response: ${data.toString()}`);
+    client.destroy();
+  });
+  
+  client.on('error', (err) => {
+    console.error('Raw socket error:', err);
+    client.destroy();
+  });
+  
+  client.on('close', () => {
+    console.log('Raw socket connection closed');
+  });
+}
 
 app.post('/autoconnect/:contact', (req, res) => {
   const { contact } = req.params;
