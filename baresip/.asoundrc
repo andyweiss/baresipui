@@ -27,3 +27,243 @@ pcm.out1_2 {
     bindings.0 0
     bindings.1 1
 }
+
+pcm.in3_4 {
+    type dsnoop
+    ipc_key 0x11112
+    slave ravenna_in
+    bindings.0 2
+    bindings.1 3
+}
+
+pcm.out3_4 {
+    type dmix
+    ipc_key 0x22222
+    slave ravenna_out
+    bindings.0 2
+    bindings.1 3
+}
+
+pcm.in5_6 {
+    type dsnoop
+    ipc_key 0x11113
+    slave ravenna_in
+    bindings.0 4
+    bindings.1 5
+}
+
+pcm.out5_6 {
+    type dmix
+    ipc_key 0x22223
+    slave ravenna_out
+    bindings.0 4
+    bindings.1 5
+}
+
+pcm.in7_8 {
+    type dsnoop
+    ipc_key 0x11114
+    slave ravenna_in
+    bindings.0 6
+    bindings.1 7
+}
+
+pcm.out7_8 {
+    type dmix
+    ipc_key 0x22224
+    slave ravenna_out
+    bindings.0 6
+    bindings.1 7
+}
+
+pcm.in9_10 {
+    type dsnoop
+    ipc_key 0x11115
+    slave ravenna_in
+    bindings.0 8
+    bindings.1 9
+}
+
+pcm.out9_10 {
+    type dmix
+    ipc_key 0x22225
+    slave ravenna_out
+    bindings.0 8
+    bindings.1 9
+}
+
+pcm.in11_12 {
+    type dsnoop
+    ipc_key 0x11116
+    slave ravenna_in
+    bindings.0 10
+    bindings.1 11
+}
+
+pcm.out11_12 {
+    type dmix
+    ipc_key 0x22226
+    slave ravenna_out
+    bindings.0 10
+    bindings.1 11
+}
+
+pcm.in13_14 {
+    type dsnoop
+    ipc_key 0x11117
+    slave ravenna_in
+    bindings.0 12
+    bindings.1 13
+}
+
+pcm.out13_14 {
+    type dmix
+    ipc_key 0x22227
+    slave ravenna_out
+    bindings.0 12
+    bindings.1 13
+}
+
+pcm.in15_16 {
+    type dsnoop
+    ipc_key 0x11118
+    slave ravenna_in
+    bindings.0 14
+    bindings.1 15
+}
+
+pcm.out15_16 {
+    type dmix
+    ipc_key 0x22228
+    slave ravenna_out
+    bindings.0 14
+    bindings.1 15
+}
+
+pcm.in17_18 {
+    type dsnoop
+    ipc_key 0x11119
+    slave ravenna_in
+    bindings.0 16
+    bindings.1 17
+}
+
+pcm.out17_18 {
+    type dmix
+    ipc_key 0x22229
+    slave ravenna_out
+    bindings.0 16
+    bindings.1 17
+}
+
+pcm.in19_20 {
+    type dsnoop
+    ipc_key 0x1111A
+    slave ravenna_in
+    bindings.0 18
+    bindings.1 19
+}
+
+pcm.out19_20 {
+    type dmix
+    ipc_key 0x2222A
+    slave ravenna_out
+    bindings.0 18
+    bindings.1 19
+}
+
+pcm.in21_22 {
+    type dsnoop
+    ipc_key 0x1111B
+    slave ravenna_in
+    bindings.0 20
+    bindings.1 21
+}
+
+pcm.out21_22 {
+    type dmix
+    ipc_key 0x2222B
+    slave ravenna_out
+    bindings.0 20
+    bindings.1 21
+}
+
+pcm.in23_24 {
+    type dsnoop
+    ipc_key 0x1111C
+    slave ravenna_in
+    bindings.0 22
+    bindings.1 23
+}
+
+pcm.out23_24 {
+    type dmix
+    ipc_key 0x2222C
+    slave ravenna_out
+    bindings.0 22
+    bindings.1 23
+}
+
+pcm.in25_26 {
+    type dsnoop
+    ipc_key 0x1111D
+    slave ravenna_in
+    bindings.0 24
+    bindings.1 25
+}
+
+pcm.out25_26 {
+    type dmix
+    ipc_key 0x2222D
+    slave ravenna_out
+    bindings.0 24
+    bindings.1 25
+}
+
+pcm.in27_28 {
+    type dsnoop
+    ipc_key 0x1111E
+    slave ravenna_in
+    bindings.0 26
+    bindings.1 27
+}
+
+pcm.out27_28 {
+    type dmix
+    ipc_key 0x2222E
+    slave ravenna_out
+    bindings.0 26
+    bindings.1 27
+}
+
+pcm.in29_30 {
+    type dsnoop
+    ipc_key 0x1111F
+    slave ravenna_in
+    bindings.0 28
+    bindings.1 29
+}
+
+pcm.out29_30 {
+    type dmix
+    ipc_key 0x2222F
+    slave ravenna_out
+    bindings.0 28
+    bindings.1 29
+}
+
+pcm.in31_32 {
+    type dsnoop
+    ipc_key 0x11120
+    slave ravenna_in
+    bindings.0 30
+    bindings.1 31
+}
+
+pcm.out31_32 {
+    type dmix
+    ipc_key 0x22230
+    slave ravenna_out
+    bindings.0 30
+    bindings.1 31
+}

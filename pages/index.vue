@@ -66,20 +66,33 @@ const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useWeb
 
 const handleCall = async (uri: string) => {
   const target = prompt('Enter SIP URI to call:');
+  
   if (target) {
     try {
-      await sendCommand(`/dial ${target}`);
+      console.log(`Attempting to call: ${target} from account: ${uri}`);
+      
+      // Verwende den korrekten JSON-Befehl für Baresip
+      const result = await sendCommand(`dial ${target}`);
+      console.log('Call result:', result);
+      
     } catch (err) {
-      console.error('Failed to call:', err);
+      console.error('Call failed:', err);
+      alert(`Call failed: ${err}`);
     }
   }
 };
 
 const handleHangup = async (uri: string) => {
   try {
-    await sendCommand('/hangup');
+    console.log(`Attempting to hangup call for account: ${uri}`);
+    
+    // Verwende den korrekten JSON-Befehl für Baresip
+    const result = await sendCommand('hangup');
+    console.log('Hangup result:', result);
+    
   } catch (err) {
-    console.error('Failed to hangup:', err);
+    console.error('Hangup failed:', err);
+    alert(`Hangup failed: ${err}`);
   }
 };
 

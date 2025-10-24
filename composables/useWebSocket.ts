@@ -53,6 +53,8 @@ export const useWebSocket = () => {
           if (contact) {
             contact.status = data.status;
           }
+        } else if (data.type === 'contactsUpdate') {
+          contacts.value = data.contacts || [];
         }
       } catch (err) {
         console.error('Error parsing WebSocket message:', err);
