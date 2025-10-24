@@ -56,7 +56,9 @@ services:
     networks:
       - baresip-network
   baresip:
-    build: . # build from the Dockerfile in the same folder
+    build:
+      context: ./baresip
+      dockerfile: Dockerfile
     container_name: baresip
     restart: unless-stopped
     volumes:
