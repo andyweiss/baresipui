@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN apk add --no-cache bash curl && npm ci --only=production
+RUN apk add --no-cache bash curl && npm install --only=production
 
 COPY src ./src
 

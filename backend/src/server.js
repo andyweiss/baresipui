@@ -2,8 +2,6 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import net from 'net';
-import fs from 'fs';
-import path from 'path';
 import { register, Counter, Gauge } from 'prom-client';
 
 const app = express();
@@ -152,6 +150,7 @@ function parseBaresipEvent(data) {
 }
 
 function handleCommandResponse(response) {
+  console.log('=== NEW VERSION RUNNING ===');
   const timestamp = Date.now();
   
   // Debug-Log für Command Responses
@@ -163,11 +162,156 @@ function handleCommandResponse(response) {
     message: `Command Response: ${JSON.stringify(response)}`
   });
 
-  // Hier könnten wir spezifische Response-Behandlungen hinzufügen
-  if (response.ok) {
+  if (response.ok && response.data) {
     console.log(`Command executed successfully: ${response.data}`);
+    
+    // Parse spezielle Antworten
+    if (typeof response.data === 'string') {
+      console.log(`Checking response data for contacts: includes "--- Contacts" = ${response.data.includes('--- Contacts')}`);
+      parseApiResponse(response.data, response.token);
+      
+      // Parse Kontakte direkt hier wenn "--- Contacts" im Response ist
+      if (response.data.includes('--- Contacts')) {
+        console.log('Calling parseContactsFromResponse...');
+        parseContactsFromResponse(response.data);
+      }
+    }
   } else {
     console.error(`Command failed: ${response.data}`);
+  }
+}
+
+function parseContactsFromResponse(data) {
+  console.log('Parsing contacts from response...');
+  const lines = data.split('\n');
+  
+  for (const line of lines) {
+    if (line.includes('<sip:')) {
+      // Format mit ANSI-Codes entfernen: "Name" <sip:uri> oder Name <sip:uri>
+      const cleanLine = line.replace(/\x1b\[[0-9;]*[mK]/g, ''); // ANSI-Codes entfernen
+      console.log(`Parsing contact line: "${cleanLine}"`);
+      
+      // Verbessertes Regex für verschiedene Formate
+      const match = cleanLine.match(/(?:>\s*)?(?:\s*)([^<]+?)\s*<(sip:[^@]+@[^>]+)>/);
+      if (match) {
+        const name = match[1].trim();
+        const contact = match[2];
+        console.log(`Found contact match: name="${name}", contact="${contact}"`);
+        
+        if (!autoConnectConfig.has(contact)) {
+          const contactConfig = {
+            name: name,
+            enabled: false,
+            status: 'Off',
+            source: 'api'
+          };
+          
+          autoConnectConfig.set(contact, contactConfig);
+          console.log(`Loaded contact from API: ${name} <${contact}>`);
+        }
+      } else {
+        console.log(`No match for line: "${cleanLine}"`);
+      }
+    }
+  }
+  
+  // Broadcast aktualisierte Kontakte
+  if (autoConnectConfig.size > 0) {
+    console.log(`Broadcasting ${autoConnectConfig.size} contacts`);
+    broadcast({
+      type: 'contactsUpdate',
+      contacts: Array.from(autoConnectConfig.entries()).map(([contact, config]) => ({
+        contact,
+        name: config.name || contact,
+        enabled: config.enabled,
+        status: config.status || 'Off',
+        presence: contactPresence.get(contact) || 'unknown'
+      }))
+    });
+  }
+}
+
+function parseApiResponse(data, token) {
+  const lines = data.split('\n');
+  
+  for (const line of lines) {
+    // Parse Account-Listen aus API-Antworten
+    if (line.includes('sip:') && line.includes('@')) {
+      const match = line.match(/(sip:[^@\s]+@[^\s>;,)]+)/);
+      if (match) {
+        const uri = match[1];
+        
+        if (!accounts.has(uri)) {
+          const accountData = {
+            uri,
+            registered: false,
+            callStatus: 'Idle',
+            autoConnectStatus: 'Off',
+            lastEvent: Date.now(),
+            configured: true,
+            source: 'api'
+          };
+          
+          accounts.set(uri, accountData);
+          console.log(`Loaded account from API: ${uri}`);
+          
+          broadcast({
+            type: 'accountStatus',
+            data: accountData
+          });
+        } else {
+          // Markiere existierende Accounts als konfiguriert
+          const existing = accounts.get(uri);
+          existing.configured = true;
+          existing.source = 'api';
+          accounts.set(uri, existing);
+          
+          broadcast({
+            type: 'accountStatus',
+            data: existing
+          });
+        }
+      }
+    }
+    
+    // Parse Kontakte aus API-Antworten
+    if (line.includes('<sip:')) {
+      // Format mit ANSI-Codes entfernen: "Name" <sip:uri> oder Name <sip:uri>
+      const cleanLine = line.replace(/\x1b\[[0-9;]*[mK]/g, ''); // ANSI-Codes entfernen
+      console.log(`Parsing contact line: "${cleanLine}"`);
+      const match = cleanLine.match(/(?:"([^"]+)"\s*|([^<\u001b]+?))\s*<(sip:[^@]+@[^>]+)>/);
+      if (match) {
+        const name = (match[1] || match[2] || 'Unknown').trim();
+        const contact = match[3];
+        console.log(`Found contact match: name="${name}", contact="${contact}"`);
+        
+        if (!autoConnectConfig.has(contact)) {
+          const contactConfig = {
+            name: name,
+            enabled: false,
+            status: 'Off',
+            source: 'api'
+          };
+          
+          autoConnectConfig.set(contact, contactConfig);
+          console.log(`Loaded contact from API: ${name} <${contact}>`);
+        }
+      }
+    }
+  }
+  
+  // Broadcast aktualisierte Kontakte
+  if (autoConnectConfig.size > 0) {
+    broadcast({
+      type: 'contactsUpdate',
+      contacts: Array.from(autoConnectConfig.entries()).map(([contact, config]) => ({
+        contact,
+        name: config.name || contact,
+        enabled: config.enabled,
+        status: config.status || 'Off',
+        presence: contactPresence.get(contact) || 'unknown'
+      }))
+    });
   }
 }
 
@@ -499,131 +643,40 @@ function updateAutoConnectStatus(contact, status) {
 }
 
 function loadConfiguredAccounts() {
-  // Da die API-Befehle keine brauchbaren Antworten liefern, lade direkt aus der Konfiguration
-  console.log('Loading accounts from configuration file...');
+  // Lade Accounts über Baresip JSON API
+  console.log('Loading accounts via Baresip JSON API...');
   
-  // Direkt laden ohne API-Versuche (da sie nur Fehler verursachen)
+  // Verwende korrekte JSON-Befehle für Baresip
+  sendBaresipCommand('ualist');     // Liste aller User Agents
+  sendBaresipCommand('reginfo');    // Registrierungs-Informationen
+  sendBaresipCommand('contacts');   // Kontakte laden (falls unterstützt)
+  
+  // Fallback falls API keine Antworten liefert
   setTimeout(() => {
-    console.log(`Current accounts count before config load: ${accounts.size}, contacts: ${autoConnectConfig.size}`);
-    loadAccountsFromConfig();
-  }, 500); // Verkürze, da wir keine API-Befehle mehr senden
-}
-
-function loadAccountsFromConfig() {
-  console.log('Fallback: Loading accounts from configuration files...');
-  
-  // Lade Accounts aus der accounts-Datei
-  const accountsPath = process.env.ACCOUNTS_PATH || '/config/accounts';
-  console.log(`Looking for accounts file at: ${accountsPath}`);
-  
-  try {
-    if (fs.existsSync(accountsPath)) {
-      console.log(`Found accounts file: ${accountsPath}`);
-      const content = fs.readFileSync(accountsPath, 'utf8');
-      const lines = content.split('\n').filter(line => 
-        line.trim() && !line.startsWith('#')
-      );
-
-      for (const line of lines) {
-        const match = line.match(/^<([^>]+)>/);
-        if (match) {
-          const uri = match[1];
-          
-          if (!accounts.has(uri)) {
-            // Account existiert noch nicht - erstelle neu
-            const accountData = {
-              uri,
-              registered: false,
-              callStatus: 'Idle',
-              autoConnectStatus: 'Off',
-              lastEvent: Date.now(),
-              configured: true
-            };
-            
-            accounts.set(uri, accountData);
-            console.log(`Loaded new configured account from file: ${uri}`);
-            
-            // Broadcast das neue Account
-            broadcast({
-              type: 'accountStatus',
-              data: accountData
-            });
-          } else {
-            // Account existiert bereits - markiere als konfiguriert
-            const existing = accounts.get(uri);
-            existing.configured = true;
-            accounts.set(uri, existing);
-            console.log(`Marked existing account as configured: ${uri}`);
-            
-            // Broadcast das aktualisierte Account
-            broadcast({
-              type: 'accountStatus',
-              data: existing
-            });
-          }
-        }
-      }
-      
-      console.log(`Loaded ${accounts.size} accounts from configuration file`);
-    } else {
-      console.log('No accounts configuration file found at:', accountsPath);
+    console.log(`Accounts loaded via API: ${accounts.size}`);
+    if (accounts.size === 0) {
+      console.log('No accounts received from API, this is normal as they are loaded via events');
     }
-  } catch (error) {
-    console.error('Error loading configured accounts from file:', error);
-  }
-
-  // Lade auch Kontakte aus der contacts-Datei
-  loadContactsFromConfig();
+  }, 2000);
 }
 
-function loadContactsFromConfig() {
-  const contactsPath = process.env.CONTACTS_PATH || '/config/contacts';
-  console.log(`Looking for contacts file at: ${contactsPath}`);
+function loadConfiguredContacts() {
+  // Lade Kontakte über Baresip JSON API
+  console.log('Loading contacts via Baresip JSON API...');
   
-  try {
-    if (fs.existsSync(contactsPath)) {
-      console.log(`Found contacts file: ${contactsPath}`);
-      const content = fs.readFileSync(contactsPath, 'utf8');
-      const lines = content.split('\n').filter(line => 
-        line.trim() && !line.startsWith('#')
-      );
-
-      for (const line of lines) {
-        const match = line.match(/^"([^"]+)"\s*<sip:([^@]+@[^>]+)>/);
-        if (match) {
-          const [, name, contact] = match;
-          
-          if (!autoConnectConfig.has(contact)) {
-            const contactConfig = {
-              enabled: false,
-              status: 'Off'
-            };
-            
-            autoConnectConfig.set(contact, contactConfig);
-            console.log(`Loaded contact from file: ${name} <${contact}>`);
-          }
-        }
-      }
-      
-      console.log(`Loaded ${autoConnectConfig.size} contacts from configuration file`);
-      
-      // Broadcast die Kontakte an alle Clients
-      broadcast({
-        type: 'contactsUpdate',
-        contacts: Array.from(autoConnectConfig.entries()).map(([contact, config]) => ({
-          contact,
-          enabled: config.enabled,
-          status: config.status || 'Off',
-          presence: contactPresence.get(contact) || 'unknown'
-        }))
-      });
-    } else {
-      console.log('No contacts configuration file found at:', contactsPath);
+  // Verwende korrekte JSON-Befehle für Baresip
+  sendBaresipCommand('contacts');     // Kontakte laden
+  
+  // Fallback falls API keine Antworten liefert
+  setTimeout(() => {
+    console.log(`Contacts loaded via API: ${autoConnectConfig.size}`);
+    if (autoConnectConfig.size === 0) {
+      console.log('No contacts received from API - this might be normal if no contacts are configured');
     }
-  } catch (error) {
-    console.error('Error loading contacts from file:', error);
-  }
+  }, 2000);
 }
+
+// Alle Datei-basierten Funktionen entfernt - verwende nur noch API
 
 function createNetstring(data) {
   const netstring = `${data.length}:${data},`;
@@ -662,13 +715,9 @@ function connectToBaresip() {
     reconnectAttempts = 0;
     metricsTcpConnected.set(1);
 
-    // Lade alle Accounts über die API
+    // Lade alle Accounts und Kontakte über die API
     loadConfiguredAccounts();
-    
-    // Lade Kontakte direkt (da sie nicht über API verfügbar sind)
-    setTimeout(() => {
-      loadContactsFromConfig();
-    }, 500);
+    loadConfiguredContacts();
   });
 
   baresipClient.on('data', (data) => {

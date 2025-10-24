@@ -12,10 +12,6 @@ services:
       - BARESIP_HOST=baresip
       - BARESIP_PORT=4444
       - WS_PORT=4000
-      - ACCOUNTS_PATH=/config/accounts
-      - CONTACTS_PATH=/config/contacts
-    volumes:
-      - ./baresip/config:/config:ro
     depends_on:
       - baresip
     restart: unless-stopped
