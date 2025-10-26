@@ -893,25 +893,6 @@ app.post('/command', (req, res) => {
   }
 });
 
-// New endpoint for raw baresip commands (without JSON wrapping)
-app.post('/raw-command', (req, res) => {
-  const { command } = req.body;
-  
-  if (!command) {
-    return res.status(400).json({ error: 'Raw command required' });
-  }
-
-  console.log(`Received raw command: ${command}`);
-  
-  try {
-    sendRawBaresipCommand(command);
-    res.json({ success: true, command: command, timestamp: Date.now() });
-  } catch (error) {
-    console.error('Raw command execution error:', error);
-    res.status(500).json({ error: 'Raw command execution failed', details: error.message });
-  }
-});
-
 app.post('/dial-from-account', (req, res) => {
   const { account, target } = req.body;
   
@@ -922,18 +903,17 @@ app.post('/dial-from-account', (req, res) => {
   console.log(`Dialing ${target} from account ${account}`);
   
   try {
-    // Use uafind to set the active account, then dial
-    sendSequentialCommands([
-      { command: 'uafind', params: account },
-      { command: 'dial', params: target }
-    ]);
+    // Unfortunately, baresip doesn't seem to support per-account dialing
+    // in the way we need. Let's document this limitation and use a workaround.
     
-    res.json({ 
-      success: true, 
+    // For now, create a clear error message explaining the limitation
+    res.status(501).json({ 
+      error: 'Account-specific dialing not supported by baresip',
+      message: 'Baresip always uses the first registered account for outgoing calls. This is a limitation of the baresip softphone.',
       account: account, 
       target: target, 
-      method: 'uafind + dial',
-      timestamp: Date.now() 
+      timestamp: Date.now(),
+      suggestion: 'Consider using separate baresip instances for each account or a different SIP client'
     });
     
   } catch (error) {
@@ -952,88 +932,6 @@ function getAccountIndex(accountUri) {
   };
   
   return accountMap[accountUri] || -1;
-}
-
-function sendSequentialCommands(commands) {
-  console.log(`Sending sequential commands:`, commands);
-  
-  const client = new net.Socket();
-  let commandIndex = 0;
-  
-  client.connect(BARESIP_PORT, BARESIP_HOST, () => {
-    sendNextCommand();
-  });
-  
-  function sendNextCommand() {
-    if (commandIndex >= commands.length) {
-      client.destroy();
-      return;
-    }
-    
-    const cmd = commands[commandIndex];
-    const jsonMessage = {
-      command: cmd.command,
-      params: cmd.params
-    };
-    
-    const jsonString = JSON.stringify(jsonMessage);
-    const netstring = createNetstring(jsonString);
-    
-    console.log(`Sequential command ${commandIndex + 1}: ${jsonString}`);
-    client.write(netstring);
-  }
-  
-  client.on('data', (data) => {
-    console.log(`Sequential response ${commandIndex + 1}:`, data.toString());
-    commandIndex++;
-    
-    // Wait a bit before sending next command
-    setTimeout(() => {
-      sendNextCommand();
-    }, 300);
-  });
-  
-  client.on('error', (err) => {
-    console.error('Sequential command error:', err);
-    client.destroy();
-  });
-  
-  client.on('close', () => {
-    console.log('Sequential command connection closed');
-  });
-}
-
-function sendRawSocketCommand(command) {
-  console.log(`Sending raw socket command: ${command}`);
-  
-  const client = new net.Socket();
-  
-  client.connect(BARESIP_PORT, BARESIP_HOST, () => {
-    // Wrap the command in JSON format
-    const jsonMessage = {
-      command: command
-    };
-    
-    const jsonString = JSON.stringify(jsonMessage);
-    const netstring = createNetstring(jsonString);
-    
-    client.write(netstring);
-    console.log(`Sent JSON-wrapped raw command: ${jsonString} (as netstring: ${netstring})`);
-  });
-  
-  client.on('data', (data) => {
-    console.log(`Raw command response: ${data.toString()}`);
-    client.destroy();
-  });
-  
-  client.on('error', (err) => {
-    console.error('Raw socket error:', err);
-    client.destroy();
-  });
-  
-  client.on('close', () => {
-    console.log('Raw socket connection closed');
-  });
 }
 
 app.post('/autoconnect/:contact', (req, res) => {

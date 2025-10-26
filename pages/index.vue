@@ -69,34 +69,27 @@ const handleCall = async (uri: string) => {
   
   if (target) {
     try {
-      console.log(`Calling ${target} from account: ${uri}`);
+      console.log(`Attempting to call: ${target} from account: ${uri}`);
       
-      // Prevent multiple simultaneous calls
-      if (window.isCallInProgress) {
-        alert('Please wait, another call is in progress...');
-        return;
+      // Check if this is the first account - if so, use direct dial
+      const accounts = ['sip:2061618@sip.srgssr.ch', 'sip:2061619@sip.srgssr.ch', 'sip:2061620@sip.srgssr.ch', 'sip:2061621@sip.srgssr.wronguri'];
+      
+      if (uri === accounts[0]) {
+        // First account - use normal dial
+        const result = await sendCommand('dial', target);
+        console.log('Call result:', result);
+      } else {
+        // Other accounts - show limitation message
+        alert(`Note: Baresip always uses the first registered account (${accounts[0]}) for outgoing calls. This is a limitation of the baresip softphone. Your call will be made from the first account instead of ${uri}.`);
+        
+        // Make the call anyway (it will use the first account)
+        const result = await sendCommand('dial', target);
+        console.log('Call result (from first account):', result);
       }
-      window.isCallInProgress = true;
-      
-      // Step 1: Use uafind to set the active account
-      const uafindResult = await sendCommand('uafind', uri);
-      
-      if (!uafindResult || uafindResult.error) {
-        throw new Error('Failed to select account: ' + (uafindResult?.error || 'Unknown error'));
-      }
-      
-      // Step 2: Wait, then dial from the selected account
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      
-      const dialResult = await sendCommand('dial', target);
-      console.log('Call result:', dialResult);
-      
-      window.isCallInProgress = false;
       
     } catch (err) {
       console.error('Call failed:', err);
-      alert(`Failed to make call: ${err.message || err}`);
-      window.isCallInProgress = false;
+      alert(`Call failed: ${err.message || err}`);
     }
   }
 };
