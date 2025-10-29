@@ -7,16 +7,12 @@ export const useWebSocket = () => {
   const contacts = ref<any[]>([]);
   const logs = ref<any[]>([]);
 
-  const config = useRuntimeConfig();
-
   const connect = () => {
-    // Automatisch das richtige Protokoll basierend auf der aktuellen Seite
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsPath = config.public.wsPath || config.public.wsUrl || '/api/ws';
-    const wsUrl = wsPath.startsWith('/') ? `${protocol}//${host}${wsPath}` : wsPath;
-    console.log('WebSocket URL:', wsUrl);
-    console.log('Config:', config.public);
+    const wsUrl = `${protocol}//${host}/_ws`;
+
+    console.log('Connecting to WebSocket:', wsUrl);
     ws.value = new WebSocket(wsUrl);
 
     ws.value.onopen = () => {
@@ -73,20 +69,12 @@ export const useWebSocket = () => {
   };
 
   const sendCommand = async (command: string, params?: string) => {
-    const apiUrl = config.public.apiUrl;
     try {
-      const response = await fetch(`${apiUrl}/command`, {
+      const response = await $fetch('/api/command', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, params })
+        body: { command, params }
       });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      return result;
+      return response;
     } catch (err) {
       console.error('Error sending command:', err);
       throw err;
@@ -94,14 +82,12 @@ export const useWebSocket = () => {
   };
 
   const toggleAutoConnect = async (contact: string, enabled: boolean) => {
-    const apiUrl = config.public.apiUrl;
     try {
-      const response = await fetch(`${apiUrl}/autoconnect/${encodeURIComponent(contact)}`, {
+      const response = await $fetch(`/api/autoconnect/${encodeURIComponent(contact)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled })
+        body: { enabled }
       });
-      return await response.json();
+      return response;
     } catch (err) {
       console.error('Error toggling auto-connect:', err);
       throw err;

@@ -5,9 +5,17 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss'],
 
   runtimeConfig: {
+    baresipHost: process.env.BARESIP_HOST || 'baresip',
+    baresipPort: process.env.BARESIP_PORT || '4444',
+
     public: {
-      wsPath: process.env.NUXT_PUBLIC_WS_PATH || '/ws',
-      apiUrl: process.env.NUXT_PUBLIC_API_URL || '/api'
+      wsEnabled: true
+    }
+  },
+
+  nitro: {
+    experimental: {
+      websocket: true
     }
   },
 
