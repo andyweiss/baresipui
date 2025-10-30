@@ -72,21 +72,17 @@ const handleCall = async (uri: string) => {
     try {
       console.log(`Attempting to call: ${target} from account: ${uri}`);
       
-      // Check if this is the first account - if so, use direct dial
-      const accounts = ['sip:2061618@sip.srgssr.ch', 'sip:2061619@sip.srgssr.ch', 'sip:2061620@sip.srgssr.ch', 'sip:2061621@sip.srgssr.wronguri'];
+      // First, select the account using uafind
+      console.log(`Selecting account: ${uri}`);
+      const findResult = await sendCommand('uafind', uri);
+      console.log('Account selection result:', findResult);
       
-      if (uri === accounts[0]) {
-        // First account - use normal dial
-        const result = await sendCommand('dial', target);
-        console.log('Call result:', result);
-      } else {
-        // Other accounts - show limitation message
-        alert(`Note: Baresip always uses the first registered account (${accounts[0]}) for outgoing calls. This is a limitation of the baresip softphone. Your call will be made from the first account instead of ${uri}.`);
-        
-        // Make the call anyway (it will use the first account)
-        const result = await sendCommand('dial', target);
-        console.log('Call result (from first account):', result);
-      }
+      // Small delay to ensure account is selected
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Then dial from the selected account
+      const result = await sendCommand('dial', target);
+      console.log('Call result:', result);
       
     } catch (err) {
       console.error('Call failed:', err);

@@ -81,44 +81,51 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
   for (const line of lines) {
     if (line.includes(' - sip:') && (line.includes('OK') || line.includes('ERR'))) {
       const cleanLine = line.replace(/\x1b\[[0-9;]*[mK]/g, '');
-      const match = cleanLine.match(/\d+\s*-\s*(sip:[^@]+@[^\s]+)\s+(\w+)/);
+      // Match: number - URI   STATUS (with flexible whitespace)
+      const match = cleanLine.match(/\d+\s*-\s*(sip:[^@]+@\S+)\s+(OK|ERR)/);
       if (match) {
         const uri = match[1];
         const status = match[2];
 
-        console.log(`Registration status for ${uri}: ${status}`);
+        console.log(`Registration status for ${uri}: ${status} (status length: ${status.length}, charCodes: ${Array.from(status).map(c => c.charCodeAt(0)).join(',')})`);
 
-        if (stateManager.hasAccount(uri)) {
-          const account = stateManager.getAccount(uri)!;
+        // Get existing account or create a new one
+        const account = stateManager.getAccount(uri) || {
+          uri,
+          registered: false,
+          callStatus: 'Idle' as const,
+          autoConnectStatus: 'Off',
+          lastEvent: Date.now(),
+          configured: true
+        };
 
-          if (status === 'OK') {
-            account.registered = true;
-            account.registrationError = undefined;
-          } else if (status === 'ERR') {
-            account.registered = false;
+        if (status === 'OK') {
+          account.registered = true;
+          account.registrationError = undefined;
+        } else if (status === 'ERR') {
+          account.registered = false;
 
-            let errorStatus = 'Registration Failed';
-            if (uri.includes('wronguri') || uri.includes('invalid')) {
-              errorStatus = 'Not Found';
-            } else if (uri.endsWith('.ch')) {
-              errorStatus = 'Unauthorized';
-            } else {
-              errorStatus = 'Service Unavailable';
-            }
-
-            account.registrationError = errorStatus;
-            console.log(`Set error status for ${uri}: ${errorStatus}`);
+          let errorStatus = 'Registration Failed';
+          if (uri.includes('wronguri') || uri.includes('invalid')) {
+            errorStatus = 'Not Found';
+          } else if (uri.endsWith('.ch')) {
+            errorStatus = 'Unauthorized';
+          } else {
+            errorStatus = 'Service Unavailable';
           }
 
-          stateManager.setAccount(uri, account);
-
-          stateManager.broadcast({
-            type: 'accountStatus',
-            data: account
-          });
-
-          console.log(`Updated account ${uri}: registered=${account.registered}, error=${account.registrationError}`);
+          account.registrationError = errorStatus;
+          console.log(`Set error status for ${uri}: ${errorStatus}`);
         }
+
+        stateManager.setAccount(uri, account);
+
+        stateManager.broadcast({
+          type: 'accountStatus',
+          data: account
+        });
+
+        console.log(`Updated account ${uri}: registered=${account.registered}, error=${account.registrationError}`);
       }
     }
   }

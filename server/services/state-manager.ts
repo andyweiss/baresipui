@@ -18,7 +18,9 @@ export class StateManager {
   private maxLogs = 1000; // Maximum number of logs to keep
 
   getAccounts(): Account[] {
-    return Array.from(this.accounts.values());
+    const accounts = Array.from(this.accounts.values());
+    console.log(`StateManager.getAccounts() called - returning ${accounts.length} accounts:`, accounts.map(a => a.uri));
+    return accounts;
   }
 
   getAccount(uri: string): Account | undefined {
