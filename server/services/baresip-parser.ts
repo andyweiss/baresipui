@@ -140,23 +140,29 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
       const cleanLine = line.replace(/\x1b\[[0-9;]*[mK]/g, '');
       console.log(`Parsing contact line: "${cleanLine}"`);
 
-      const match = cleanLine.match(/(?:>\s*)?(?:\s*)([^<]+?)\s*<(sip:[^@]+@[^>]+)>/);
-      if (match) {
-        const name = match[1].trim();
-        const contact = match[2];
-        console.log(`Found contact match: name="${name}", contact="${contact}"`);
+      // Match format: [spaces] STATUS name <sip:...>
+      // STATUS can be: Unknown, Online, Busy, Offline, etc.
+      const matchWithStatus = cleanLine.match(/(?:>\s*)?(?:\s*)(Unknown|Online|Busy|Offline|Away)?\s*(.+?)\s*<(sip:[^@]+@[^>]+)>/i);
+      if (matchWithStatus) {
+        const presenceStatus = matchWithStatus[1] ? matchWithStatus[1].toLowerCase() : 'unknown';
+        const name = matchWithStatus[2].trim();
+        const contact = matchWithStatus[3];
+        
+        console.log(`Found contact: name="${name}", contact="${contact}", presence="${presenceStatus}"`);
 
-        if (!stateManager.hasContactConfig(contact)) {
-          const contactConfig = {
-            name: name,
-            enabled: false,
-            status: 'Off',
-            source: 'api'
-          };
+        // Get existing config or create new one
+        const existingConfig = stateManager.getContactConfig(contact);
+        const contactConfig = {
+          name: name,
+          enabled: existingConfig?.enabled || false,
+          status: existingConfig?.status || 'Off',
+          source: 'api'
+        };
 
-          stateManager.setContactConfig(contact, contactConfig);
-          console.log(`Loaded contact from API: ${name} <${contact}>`);
-        }
+        stateManager.setContactConfig(contact, contactConfig);
+        stateManager.setContactPresence(contact, presenceStatus);
+        
+        console.log(`Loaded contact from API: ${name} <${contact}> [${presenceStatus}]`);
       } else {
         console.log(`No match for line: "${cleanLine}"`);
       }

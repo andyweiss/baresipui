@@ -9,3 +9,4 @@ node_modules
 dist
 baresip/config/accounts
 baresip/config/contacts
+baresip/config/autoconnect.json

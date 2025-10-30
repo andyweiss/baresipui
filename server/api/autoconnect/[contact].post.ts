@@ -1,4 +1,5 @@
 import { stateManager } from '../../services/state-manager';
+import { getAutoConnectConfigManager } from '../../services/autoconnect-config';
 
 export default defineEventHandler(async (event) => {
   const contact = getRouterParam(event, 'contact');
@@ -22,9 +23,19 @@ export default defineEventHandler(async (event) => {
   config.enabled = enabled;
   stateManager.setContactConfig(decodedContact, config);
 
+  // Save to persistent config
+  const configManager = getAutoConnectConfigManager();
+  await configManager.setContactEnabled(decodedContact, enabled);
+
   if (!enabled) {
     stateManager.updateAutoConnectStatus(decodedContact, 'Off');
   }
+
+  // Broadcast update
+  stateManager.broadcast({
+    type: 'contactsUpdate',
+    contacts: stateManager.getContacts()
+  });
 
   return {
     success: true,

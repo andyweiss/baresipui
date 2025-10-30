@@ -40,10 +40,17 @@ export const useSocketIO = () => {
         accounts.value = data.accounts || [];
         contacts.value = data.contacts || [];
       } else if (data.type === 'accountStatus') {
+        console.log('📊 Socket.IO: Account status update for:', data.data.uri);
         const index = accounts.value.findIndex(a => a.uri === data.data.uri);
         if (index >= 0) {
-          accounts.value[index] = { ...accounts.value[index], ...data.data };
+          console.log('🔄 Socket.IO: Updating account at index', index, 'with data:', data.data);
+          // Force reactivity by replacing the entire array
+          const updated = [...accounts.value];
+          // Replace entire object instead of merge to handle undefined values
+          updated[index] = data.data;
+          accounts.value = updated;
         } else {
+          console.log('➕ Socket.IO: Adding new account');
           accounts.value.push(data.data);
         }
       } else if (data.type === 'log') {

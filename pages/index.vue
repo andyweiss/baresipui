@@ -36,8 +36,10 @@
             v-for="account in accounts"
             :key="account.uri"
             :account="account"
+            :contacts="contacts"
             @call="handleCall"
             @hangup="handleHangup"
+            @assignContact="handleAssignContact"
           />
         </div>
       </section>
@@ -53,7 +55,7 @@
             v-for="contact in contacts"
             :key="contact.contact"
             :contact="contact"
-            @toggle="handleToggleAutoConnect"
+            :accounts="accounts"
           />
         </div>
       </section>
@@ -64,6 +66,24 @@
 <script setup lang="ts">
 // Use Socket.IO instead of WebSocket
 const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useSocketIO();
+
+const handleAssignContact = async (accountUri: string, contactUri: string) => {
+  console.log(`Assigning contact ${contactUri} to account ${accountUri}`);
+  
+  try {
+    const response = await fetch('/api/autoconnect/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: accountUri, contact: contactUri })
+    });
+    
+    const result = await response.json();
+    console.log('Account assignment result:', result);
+  } catch (err) {
+    console.error('Failed to assign account:', err);
+    alert(`Failed to assign account: ${err}`);
+  }
+};
 
 const handleCall = async (uri: string) => {
   const target = prompt('Enter SIP URI to call:');

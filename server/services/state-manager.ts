@@ -41,7 +41,8 @@ export class StateManager {
       name: config.name || contact,
       enabled: config.enabled,
       status: config.status || 'Off',
-      presence: this.contactPresence.get(contact) || 'unknown'
+      presence: this.contactPresence.get(contact) || 'unknown',
+      assignedAccount: config.assignedAccount
     }));
   }
 
@@ -122,6 +123,8 @@ export class StateManager {
 
   broadcast(data: any): void {
     const message = JSON.stringify(data);
+    
+    console.log(`📢 Broadcasting to ${this.wsClients.size} WS clients and ${this.socketClients.size} Socket.IO clients:`, data.type);
     
     // Broadcast to WebSocket clients
     this.wsClients.forEach(client => {

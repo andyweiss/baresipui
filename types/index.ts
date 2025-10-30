@@ -8,6 +8,7 @@ export interface Account {
   registrationError?: string;
   lastRegistrationAttempt?: number;
   source?: string;
+  autoConnectContact?: string;
 }
 
 export interface Contact {
@@ -16,6 +17,7 @@ export interface Contact {
   enabled: boolean;
   status: string;
   presence: string;
+  assignedAccount?: string;
 }
 
 export interface ContactConfig {
@@ -23,6 +25,7 @@ export interface ContactConfig {
   enabled: boolean;
   status: string;
   source?: string;
+  assignedAccount?: string;
 }
 
 export interface BaresipEvent {

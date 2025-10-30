@@ -21,7 +21,7 @@
         <p class="text-sm font-medium" :class="callStatusColor">{{ account.callStatus || 'Idle' }}</p>
       </div>
       <div>
-        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Auto-Connect</p>
+        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Auto-Connect Status</p>
         <p class="text-sm font-medium" :class="autoConnectColor">
           {{ account.autoConnectStatus || 'Off' }}
         </p>
@@ -50,6 +50,45 @@
       </button>
     </div>
 
+    <!-- Auto-Connect Contact Selection (only for registered accounts) -->
+    <div v-if="account.registered" class="mt-4 p-4 bg-gray-750 rounded-lg border border-gray-700">
+      <label class="block text-xs font-medium text-gray-300 uppercase tracking-wide mb-2">
+        Select Auto-Connect Contact
+      </label>
+      <div class="relative">
+        <select
+          :value="account.autoConnectContact || ''"
+          @change="handleContactChange"
+          @input="handleContactChange"
+          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white 
+                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                 appearance-none cursor-pointer transition-colors hover:bg-gray-650"
+        >
+          <option value="" class="bg-gray-800">🔴 Auto-Connect OFF</option>
+          <option 
+            v-for="contact in contacts" 
+            :key="contact.contact" 
+            :value="contact.contact"
+            class="bg-gray-800"
+            @click="console.log('Option clicked:', contact.contact)"
+          >
+            🟢 {{ getContactDisplayName(contact) }}
+          </option>
+        </select>
+        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+          <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+          </svg>
+        </div>
+      </div>
+      <p v-if="account.autoConnectContact" class="mt-2 text-xs text-green-400">
+        🟢 Auto-Connect ON: {{ getContactDisplayName(getContactByUri(account.autoConnectContact)) }}
+      </p>
+      <p v-else class="mt-2 text-xs text-gray-400">
+        🔴 Auto-Connect OFF
+      </p>
+    </div>
+
     <div class="mt-3 text-xs text-gray-500">
       Last update: {{ formatTimestamp(account.lastEvent) }}
     </div>
@@ -61,14 +100,38 @@ import { computed } from 'vue';
 
 const props = defineProps<{
   account: any;
+  contacts: any[];
 }>();
 
-defineEmits(['call', 'hangup']);
+const emit = defineEmits(['call', 'hangup', 'assignContact']);
+
+const handleContactChange = (event: Event) => {
+  const target = event.target as HTMLSelectElement;
+  const contactUri = target.value;
+  console.log('🔥 Contact changed:', contactUri, 'for account:', props.account.uri);
+  console.log('🔥 Event type:', event.type);
+  console.log('🔥 Emitting assignContact event...');
+  emit('assignContact', props.account.uri, contactUri);
+  console.log('🔥 Event emitted!');
+};
 
 const accountName = computed(() => {
   const match = props.account.uri?.match(/^sip:([^@]+)/);
   return match ? match[1] : props.account.uri;
 });
+
+const getContactDisplayName = (contact: any) => {
+  if (!contact) return '';
+  if (contact.name && contact.name !== contact.contact) {
+    return contact.name;
+  }
+  const match = contact.contact.match(/sip:([^@]+)@/);
+  return match ? match[1] : contact.contact;
+};
+
+const getContactByUri = (uri: string) => {
+  return props.contacts.find(c => c.contact === uri);
+};
 
 const borderColor = computed(() => {
   if (props.account.callStatus === 'In Call') return 'border-green-500';
