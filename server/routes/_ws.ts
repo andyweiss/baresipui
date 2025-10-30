@@ -6,7 +6,9 @@ export default defineWebSocketHandler({
     console.log('WebSocket client connected:', peer.id);
     stateManager.addWsClient(peer);
 
-    peer.send(JSON.stringify(stateManager.getInitData()));
+    const initData = stateManager.getInitData();
+    console.log('Sending init data to client:', JSON.stringify(initData));
+    peer.send(JSON.stringify(initData));
   },
 
   close(peer: Peer) {

@@ -62,7 +62,8 @@
 </template>
 
 <script setup lang="ts">
-const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useWebSocket();
+// Use Socket.IO instead of WebSocket
+const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useSocketIO();
 
 const handleCall = async (uri: string) => {
   const target = prompt('Enter SIP URI to call:');

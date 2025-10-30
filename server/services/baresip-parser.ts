@@ -16,8 +16,10 @@ export function parseBaresipEvent(data: Buffer, stateManager: StateManager): voi
           const jsonMessage = JSON.parse(messageStr);
 
           if (jsonMessage.response !== undefined) {
+            console.log('DEBUG: Handling command response');
             handleCommandResponse(jsonMessage, stateManager);
           } else if (jsonMessage.event) {
+            console.log('DEBUG: Handling JSON event', jsonMessage.type, jsonMessage.class);
             handleJsonEvent(jsonMessage, stateManager);
           } else {
             console.log('Unknown JSON message:', jsonMessage);
@@ -172,34 +174,11 @@ function parseApiResponse(data: string, stateManager: StateManager, token?: stri
       if (match) {
         const uri = match[1];
 
+        // Nur Accounts aus der Contact-Liste erstellen, aber NICHT als Account hinzufügen
+        // Diese werden nur für Auto-Connect verwendet
         if (!stateManager.hasAccount(uri)) {
-          const accountData = {
-            uri,
-            registered: false,
-            callStatus: 'Idle' as const,
-            autoConnectStatus: 'Off',
-            lastEvent: Date.now(),
-            configured: true,
-            source: 'api'
-          };
-
-          stateManager.setAccount(uri, accountData);
-          console.log(`Loaded account from API: ${uri}`);
-
-          stateManager.broadcast({
-            type: 'accountStatus',
-            data: accountData
-          });
-        } else {
-          const existing = stateManager.getAccount(uri)!;
-          existing.configured = true;
-          existing.source = 'api';
-          stateManager.setAccount(uri, existing);
-
-          stateManager.broadcast({
-            type: 'accountStatus',
-            data: existing
-          });
+          console.log(`Found contact (not adding as account): ${uri}`);
+          // Wir erstellen hier KEINEN Account mehr für Kontakte
         }
       }
     }
@@ -240,6 +219,10 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   const timestamp = Date.now();
 
   console.log(`JSON Event: ${JSON.stringify(jsonEvent)}`);
+  console.log(`DEBUG: Event check - event: ${jsonEvent.event}, class: ${jsonEvent.class}, type: ${jsonEvent.type}`);
+
+  // Add log entry
+  stateManager.addLog('event', `${jsonEvent.class}:${jsonEvent.type}`, jsonEvent);
 
   stateManager.broadcast({
     type: 'log',
@@ -248,9 +231,12 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   });
 
   if (jsonEvent.event && jsonEvent.class === 'ua') {
+    console.log('DEBUG: Event condition matched - processing UA event');
     if (jsonEvent.type === 'REGISTER_OK') {
       const uri = jsonEvent.accountaor;
+      console.log(`DEBUG: Processing REGISTER_OK for URI: ${uri}`);
       if (uri) {
+        console.log(`DEBUG: Calling updateAccountStatus for ${uri}`);
         stateManager.updateAccountStatus(uri, {
           registered: true,
           registrationError: undefined

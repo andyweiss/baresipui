@@ -51,17 +51,18 @@ export class BaresipConnection {
 
   sendCommand(command: string, params?: string, token?: string): void {
     if (this.client && !this.client.destroyed) {
+      // Erstelle JSON-Nachricht für Baresip (exakt wie im alten Backend)
       const jsonMessage: any = {
-        command,
-        ...(params && { params }),
-        ...(token && { token })
+        command: command,
+        ...(params && { params: params }),
+        ...(token && { token: token })
       };
-
+      
       const jsonString = JSON.stringify(jsonMessage);
       const netstring = createNetstring(jsonString);
-
+      
       this.client.write(netstring);
-      console.log(`Sent JSON command: ${jsonString}`);
+      console.log(`Sent JSON command: ${jsonString} (as netstring: ${netstring})`);
     } else {
       console.log(`Cannot send command - client not connected: ${command}`);
     }

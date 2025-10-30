@@ -6,6 +6,7 @@ services:
     container_name: baresip-ui
     ports:
       - 3000:3000
+      - 3001:3001
     environment:
       - NUXT_HOST=0.0.0.0
       - NUXT_PORT=3000

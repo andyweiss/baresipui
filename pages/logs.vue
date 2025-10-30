@@ -86,7 +86,8 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
 
-const { connected, logs } = useWebSocket();
+// Use Socket.IO instead of polling
+const { connected, logs } = useSocketIO();
 
 const logContainer = ref<HTMLElement | null>(null);
 const autoScroll = ref(true);
