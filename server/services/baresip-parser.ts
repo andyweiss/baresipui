@@ -324,6 +324,42 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
 function handleTextLine(line: string, stateManager: StateManager): void {
   const timestamp = Date.now();
 
+  // DEBUG: Check if enhanced_presence messages arrive here
+  if (line.indexOf('enhanced_presence:') !== -1) {
+    console.log('DEBUG: Enhanced presence line detected:', line);
+  }
+  
+  // Handle PRESENCE_EVENT messages from enhanced_presence module
+  if (line.indexOf('PRESENCE_EVENT:') !== -1) {
+    console.log('DEBUG: PRESENCE_EVENT detected:', line);
+    const parts = line.split(':');
+    if (parts.length >= 3) {
+      const contact = parts[1];
+      const status = parts[2].toLowerCase();
+      
+      let mappedStatus = 'unknown';
+      if (status === 'online' || status === 'open') {
+        mappedStatus = 'online';
+      } else if (status === 'offline' || status === 'closed') {
+        mappedStatus = 'offline';
+      } else if (status === 'busy') {
+        mappedStatus = 'busy';
+      } else if (status === 'away') {
+        mappedStatus = 'away';
+      }
+      
+      console.log(`PRESENCE_EVENT parsed: ${contact} -> ${mappedStatus}`);
+      stateManager.setContactPresence(contact, mappedStatus);
+
+      stateManager.broadcast({
+        type: 'presence',
+        timestamp,
+        contact,
+        status: mappedStatus
+      });
+    }
+  }
+
   stateManager.broadcast({
     type: 'log',
     timestamp,
@@ -433,6 +469,73 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         contact,
         status: 'offline'
       });
+    }
+  } else if (line.indexOf('PRESENCE_EVENT:') !== -1) {
+    // Handle enhanced presence JSON events
+    // Format: PRESENCE_EVENT: {"contact":"sip:2061531@sip.srgssr.ch","status":"online"}
+    const jsonStart = line.indexOf('{');
+    if (jsonStart !== -1) {
+      try {
+        const jsonStr = line.substring(jsonStart);
+        const presenceEvent = JSON.parse(jsonStr);
+        
+        if (presenceEvent.contact && presenceEvent.status) {
+          // Extract contact without sip: prefix
+          const contact = presenceEvent.contact.replace('sip:', '');
+          const status = presenceEvent.status;
+          
+          console.log(`Enhanced presence JSON detected: ${contact} -> ${status}`);
+          stateManager.setContactPresence(contact, status);
+
+          stateManager.broadcast({
+            type: 'presence',
+            timestamp,
+            contact,
+            status
+          });
+
+          const config = stateManager.getContactConfig(contact);
+          if (config?.enabled && status === 'online') {
+            attemptAutoConnect(contact, stateManager);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to parse PRESENCE_EVENT JSON:', e);
+      }
+    }
+  } else if (line.indexOf('enhanced_presence:') !== -1 && line.indexOf('is now') !== -1) {
+    // Handle legacy enhanced presence module messages (fallback)
+    // Format: enhanced_presence: <"unity 1" <sip:2061531@sip.srgssr.ch>;presence=p2p> is now 'Online'
+    const match = line.match(/<sip:([^@]+@[^>]+)>[^>]*is now '([^']+)'/);
+    if (match) {
+      const contact = match[1];
+      const statusText = match[2].toLowerCase();
+      
+      let status = 'unknown';
+      if (statusText === 'online' || statusText === 'open') {
+        status = 'online';
+      } else if (statusText === 'offline' || statusText === 'closed') {
+        status = 'offline';
+      } else if (statusText === 'busy') {
+        status = 'busy';
+      } else if (statusText === 'away') {
+        status = 'away';
+      }
+      
+      console.log(`Enhanced presence detected: ${contact} -> ${status}`);
+      stateManager.setContactPresence(contact, status);
+
+      stateManager.broadcast({
+        type: 'presence',
+        timestamp,
+        contact,
+        status
+      });
+
+      const config = stateManager.getContactConfig(contact);
+      if (config?.enabled && status === 'online') {
+        attemptAutoConnect(contact, stateManager);
+      }
     }
   } else if (line.includes('sip:') && line.includes('@') && !line.includes('presence:') && !line.includes('reg:')) {
     const match = line.match(/(sip:[^@\s]+@[^\s>;,)]+)/);
