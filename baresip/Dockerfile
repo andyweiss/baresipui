@@ -10,26 +10,35 @@ RUN apt-get update && apt-get install -y \
     gcc \
     libc6-dev \
     cmake \
+    git \
+    pkg-config \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy custom module source
+
+
+# Clone baresip source for headers
+RUN git clone --depth 1 https://github.com/baresip/baresip.git /tmp/baresip-src
+# Clone libre (re.h) separat
+RUN git clone --depth 1 https://github.com/baresip/re.git /tmp/libre
+
+# Copy presence module source
 COPY modules/ /tmp/modules/
 
-# Build and install custom presence modules with cmake
-RUN cd /tmp/modules && \
-    mkdir -p build && cd build && \
-    cmake .. && \
-    make && \
-    cp libpresence.so /usr/lib/x86_64-linux-gnu/baresip/modules/presence.so && \
-    rm -rf /tmp/modules
+# Build presence module (nur das Modul, mit baresip-Headern)
+WORKDIR /tmp/modules
+RUN cmake . \
+    && make \
+    && cp libpresence.so /usr/lib/x86_64-linux-gnu/baresip/modules/presence.so
 
-# Create custom entrypoint to set pjsip-compatible User-Agent
+
+
 RUN echo '#!/usr/bin/env bash\n\
 set -e\n\
 \n\
 if [ "$1" = "baresip" ]; then\n\
-    # Start baresip with pjsip-compatible User-Agent\n\
-    /usr/bin/baresip -a "PJSUA v2.10 Linux-5.4.0.0/x86_64/glibc-2.31" "$@"\n\
+    # Start baresip  User-Agent, SIP trace and verbose debug\n\
+    /usr/bin/baresip -a "Baresip AWAH" -s -v "$@"\n\
 else\n\
     exec "$@"\n\
 fi' > /entrypoint.sh && chmod +x /entrypoint.sh
