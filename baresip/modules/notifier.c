@@ -207,6 +207,7 @@ static bool sub_handler(const struct sip_msg *msg, void *arg)
 int notifier_init(void)
 {
 	uag_set_sub_handler(sub_handler);
+	warning("NOTIFIER: NOT FOR PRODUCTION USE custom debug code\n");
 
 	return 0;
 }

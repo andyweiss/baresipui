@@ -1,3 +1,5 @@
+include_directories(/tmp/baresip-src/include)
+include_directories(/tmp/baresip-src/include/baresip)
 
 cmake_minimum_required(VERSION 3.10)
 project(presence)

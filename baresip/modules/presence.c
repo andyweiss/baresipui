@@ -76,6 +76,8 @@ static int module_init(void)
 {
 	int err;
 
+	warning("PRESENCE: NOT FOR PRODUCTION USE custom debug code\n");
+
 	err = subscriber_init();
 	if (err)
 		return err;
