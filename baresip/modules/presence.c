@@ -58,10 +58,30 @@ static const struct cmd cmdv[] = {
 
 static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 {
+	struct ua *ua = bevent_get_ua(event);
 	(void)arg;
 
-	if (ev == BEVENT_SHUTDOWN) {
-		struct ua *ua = bevent_get_ua(event);
+	if (ev == BEVENT_REGISTER_OK) {
+		/* Set status to OPEN when successfully registered, but don't override CLOSED (busy) status */
+		enum presence_status current_status = ua_presence_status(ua);
+		if (current_status != PRESENCE_CLOSED) {
+			ua_presence_status_set(ua, PRESENCE_OPEN);
+			notifier_update_status(ua);
+		}
+	}
+	else if (ev == BEVENT_CALL_INCOMING || ev == BEVENT_CALL_ESTABLISHED) {
+		/* Set status to CLOSED (busy) when call is active */
+		ua_presence_status_set(ua, PRESENCE_CLOSED);
+		notifier_update_status(ua);
+		publisher_update_status(ua);
+	}
+	else if (ev == BEVENT_CALL_CLOSED) {
+		/* Set status back to OPEN when call ends */
+		ua_presence_status_set(ua, PRESENCE_OPEN);
+		notifier_update_status(ua);
+		publisher_update_status(ua);
+	}
+	else if (ev == BEVENT_SHUTDOWN) {
 		debug("presence: ua=%p got event %d (%s)\n", ua, ev,
 		      bevent_str(ev));
 
@@ -75,8 +95,6 @@ static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 static int module_init(void)
 {
 	int err;
-
-	warning("PRESENCE: NOT FOR PRODUCTION USE custom debug code\n");
 
 	err = subscriber_init();
 	if (err)

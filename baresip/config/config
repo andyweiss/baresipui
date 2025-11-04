@@ -123,6 +123,9 @@ module                  alsa.so
 #module                 aufile.so
 #module                 ausine.so
 
+# Presence Module (MUST be loaded before UA registration)
+module                  presence.so
+
 # Video codec Modules (in order)
 #module                 avcodec.so
 #module                 vp8.so
@@ -176,7 +179,7 @@ module_app              debug_cmd.so
 #module_app             gtk.so
 module_app              menu.so
 #module_app             mwi.so
-module_app              presence.so
+# presence.so moved to regular modules section
 #module_app             serreg.so
 #module_app             syslog.so
 #module_app             mqtt.so

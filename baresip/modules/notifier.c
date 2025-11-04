@@ -45,21 +45,28 @@ static int notify(struct notifier *not, enum presence_status status)
 	if (!mb)
 		return ENOMEM;
 
+	/* Build content based on status - match pjsip structure exactly */
+	const char *tuple_note = (status == PRESENCE_CLOSED) ? "\r\n    <note>Busy</note>" : "";
+	const char *person_content = (status == PRESENCE_CLOSED) 
+		? "\r\n  <rpid:activities>\r\n   <rpid:busy />\r\n  </rpid:activities>\r\n  <dm:note>Busy</dm:note>\r\n "
+		: "";
+
+	/* Always use "open" for basic status, busy is signaled via RPID only */
 	err = mbuf_printf(mb,
 	"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\r\n"
 	"<presence xmlns=\"urn:ietf:params:xml:ns:pidf\"\r\n"
 	"    xmlns:dm=\"urn:ietf:params:xml:ns:pidf:data-model\"\r\n"
 	"    xmlns:rpid=\"urn:ietf:params:xml:ns:pidf:rpid\"\r\n"
 	"    entity=\"%s\">\r\n"
-	"  <dm:person id=\"p4159\"><rpid:activities/></dm:person>\r\n"
 	"  <tuple id=\"t4109\">\r\n"
 	"    <status>\r\n"
-	"      <basic>%s</basic>\r\n"
+	"      <basic>open</basic>\r\n"
 	"    </status>\r\n"
-	"    <contact>%s</contact>\r\n"
+	"    <contact>%s</contact>%s\r\n"
 	"  </tuple>\r\n"
+	"  <dm:person id=\"p4159\">%s</dm:person>\r\n"
 	"</presence>\r\n"
-		    ,aor, presence_status_str(status), aor);
+		    ,aor, aor, tuple_note, person_content);
 	if (err)
 		goto out;
 
@@ -157,12 +164,14 @@ static int notifier_add(const struct sip_msg *msg, struct ua *ua)
 	int err;
 
 	hdr = sip_msg_hdr(msg, SIP_HDR_EVENT);
-	if (!hdr)
+	if (!hdr) {
 		return EPROTO;
+	}
 
 	err = sipevent_event_decode(&se, &hdr->val);
-	if (err)
+	if (err) {
 		return err;
+	}
 
 	if (pl_strcasecmp(&se.event, "presence")) {
 		info("presence: unexpected event '%r'\n", &se.event);
@@ -170,8 +179,9 @@ static int notifier_add(const struct sip_msg *msg, struct ua *ua)
 	}
 
 	err = notifier_alloc(&not, msg, &se, ua);
-	if (err)
+	if (err) {
 		return err;
+	}
 
 	(void)notify(not, ua_presence_status(ua));
 
@@ -187,8 +197,9 @@ void notifier_update_status(struct ua *ua)
 
 		struct notifier *not = le->data;
 
-		if (not->ua == ua)
+		if (not->ua == ua) {
 			(void)notify(not, ua_presence_status(not->ua));
+		}
 	}
 }
 
@@ -197,8 +208,9 @@ static bool sub_handler(const struct sip_msg *msg, void *arg)
 {
 	struct ua *ua = arg;
 
-	if (notifier_add(msg, ua))
+	if (notifier_add(msg, ua)) {
 		(void)sip_treply(NULL, uag_sip(), msg, 400, "Bad Presence");
+	}
 
 	return true;
 }
@@ -207,7 +219,6 @@ static bool sub_handler(const struct sip_msg *msg, void *arg)
 int notifier_init(void)
 {
 	uag_set_sub_handler(sub_handler);
-	warning("NOTIFIER: NOT FOR PRODUCTION USE custom debug code\n");
 
 	return 0;
 }
