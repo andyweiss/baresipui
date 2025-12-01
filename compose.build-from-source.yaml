@@ -1,8 +1,14 @@
+# Alternative compose config to use custom-built baresip
+# Usage: docker compose -f compose.build-from-source.yaml up -d
+
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BARESIP_HOST: baresip-custom
+        BARESIP_PORT: 4444
     container_name: baresip-ui
     ports:
       - 3000:3000
@@ -10,10 +16,10 @@ services:
     environment:
       - NUXT_HOST=0.0.0.0
       - NUXT_PORT=3000
-      - BARESIP_HOST=baresip
+      - BARESIP_HOST=baresip-custom
       - BARESIP_PORT=4444
     depends_on:
-      - baresip
+      - baresip-custom
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
@@ -29,15 +35,16 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-  baresip:
+
+  baresip-custom:
     build:
       context: ./baresip
       dockerfile: Dockerfile.build-from-source
-    container_name: baresip
+    container_name: baresip-custom
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
-      - ./baresip/.asoundrc:/root/.asoundrc # ALSA config for splitting Merging Ravenna sound device
+      - ./baresip/.asoundrc:/root/.asoundrc
     ports:
       - 8000:8000/tcp
       - 5555:5555/tcp
@@ -63,22 +70,7 @@ services:
       - SYS_NICE
     networks:
       - baresip-network
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: baresip-prometheus
-    ports:
-      - 9090:9090
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus-data:/prometheus
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-    restart: unless-stopped
-    networks:
-      - baresip-network
+
 networks:
   baresip-network:
     driver: bridge
-volumes:
-  prometheus-data: null

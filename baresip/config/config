@@ -5,7 +5,7 @@
 #------------------------------------------------------------------------------
 
 # SIP
-#sip_listen             0.0.0.0:5060
+sip_listen              0.0.0.0:5060
 #sip_certificate        cert.pem
 sip_cafile              /etc/ssl/certs/ca-certificates.crt
 sip_capath              /etc/ssl/certs
@@ -215,7 +215,7 @@ opus_bitrate            28000 # 6000-510000
 #opus_mirror            no
 #opus_complexity        10
 #opus_application       audio   # {voip,audio}
-#opus_samplerate        48000
+opus_samplerate        48000
 #opus_packet_loss       10      # 0-100 percent (expected packet loss)
 
 # Opus Multistream codec parameters

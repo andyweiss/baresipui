@@ -1,0 +1,53 @@
+diff --git a/src/sip/contact.c b/src/sip/contact.c
+index 1234567..abcdefg 100644
+--- a/src/sip/contact.c
++++ b/src/sip/contact.c
+@@ -44,10 +44,41 @@ int sip_contact_print(struct re_printf *pf, const struct sip_contact *contact)
+ 	if (!contact)
+ 		return 0;
+ 
+-	if (contact->uri && strchr(contact->uri, ':'))
+-		return re_hprintf(pf, "Contact: <%s>\r\n", contact->uri);
+-	else
+-		return re_hprintf(pf, "Contact: <sip:%s@%J%s>\r\n",
+-				  contact->uri,
+-				  contact->addr,
+-				  sip_transp_param(contact->tp));
++	if (contact->uri && strchr(contact->uri, ':')) {
++		return re_hprintf(pf, "Contact: <%s>\r\n", contact->uri);
++	}
++	else {
++		/* Check if user part contains ;ob (RFC 5626 outbound) in wrong position */
++		const char *ob_param = contact->uri ? strstr(contact->uri, ";ob") : NULL;
++		
++		if (ob_param) {
++			/* ;ob found in user part - move it to URI parameters (after host:port) */
++			char user_without_ob[256];
++			size_t user_len = ob_param - contact->uri;
++			
++			if (user_len >= sizeof(user_without_ob)) {
++				/* Fallback: use as-is if too long */
++				return re_hprintf(pf, "Contact: <sip:%s@%J%s>\r\n",
++						  contact->uri,
++						  contact->addr,
++						  sip_transp_param(contact->tp));
++			}
++			
++			/* Extract user without ;ob */
++			memcpy(user_without_ob, contact->uri, user_len);
++			user_without_ob[user_len] = '\0';
++			
++			/* Build Contact with ;ob as URI parameter: sip:user@host:port;ob */
++			return re_hprintf(pf, "Contact: <sip:%s@%J;ob%s>\r\n",
++					  user_without_ob,
++					  contact->addr,
++					  sip_transp_param(contact->tp));
++		}
++		
++		/* Normal case: no ;ob parameter */
++		return re_hprintf(pf, "Contact: <sip:%s@%J%s>\r\n",
++				  contact->uri,
++				  contact->addr,
++				  sip_transp_param(contact->tp));
++	}
+ }

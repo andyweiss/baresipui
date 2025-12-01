@@ -1,0 +1,66 @@
+--- a/src/sip/reply.c
++++ b/src/sip/reply.c
+@@ -50,6 +50,9 @@
+ 
+ static int write_via(struct mbuf *mb, const struct sip_msg *msg, bool rport)
+ {
++	const char *branch_pos = NULL;
++	size_t pre_branch_len = 0;
++	bool add_received = false;
+ 	size_t start;
+ 	struct sip_hdr *hdr;
+ 	int err = 0;
+@@ -60,14 +63,44 @@
+ 
+ 	start = mb->pos;
+ 
+-	err |= mbuf_write_str(mb, "Via: SIP/2.0/");
+-	if (pl_isset(&msg->via.transp))
+-		err |= mbuf_write_pl(mb, &msg->via.transp);
+-	else
+-		err |= mbuf_write_pl(mb, &hdr->val);
+-
+-	if (rport || !sa_cmp(&msg->src, &msg->via.addr,
+-				     SA_ADDR))
++	/* Always add received parameter for SBC compatibility (RFC 3581) */
++	/* It must be inserted BEFORE branch parameter */
++	add_received = (rport || !sa_cmp(&msg->src, &msg->via.addr, SA_ADDR) || true);
++
++	err |= mbuf_write_str(mb, "Via: ");
++	
++	/* Find ;branch= in the Via header value */
++	if (hdr->val.p && hdr->val.l > 0) {
++		for (size_t i = 0; i < hdr->val.l - 7; i++) {
++			if (hdr->val.p[i] == ';' && 
++			    memcmp(&hdr->val.p[i+1], "branch=", 7) == 0) {
++				branch_pos = &hdr->val.p[i];
++				pre_branch_len = i;
++				break;
++			}
++		}
++	}
++
++	if (branch_pos && add_received) {
++		/* Write everything up to ;branch */
++		err |= mbuf_write_mem(mb, (uint8_t *)hdr->val.p, pre_branch_len);
++		
++		/* Insert ;received= BEFORE ;branch */
+ 		err |= mbuf_printf(mb, ";received=%j",
+ 						   &msg->src);
++		
++		/* Write ;branch and everything after */
++		size_t remaining = hdr->val.l - pre_branch_len;
++		err |= mbuf_write_mem(mb, (uint8_t *)branch_pos, remaining);
++	}
++	else {
++		/* No branch found or no received needed - write as-is */
++		if (pl_isset(&msg->via.transp))
++			err |= mbuf_write_pl(mb, &msg->via.transp);
++		else
++			err |= mbuf_write_pl(mb, &hdr->val);
++			
++		if (add_received)
++			err |= mbuf_printf(mb, ";received=%j",
++						   &msg->src);
++	}
+ 

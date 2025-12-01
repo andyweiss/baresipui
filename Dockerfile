@@ -1,5 +1,8 @@
 FROM node:20-alpine AS builder
 
+ARG BARESIP_HOST=baresip
+ARG BARESIP_PORT=4444
+
 WORKDIR /app
 
 COPY package*.json ./
@@ -7,6 +10,9 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+
+ENV BARESIP_HOST=${BARESIP_HOST}
+ENV BARESIP_PORT=${BARESIP_PORT}
 
 RUN npm run build
 
