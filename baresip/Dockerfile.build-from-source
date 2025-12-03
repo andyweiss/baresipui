@@ -28,11 +28,7 @@ RUN git clone -b ${RE_VERSION} --depth=1 https://github.com/baresip/re.git
 
 WORKDIR /root/re
 
-# Apply patches for Via header NAT traversal (always add received/rport)
-COPY patches/libre-*.patch ./
-RUN for p in libre-*.patch; do [ -f "$p" ] && echo "Applying $p" && patch -p1 < "$p" || true; done
-
-# Build libre
+# Build libre (no patches needed - vanilla works!)
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_FLAGS="-g" \
@@ -67,6 +63,12 @@ WORKDIR /root/
 RUN git clone -b ${BARESIP_VERSION} --depth=1 https://github.com/baresip/baresip.git
 
 WORKDIR /root/baresip
+
+# Remove standard presence module and replace with our custom version
+RUN rm -rf modules/presence
+
+# Copy custom modules (presence, notifier, publisher, subscriber)
+COPY modules/ modules/presence/
 
 # Apply any additional patches
 COPY patches/baresip-*.patch ./
