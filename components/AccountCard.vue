@@ -2,8 +2,8 @@
   <div class="bg-gray-800 rounded-lg shadow-lg p-6 border-l-4" :class="borderColor">
     <div class="flex items-start justify-between mb-4">
       <div class="flex-1">
-        <h3 class="text-lg font-semibold text-white mb-1">{{ accountName }}</h3>
-        <p class="text-sm text-gray-400 font-mono break-all">{{ account.uri }}</p>
+        <h3 class="text-lg font-semibold text-white mb-1">{{ account.displayName || accountName }}</h3>
+        <p class="text-sm text-gray-400 font-mono">{{ accountName }}</p>
       </div>
       <div class="ml-4">
         <span

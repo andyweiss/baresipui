@@ -78,6 +78,43 @@ export class BaresipConnection {
     }, this.CONTACTS_POLL_INTERVAL);
   }
 
+  private async loadAccountDisplayNames(): Promise<void> {
+    try {
+      const accountsFile = await readFile('/config/accounts', 'utf-8');
+      const lines = accountsFile.split('\n');
+      
+      for (const line of lines) {
+        // Skip comments and empty lines
+        if (line.trim().startsWith('#') || !line.trim()) continue;
+        
+        // Match format: DisplayName<sip:...> or <sip:...>
+        const match = line.match(/^([^<]+)<(sip:[^@]+@[^>;]+)>/);
+        if (match) {
+          const displayName = match[1].trim();
+          const uri = match[2];
+          
+          // Get or create account and set display name
+          const account = stateManager.getAccount(uri) || {
+            uri,
+            registered: false,
+            callStatus: 'Idle' as const,
+            autoConnectStatus: 'Off',
+            lastEvent: Date.now(),
+            configured: true
+          };
+          
+          if (displayName) {
+            account.displayName = displayName;
+            stateManager.setAccount(uri, account);
+            console.log(`Loaded display name for ${uri}: "${displayName}"`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load account display names:', err);
+    }
+  }
+
   private stopContactsPolling(): void {
     if (this.contactsPollingInterval) {
       console.log('Stopping contacts polling');

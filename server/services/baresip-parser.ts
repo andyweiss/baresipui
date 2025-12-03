@@ -3,6 +3,30 @@ import type { StateManager } from './state-manager';
 import type { BaresipEvent, BaresipCommandResponse } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
 
+// Global queue to serialize auto-connect operations
+let autoConnectQueue: Array<() => void> = [];
+let isProcessingAutoConnect = false;
+
+function processAutoConnectQueue() {
+  if (isProcessingAutoConnect || autoConnectQueue.length === 0) {
+    return;
+  }
+  
+  isProcessingAutoConnect = true;
+  const next = autoConnectQueue.shift();
+  
+  if (next) {
+    next();
+    // Wait for the operation to complete before processing next
+    setTimeout(() => {
+      isProcessingAutoConnect = false;
+      processAutoConnectQueue();
+    }, 500); // Wait 500ms between auto-connect operations
+  } else {
+    isProcessingAutoConnect = false;
+  }
+}
+
 export function parseBaresipEvent(data: Buffer, stateManager: StateManager): void {
   const dataStr = data.toString();
 
@@ -63,6 +87,12 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
         console.log('Calling parseContactsFromResponse...');
         parseContactsFromResponse(response.data, stateManager);
       }
+      
+      // Parse active calls to sync call status after restart
+      if (response.data.includes('=== Call')) {
+        console.log('Calling parseCallsResponse...');
+        parseCallsResponse(response.data, stateManager);
+      }
 
       const cleanData = response.data.replace(/\\u001B\[[0-9;]*[mK]/g, '').replace(/\\n/g, '\n');
       if (cleanData.includes('User Agents') || response.data.includes('User Agents')) {
@@ -89,6 +119,10 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
 
         console.log(`Registration status for ${uri}: ${status} (status length: ${status.length}, charCodes: ${Array.from(status).map(c => c.charCodeAt(0)).join(',')})`);
 
+        // Try to extract display name (format: "number - DisplayName <sip:...> STATUS")
+        const displayNameMatch = cleanLine.match(/^\s*\d+\s*-\s*(.+?)\s*</);
+        const displayName = displayNameMatch ? displayNameMatch[1].trim() : undefined;
+
         // Get existing account or create a new one
         const account = stateManager.getAccount(uri) || {
           uri,
@@ -98,6 +132,11 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
           lastEvent: Date.now(),
           configured: true
         };
+        
+        // Update displayName if found
+        if (displayName) {
+          account.displayName = displayName;
+        }
 
         if (status === 'OK') {
           account.registered = true;
@@ -163,6 +202,16 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
         stateManager.setContactPresence(contact, presenceStatus);
         
         console.log(`Loaded contact from API: ${name} <${contact}> [${presenceStatus}]`);
+        
+        // If this contact URI matches an account, set the displayName on the account
+        if (stateManager.hasAccount(contact)) {
+          const account = stateManager.getAccount(contact);
+          if (account) {
+            account.displayName = name;
+            stateManager.setAccount(contact, account);
+            console.log(`Set displayName for account ${contact}: "${name}"`);
+          }
+        }
       } else {
         console.log(`No match for line: "${cleanLine}"`);
       }
@@ -176,6 +225,54 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
       contacts: stateManager.getContacts()
     });
   }
+}
+
+function parseCallsResponse(data: string, stateManager: StateManager): void {
+  console.log('Parsing calls response to sync call status...');
+  const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '').replace(/\\n/g, '\n');
+  const lines = cleanData.split('\n');
+  
+  // First, reset all accounts to Idle
+  const accounts = stateManager.getAccounts();
+  for (const account of accounts) {
+    if (account.callStatus !== 'Idle') {
+      stateManager.updateAccountStatus(account.uri, { 
+        callStatus: 'Idle',
+        autoConnectStatus: 'Off'
+      });
+    }
+  }
+  
+  // Parse active calls and update account status
+  // Format example: "=== Call 1: sip:2061616@sip.srgssr.ch -> sip:2061531@sip.srgssr.ch [ESTABLISHED]"
+  for (const line of lines) {
+    if (line.includes('=== Call') && line.includes('sip:')) {
+      // Extract local and remote URIs
+      const match = line.match(/sip:([^@\s]+@[^\s>]+).*->.*sip:([^@\s]+@[^\s\[]+)\s*\[(ESTABLISHED|RINGING|INCOMING|OUTGOING)/i);
+      if (match) {
+        const localUri = `sip:${match[1]}`;
+        const remoteUri = `sip:${match[2]}`;
+        const callState = match[3].toUpperCase();
+        
+        console.log(`Found active call: ${localUri} -> ${remoteUri} [${callState}]`);
+        
+        // Update account call status
+        const account = stateManager.getAccount(localUri);
+        if (account) {
+          const callStatus = (callState === 'ESTABLISHED') ? 'In Call' : 'Ringing';
+          const autoConnectStatus = (callState === 'ESTABLISHED' && account.autoConnectContact) ? 'Connected' : account.autoConnectStatus;
+          
+          stateManager.updateAccountStatus(localUri, { 
+            callStatus,
+            autoConnectStatus
+          });
+          console.log(`Updated ${localUri} status: callStatus=${callStatus}, autoConnectStatus=${autoConnectStatus}`);
+        }
+      }
+    }
+  }
+  
+  console.log('Call status sync complete');
 }
 
 function parseApiResponse(data: string, stateManager: StateManager, token?: string): void {
@@ -254,6 +351,9 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           registered: true,
           registrationError: undefined
         });
+        
+        // Check if auto-connect should be triggered immediately
+        checkAutoConnectForAccount(uri, stateManager);
       }
     } else if (jsonEvent.type === 'REGISTER_FAIL') {
       const uri = jsonEvent.accountaor;
@@ -300,22 +400,51 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
 
   if (jsonEvent.event && (jsonEvent.class === 'call' || jsonEvent.class === 'ua')) {
     if (jsonEvent.type === 'CALL_ESTABLISHED' || jsonEvent.type === 'CALL_CONNECT') {
-      const uri = jsonEvent.accountaor || jsonEvent.local_uri || jsonEvent.peer_uri;
+      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
       if (uri) {
-        stateManager.updateAccountStatus(uri, { callStatus: 'In Call' });
-        console.log(`Call established for ${uri}`);
+        const updates: any = {
+          callStatus: 'In Call',
+          callId: jsonEvent.id  // Store call ID for hangup
+        };
+        
+        // Only set autoConnectStatus if this account has auto-connect configured
+        const account = stateManager.getAccount(uri);
+        if (account && account.autoConnectContact) {
+          updates.autoConnectStatus = 'Connected';
+        }
+        
+        stateManager.updateAccountStatus(uri, updates);
+        console.log(`Call established for ${uri}, call ID: ${jsonEvent.id}`);
       }
     } else if (jsonEvent.type === 'CALL_RINGING' || jsonEvent.type === 'CALL_INCOMING' || jsonEvent.type === 'CALL_OUTGOING') {
-      const uri = jsonEvent.accountaor || jsonEvent.local_uri || jsonEvent.peer_uri;
+      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
       if (uri) {
-        stateManager.updateAccountStatus(uri, { callStatus: 'Ringing' });
-        console.log(`Call ringing for ${uri}`);
+        const updates: any = { 
+          callStatus: 'Ringing',
+          callId: jsonEvent.id  // Store call ID
+        };
+        
+        // Check if this is an auto-connect call
+        const account = stateManager.getAccount(uri);
+        if (account && account.autoConnectContact) {
+          updates.autoConnectStatus = 'Connecting';
+        }
+        
+        stateManager.updateAccountStatus(uri, updates);
+        console.log(`Call ringing for ${uri}, call ID: ${jsonEvent.id}`);
       }
     } else if (jsonEvent.type === 'CALL_CLOSED' || jsonEvent.type === 'CALL_END' || jsonEvent.type === 'CALL_TERMINATE') {
-      const uri = jsonEvent.accountaor || jsonEvent.local_uri || jsonEvent.peer_uri;
+      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
       if (uri) {
-        stateManager.updateAccountStatus(uri, { callStatus: 'Idle' });
+        stateManager.updateAccountStatus(uri, { 
+          callStatus: 'Idle',
+          autoConnectStatus: 'Off',
+          callId: undefined  // Clear call ID
+        });
         console.log(`Call closed for ${uri}`);
+        
+        // Immediately reconnect if auto-connect is configured
+        checkAutoConnectForAccount(uri, stateManager);
       }
     }
   }
@@ -563,25 +692,86 @@ function handleTextLine(line: string, stateManager: StateManager): void {
 }
 
 function attemptAutoConnect(contact: string, stateManager: StateManager): void {
-  const config = stateManager.getContactConfig(contact);
-  if (!config || !config.enabled) return;
-
-  stateManager.updateAutoConnectStatus(contact, 'Connecting');
-
-  const runtimeConfig = useRuntimeConfig();
-  const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
-  connection.sendCommand('dial', contact);
-
-  setTimeout(() => {
-    const accounts = stateManager.getAccounts();
-    const account = accounts.find(a =>
-      a.callStatus === 'In Call' || a.callStatus === 'Ringing'
-    );
-
-    if (account) {
-      stateManager.updateAutoConnectStatus(contact, 'Connected');
-    } else {
-      stateManager.updateAutoConnectStatus(contact, 'Failed');
+  // Find all accounts that have this contact configured for auto-connect
+  const accounts = stateManager.getAccounts();
+  
+  for (const account of accounts) {
+    if (account.autoConnectContact === contact && account.registered && account.callStatus === 'Idle') {
+      // Check if contact is online (not busy - we want only one call per contact)
+      const contactPresence = stateManager.getContactPresence(contact);
+      if (contactPresence === 'online') {
+        console.log(`Queueing auto-connect: ${account.uri} to ${contact}...`);
+        
+        // Add to queue to prevent race conditions with uafind
+        autoConnectQueue.push(() => {
+          // Double-check status before executing (might have changed while in queue)
+          const currentAccount = stateManager.getAccount(account.uri);
+          if (!currentAccount || currentAccount.callStatus !== 'Idle') {
+            console.log(`Skipping auto-connect for ${account.uri} - no longer idle`);
+            return;
+          }
+          
+          console.log(`Executing auto-connect: ${account.uri} to ${contact}...`);
+          
+          const runtimeConfig = useRuntimeConfig();
+          const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
+          
+          // Select account and dial sequentially
+          console.log(`Step 1: Selecting account ${account.uri}`);
+          connection.sendCommand('uafind', account.uri);
+          
+          // Wait for account selection before dialing
+          setTimeout(() => {
+            console.log(`Step 2: Dialing ${contact} from ${account.uri}`);
+            connection.sendCommand('dial', contact);
+          }, 150);
+          
+          // All status updates happen through baresip events:
+          // CALL_OUTGOING -> callStatus: 'Ringing', autoConnectStatus: 'Connecting'
+          // CALL_ESTABLISHED -> callStatus: 'In Call', autoConnectStatus: 'Connected'
+          // CALL_CLOSED -> callStatus: 'Idle', autoConnectStatus: 'Off' -> triggers reconnect
+        });
+        
+        // Start processing queue
+        processAutoConnectQueue();
+        
+        // Only queue one account per contact at a time
+        break;
+      }
     }
-  }, 5000);
+  }
+}
+
+// Check auto-connect when account becomes registered
+function checkAutoConnectForAccount(accountUri: string, stateManager: StateManager): void {
+  const account = stateManager.getAccount(accountUri);
+  console.log(`checkAutoConnectForAccount called for ${accountUri}`);
+  
+  if (!account) {
+    console.log(`  -> No account found`);
+    return;
+  }
+  if (!account.autoConnectContact) {
+    console.log(`  -> No autoConnectContact configured`);
+    return;
+  }
+  if (!account.registered) {
+    console.log(`  -> Account not registered`);
+    return;
+  }
+  if (account.callStatus !== 'Idle') {
+    console.log(`  -> Account not idle (status: ${account.callStatus})`);
+    return;
+  }
+
+  // Check if the contact is online (not busy - we want only one call per contact)
+  const contactPresence = stateManager.getContactPresence(account.autoConnectContact);
+  console.log(`  -> Contact ${account.autoConnectContact} presence: ${contactPresence}`);
+  
+  if (contactPresence === 'online') {
+    console.log(`Account ${accountUri} is ready, attempting auto-connect to ${account.autoConnectContact}`);
+    attemptAutoConnect(account.autoConnectContact, stateManager);
+  } else {
+    console.log(`  -> Not connecting: contact is not online (${contactPresence})`);
+  }
 }

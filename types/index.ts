@@ -9,6 +9,7 @@ export interface Account {
   lastRegistrationAttempt?: number;
   source?: string;
   autoConnectContact?: string;
+  callId?: string;
 }
 
 export interface Contact {
@@ -37,6 +38,10 @@ export interface BaresipEvent {
   event_name?: string;
   local_uri?: string;
   peer_uri?: string;
+  id?: string;
+  peeruri?: string;
+  contacturi?: string;
+  localuri?: string;
 }
 
 export interface BaresipCommandResponse {

@@ -206,18 +206,17 @@ ctrl_tcp_listen         0.0.0.0:4444 # ctrl_tcp - TCP interface JSON
 evdev_device            /dev/input/event0
 
 # Opus codec parameters
-opus_bitrate            28000 # 6000-510000
-#opus_stereo            yes
+opus_bitrate            128000 # 6000-510000
+opus_stereo            yes
 #opus_sprop_stereo      yes
 #opus_cbr               no
 #opus_inbandfec         no
 #opus_dtx               no
 #opus_mirror            no
-#opus_complexity        10
-#opus_application       audio   # {voip,audio}
+opus_complexity        10
+opus_application       audio   # {voip,audio}
 opus_samplerate        48000
 #opus_packet_loss       10      # 0-100 percent (expected packet loss)
-
 # Opus Multistream codec parameters
 #opus_ms_channels       2       #total channels (2 or 4)
 #opus_ms_streams        2       #number of streams
