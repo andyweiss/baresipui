@@ -1,4 +1,4 @@
-name: Build and Publish baresip Docker Image
+name: Build and Publish Baresip Docker Image
 
 on:
   push:
@@ -8,8 +8,13 @@ on:
 jobs:
   build-and-push-baresip:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Set up Docker Buildx
@@ -18,12 +23,14 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build and push baresip image
+      - name: Build and push Baresip image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          # Kontext auf /baresip setzen
+          context: ./baresip
           file: ./baresip/Dockerfile.build-from-source
           push: true
           tags: |
             ghcr.io/andyweiss/baresip:${{ github.ref_name }}
             ghcr.io/andyweiss/baresip:latest
+
