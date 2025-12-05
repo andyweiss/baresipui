@@ -15,16 +15,32 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-4 mb-4">
-      <div>
+    <div class="grid grid-cols-2 gap-4 mb-4 relative">
+      <div class="relative">
         <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Call Status</p>
         <p class="text-sm font-medium" :class="callStatusColor">{{ account.callStatus || 'Idle' }}</p>
       </div>
-      <div>
-        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Auto-Connect Status</p>
+      
+      <div class="relative">
+        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Auto-Connect</p>
         <p class="text-sm font-medium" :class="autoConnectColor">
-          {{ account.autoConnectStatus || 'Off' }}
+          {{ getAutoConnectDisplayText() }}
         </p>
+      </div>
+      
+      <!-- Connection line with arrows in the gap between columns -->
+      <div v-if="showConnectionLine" 
+           class="absolute top-[70%] flex items-center pointer-events-none" style="width: 5.5rem; left: calc(50% - 5.5rem);">
+        <!-- Left arrow ◀ pointing LEFT (triangle opens to left) -->
+        <svg class="w-2 h-2 text-red-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
+          <path d="M 0 5 L 10 0 L 10 10 Z"/>
+        </svg>
+        <!-- Connecting line -->
+        <div class="flex-1 h-px bg-red-400"></div>
+        <!-- Right arrow ▶ pointing RIGHT (triangle opens to right) -->
+        <svg class="w-2 h-2 text-red-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
+          <path d="M 10 5 L 0 0 L 0 10 Z"/>
+        </svg>
       </div>
     </div>
 
@@ -33,60 +49,56 @@
       <p class="text-sm font-medium text-red-400">{{ account.registrationError }}</p>
     </div>
 
-    <div class="flex gap-2 mt-4 pt-4 border-t border-gray-700">
-      <button
-        @click="$emit('call', account.uri)"
-        :disabled="!account.registered"
-        :class="callButtonClass"
-      >
-        Call
-      </button>
-      <button
-        @click="$emit('hangup', account.uri)"
-        :disabled="!account.registered"
-        :class="hangupButtonClass"
-      >
-        Hangup
-      </button>
-    </div>
-
     <!-- Auto-Connect Contact Selection (only for registered accounts) -->
-    <div v-if="account.registered" class="mt-4 p-4 bg-gray-750 rounded-lg border border-gray-700">
-      <label class="block text-xs font-medium text-gray-300 uppercase tracking-wide mb-2">
-        Select Auto-Connect Contact
-      </label>
-      <div class="relative">
-        <select
-          :value="account.autoConnectContact || ''"
-          @change="handleContactChange"
-          @input="handleContactChange"
-          class="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-white 
-                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                 appearance-none cursor-pointer transition-colors hover:bg-gray-650"
-        >
-          <option value="" class="bg-gray-800">🔴 Auto-Connect OFF</option>
-          <option 
-            v-for="contact in contacts" 
-            :key="contact.contact" 
-            :value="contact.contact"
-            class="bg-gray-800"
-            @click="console.log('Option clicked:', contact.contact)"
+    <div v-if="account.registered" class="mt-4 flex gap-2 items-end">
+      <div style="width: calc(50% + 2rem);">
+        <label class="block text-xs text-gray-400 uppercase tracking-wide mb-1">
+          Auto-Connect Contact
+        </label>
+        <div class="relative">
+          <select
+            :value="account.autoConnectContact || ''"
+            @change="handleContactChange"
+            @input="handleContactChange"
+            class="w-full px-3 py-1.5 bg-gray-700 rounded text-sm text-white 
+                   focus:outline-none appearance-none cursor-pointer transition-colors hover:bg-gray-650"
           >
-            🟢 {{ getContactDisplayName(contact) }}
-          </option>
-        </select>
-        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-          <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-            <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
-          </svg>
+            <option value="" class="bg-gray-800">Auto-Connect OFF</option>
+            <option 
+              v-for="contact in contacts" 
+              :key="contact.contact" 
+              :value="contact.contact"
+              class="bg-gray-800"
+              @click="console.log('Option clicked:', contact.contact)"
+            >
+              {{ getContactDisplayName(contact) }}
+            </option>
+          </select>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+            </svg>
+          </div>
         </div>
       </div>
-      <p v-if="account.autoConnectContact" class="mt-2 text-xs text-green-400">
-        🟢 Auto-Connect ON: {{ getContactDisplayName(getContactByUri(account.autoConnectContact)) }}
-      </p>
-      <p v-else class="mt-2 text-xs text-gray-400">
-        🔴 Auto-Connect OFF
-      </p>
+      
+      <!-- Call and Hangup buttons -->
+      <div class="flex gap-2">
+        <button
+          @click="$emit('call', account.uri)"
+          :disabled="!account.registered"
+          :class="callButtonClass"
+        >
+          Call
+        </button>
+        <button
+          @click="$emit('hangup', account.uri)"
+          :disabled="!account.registered"
+          :class="hangupButtonClass"
+        >
+          Hangup
+        </button>
+      </div>
     </div>
 
     <div class="mt-3 text-xs text-gray-500">
@@ -134,11 +146,12 @@ const getContactByUri = (uri: string) => {
 };
 
 const borderColor = computed(() => {
-  if (props.account.callStatus === 'In Call') return 'border-green-500';
-  if (props.account.callStatus === 'Ringing') return 'border-yellow-500';
-  if (props.account.registered) return 'border-blue-500';
-  if (props.account.configured) return 'border-yellow-400';
-  return 'border-gray-300';
+  const status = props.account.callStatus || 'Idle';
+  if (status === 'In Call') return 'border-red-500';
+  if (status === 'Ringing') return 'border-orange-500';
+  // Idle - grün wenn registered, sonst grau
+  if (props.account.registered) return 'border-green-500';
+  return 'border-gray-500';
 });
 
 const statusColor = computed(() => {
@@ -181,17 +194,49 @@ const hangupButtonClass = computed(() => {
 
 const callStatusColor = computed(() => {
   const status = props.account.callStatus || 'Idle';
-  if (status === 'In Call') return 'text-green-400';
-  if (status === 'Ringing') return 'text-yellow-400';
-  return 'text-gray-300';
+  if (status === 'In Call') return 'text-red-400';
+  if (status === 'Ringing') return 'text-orange-400';
+  // Idle - nur grün wenn registered, sonst grau
+  if (props.account.registered) return 'text-green-400';
+  return 'text-gray-400';
 });
 
 const autoConnectColor = computed(() => {
-  const status = props.account.autoConnectStatus || 'Off';
-  if (status === 'Connected') return 'text-green-400';
-  if (status === 'Connecting') return 'text-blue-400';
-  if (status === 'Failed') return 'text-red-400';
-  return 'text-gray-300';
+  if (!props.account.autoConnectContact) return 'text-gray-300';
+  
+  const contact = getContactByUri(props.account.autoConnectContact);
+  if (!contact) return 'text-gray-300';
+  
+  const presence = contact.presence || 'unknown';
+  if (presence === 'online') return 'text-green-400';
+  if (presence === 'busy') return 'text-red-400';
+  return 'text-gray-400'; // offline or unknown
+});
+
+const getAutoConnectDisplayText = () => {
+  if (!props.account.autoConnectContact) return 'Off';
+  
+  const contact = getContactByUri(props.account.autoConnectContact);
+  if (!contact) return 'Off';
+  
+  const displayName = getContactDisplayName(contact);
+  const presence = contact.presence || 'unknown';
+  
+  // Capitalize first letter
+  const presenceText = presence.charAt(0).toUpperCase() + presence.slice(1);
+  
+  return `${displayName} (${presenceText})`;
+};
+
+const showConnectionLine = computed(() => {
+  // Show line when account is In Call AND the configured contact is busy
+  if (props.account.callStatus !== 'In Call') return false;
+  if (!props.account.autoConnectContact) return false;
+  
+  const contact = getContactByUri(props.account.autoConnectContact);
+  if (!contact) return false;
+  
+  return contact.presence === 'busy';
 });
 
 const formatTimestamp = (timestamp: number) => {

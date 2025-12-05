@@ -16,14 +16,11 @@
       </div>
     </div>
 
-    <!-- Auto-Connect Status -->
-    <div class="p-3 bg-gray-750 rounded-lg">
-      <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Auto-Connect Status</p>
-      <p class="text-sm font-medium" :class="autoConnectColor">
-        {{ contact.status || 'Off' }}
-      </p>
-      <p v-if="assignedToAccount" class="mt-2 text-xs text-blue-400">
-        → Assigned to account {{ getAccountName(assignedToAccount) }}
+    <!-- Assigned Account -->
+    <div v-if="assignedToAccount">
+      <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Assigned to Account</p>
+      <p class="text-sm font-medium text-blue-400">
+        {{ getAccountName(assignedToAccount) }}
       </p>
     </div>
   </div>
