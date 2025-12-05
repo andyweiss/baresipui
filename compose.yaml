@@ -1,12 +1,10 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/andyweiss/baresipui:latest
     container_name: baresip-ui
     ports:
-      - 3000:3000
-      - 3001:3001
+      - "3000:3000"
+      - "3001:3001"
     environment:
       - NUXT_HOST=0.0.0.0
       - NUXT_PORT=3000
@@ -20,29 +18,22 @@ services:
     networks:
       - baresip-network
     healthcheck:
-      test:
-        - CMD
-        - wget
-        - --spider
-        - -q
-        - http://localhost:3000/api/health
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
   baresip:
-    build:
-      context: ./baresip
-      dockerfile: Dockerfile.build-from-source
+    image: ghcr.io/andyweiss/baresip:latest
     container_name: baresip
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
       - ./baresip/.asoundrc:/root/.asoundrc # ALSA config for splitting Merging Ravenna sound device
     ports:
-      - 8000:8000/tcp
-      - 5555:5555/tcp
-      - 4444:4444/tcp
-      - 5060:5060/udp
+      - "8000:8000/tcp"
+      - "5555:5555/tcp"
+      - "4444:4444/tcp"
+      - "5060:5060/udp"
     command:
       - baresip
       - -f
@@ -67,18 +58,11 @@ services:
     image: prom/prometheus:latest
     container_name: baresip-prometheus
     ports:
-      - 9090:9090
+      - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-    restart: unless-stopped
-    networks:
-      - baresip-network
-networks:
-  baresip-network:
-    driver: bridge
-volumes:
-  prometheus-data: null
+    restart: unless-st
