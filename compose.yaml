@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   app:
     image: ghcr.io/andyweiss/baresipui:latest
@@ -22,13 +24,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
   baresip:
     image: ghcr.io/andyweiss/baresip:latest
     container_name: baresip
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
-      - ./baresip/.asoundrc:/root/.asoundrc # ALSA config for splitting Merging Ravenna sound device
+      - ./baresip/.asoundrc:/root/.asoundrc
     ports:
       - "8000:8000/tcp"
       - "5555:5555/tcp"
@@ -54,6 +57,7 @@ services:
       - SYS_NICE
     networks:
       - baresip-network
+
   prometheus:
     image: prom/prometheus:latest
     container_name: baresip-prometheus
@@ -65,4 +69,14 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-    restart: unless-st
+    restart: unless-stopped
+    networks:
+      - baresip-network
+
+volumes:
+  prometheus-data:
+
+networks:
+  baresip-network:
+    driver: bridge
+
