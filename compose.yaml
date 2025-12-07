@@ -10,11 +10,13 @@ services:
       - NUXT_PORT=3000
       - BARESIP_HOST=baresip
       - BARESIP_PORT=4444
+      - BARESIP_CONTAINER_NAME=baresip
     depends_on:
       - baresip
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - baresip-network
     healthcheck:

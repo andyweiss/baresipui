@@ -1,4 +1,7 @@
 import { getBaresipConnection } from '../services/baresip-connection';
+import { BaresipLogger } from '../services/baresip-logger';
+import { stateManager } from '../services/state-manager';
+import { setBaresipLogger } from '../utils/logger';
 
 export default defineNitroPlugin((nitroApp) => {
   const config = useRuntimeConfig();
@@ -14,5 +17,13 @@ export default defineNitroPlugin((nitroApp) => {
 
   connection.connect();
 
-  console.log('Baresip plugin initialized');
+  // Initialize logger
+  const baresipLogger = new BaresipLogger(stateManager);
+  setBaresipLogger(baresipLogger);
+  
+  // Start streaming logs from Docker container
+  const containerName = process.env.BARESIP_CONTAINER_NAME || 'baresip';
+  baresipLogger.start(containerName);
+
+  console.log('Baresip plugin initialized with logger');
 });

@@ -18,6 +18,9 @@ RUN npm run build
 
 FROM node:20-alpine
 
+# Install Docker CLI for log streaming
+RUN apk add --no-cache docker-cli
+
 WORKDIR /app
 
 COPY --from=builder /app/.output ./.output

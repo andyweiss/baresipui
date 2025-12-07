@@ -96,7 +96,7 @@
       <!-- Logs Tab -->
       <section v-show="activeTab === 'logs'">
         <iframe
-          src="/logs"
+          src="/baresip-logs"
           class="w-full bg-gray-800 rounded-lg shadow-lg"
           style="height: calc(100vh - 300px); min-height: 600px;"
         ></iframe>
@@ -160,34 +160,35 @@ const handleCall = async (uri: string) => {
 
 const handleHangup = async (uri: string) => {
   try {
-    console.log(`Attempting to hangup call for account: ${uri}`);
+    console.log(`[HANGUP] Attempting to hangup call for account: ${uri}`);
     
     // Find the account to get its call ID
     const account = accounts.value.find(a => a.uri === uri);
     if (!account) {
-      console.error('Account not found:', uri);
+      console.error('[HANGUP] Account not found:', uri);
       return;
     }
     
-    if (account.callId) {
-      // Use call ID for specific hangup
-      console.log(`Hanging up call with ID: ${account.callId}`);
-      const result = await sendCommand('hangup', account.callId);
-      console.log('Hangup result:', result);
-    } else {
-      // Fallback to account-based hangup
-      console.log('No call ID found, using uafind + hangup');
-      const findResult = await sendCommand('uafind', uri);
-      console.log('Account find result:', findResult);
-      
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const result = await sendCommand('hangup');
-      console.log('Hangup result:', result);
+    console.log(`[HANGUP] Account found - URI: ${uri}, Call ID: ${account.callId}, Status: ${account.callStatus}`);
+    
+    // Only hangup if we have a call ID to avoid hanging up wrong call
+    if (!account.callId) {
+      console.log('[HANGUP] No call ID found for this account, not executing hangup to avoid affecting other calls');
+      return;
     }
     
+    // First select the account with uafind to ensure we're operating on the correct account
+    console.log(`[HANGUP] Step 1: Selecting account: ${uri}`);
+    await sendCommand('uafind', uri);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Then use call ID for specific hangup
+    console.log(`[HANGUP] Step 2: Hanging up call with ID: ${account.callId} for account: ${uri}`);
+    const result = await sendCommand('hangup', account.callId);
+    console.log('[HANGUP] Hangup result:', result);
+    
   } catch (err) {
-    console.error('Hangup failed:', err);
+    console.error('[HANGUP] Hangup failed:', err);
     alert(`Hangup failed: ${err.message || err}`);
   }
 };

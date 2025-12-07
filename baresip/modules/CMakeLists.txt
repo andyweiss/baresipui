@@ -1,19 +1,24 @@
 include_directories(/tmp/baresip-src/include)
 include_directories(/tmp/baresip-src/include/baresip)
+include_directories(/tmp/libre/include)
 
 cmake_minimum_required(VERSION 3.10)
-project(presence)
 
-include_directories(/tmp/baresip-src/include /tmp/libre/include)
-
-list(APPEND MODULES_DETECTED ${PROJECT_NAME})
-set(MODULES_DETECTED ${MODULES_DETECTED} PARENT_SCOPE)
-
-set(SRCS presence.c subscriber.c notifier.c publisher.c)
+# Presence Module
+set(PRESENCE_SRCS 
+    ${CMAKE_CURRENT_SOURCE_DIR}/presence.c 
+    ${CMAKE_CURRENT_SOURCE_DIR}/subscriber.c 
+    ${CMAKE_CURRENT_SOURCE_DIR}/notifier.c 
+    ${CMAKE_CURRENT_SOURCE_DIR}/publisher.c
+)
 
 if(STATIC)
-    add_library(${PROJECT_NAME} OBJECT ${SRCS})
+    add_library(presence OBJECT ${PRESENCE_SRCS})
 else()
-    add_library(${PROJECT_NAME} MODULE ${SRCS})
+    add_library(presence MODULE ${PRESENCE_SRCS})
 endif()
+
+list(APPEND MODULES_DETECTED presence)
+
+set(MODULES_DETECTED ${MODULES_DETECTED} PARENT_SCOPE)
 

@@ -1,4 +1,4 @@
-import type { Account, Contact, ContactConfig } from '~/types';
+import type { Account, Contact, ContactConfig, CallInfo, AudioMeter } from '~/types';
 
 interface LogEntry {
   timestamp: number;
@@ -11,6 +11,8 @@ export class StateManager {
   private accounts = new Map<string, Account>();
   private autoConnectConfig = new Map<string, ContactConfig>();
   private contactPresence = new Map<string, string>();
+  private activeCalls = new Map<string, CallInfo>(); // Track all active calls
+  private audioMeters = new Map<string, AudioMeter>(); // Track audio levels per account
   private wsClients = new Set<any>();
   private socketClients = new Set<any>(); // Socket.IO clients
   private sseStreams = new Set<any>(); // SSE streams
@@ -142,6 +144,11 @@ export class StateManager {
     this.socketClients.forEach(client => {
       try {
         if (client.connected) {
+          // Emit with specific event type for better handling
+          if (data.type) {
+            client.emit(data.type, data.data || data);
+          }
+          // Also emit as 'message' for backward compatibility
           client.emit('message', data);
         }
       } catch (error) {
@@ -157,7 +164,9 @@ export class StateManager {
     return {
       type: 'init',
       accounts: accounts,
-      contacts: this.getContacts()
+      contacts: this.getContacts(),
+      calls: this.getCalls(),
+      audioMeters: this.getAllAudioMeters()
     };
   }
 
@@ -197,6 +206,80 @@ export class StateManager {
 
   clearLogs(): void {
     this.logs = [];
+  }
+
+  // Call Management
+  addCall(call: CallInfo): void {
+    this.activeCalls.set(call.callId, call);
+    console.log(`📞 Call added: ${call.callId} (${call.localUri} -> ${call.remoteUri})`);
+    
+    this.broadcast({
+      type: 'callAdded',
+      data: call
+    });
+  }
+
+  updateCall(callId: string, updates: Partial<CallInfo>): void {
+    const call = this.activeCalls.get(callId);
+    if (call) {
+      const updated = { ...call, ...updates };
+      this.activeCalls.set(callId, updated);
+      
+      this.broadcast({
+        type: 'callUpdated',
+        data: updated
+      });
+    }
+  }
+
+  removeCall(callId: string): void {
+    const call = this.activeCalls.get(callId);
+    if (call) {
+      this.activeCalls.delete(callId);
+      console.log(`📞 Call removed: ${callId}`);
+      
+      this.broadcast({
+        type: 'callRemoved',
+        data: { callId, call }
+      });
+    }
+  }
+
+  getCall(callId: string): CallInfo | undefined {
+    return this.activeCalls.get(callId);
+  }
+
+  getCalls(): CallInfo[] {
+    return Array.from(this.activeCalls.values());
+  }
+
+  getCallsByAccount(accountUri: string): CallInfo[] {
+    return Array.from(this.activeCalls.values())
+      .filter(call => call.localUri === accountUri);
+  }
+
+  // Audio Meter Management
+  updateAudioMeter(meter: AudioMeter): void {
+    this.audioMeters.set(meter.accountUri, meter);
+    
+    // Broadcast audio meters (throttled, only every 100ms per account)
+    const now = Date.now();
+    const lastUpdate = this.audioMeters.get(meter.accountUri)?.timestamp || 0;
+    
+    if (now - lastUpdate > 100) {
+      this.broadcast({
+        type: 'audioMeter',
+        data: meter
+      });
+    }
+  }
+
+  getAudioMeter(accountUri: string): AudioMeter | undefined {
+    return this.audioMeters.get(accountUri);
+  }
+
+  getAllAudioMeters(): AudioMeter[] {
+    return Array.from(this.audioMeters.values());
   }
 }
 

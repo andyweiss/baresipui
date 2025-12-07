@@ -232,41 +232,51 @@ function parseCallsResponse(data: string, stateManager: StateManager): void {
   const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '').replace(/\\n/g, '\n');
   const lines = cleanData.split('\n');
   
-  // First, reset all accounts to Idle
-  const accounts = stateManager.getAccounts();
-  for (const account of accounts) {
-    if (account.callStatus !== 'Idle') {
-      stateManager.updateAccountStatus(account.uri, { 
-        callStatus: 'Idle',
-        autoConnectStatus: 'Off'
-      });
-    }
-  }
-  
   // Parse active calls and update account status
-  // Format example: "=== Call 1: sip:2061616@sip.srgssr.ch -> sip:2061531@sip.srgssr.ch [ESTABLISHED]"
+  // Format examples from baresip v3.16.0:
+  // "call: #1 <sip:2061616@sip.srgssr.ch> <sip:2061531@sip.srgssr.ch> [ESTABLISHED] id=abc123"
+  // Or older format: "=== Call 1: sip:2061616@sip.srgssr.ch -> sip:2061531@sip.srgssr.ch [ESTABLISHED]"
   for (const line of lines) {
-    if (line.includes('=== Call') && line.includes('sip:')) {
-      // Extract local and remote URIs
-      const match = line.match(/sip:([^@\s]+@[^\s>]+).*->.*sip:([^@\s]+@[^\s\[]+)\s*\[(ESTABLISHED|RINGING|INCOMING|OUTGOING)/i);
+    if ((line.includes('call:') || line.includes('=== Call')) && line.includes('sip:')) {
+      console.log(`Parsing call line: "${line}"`);
+      
+      // Try new format first: call: #1 <local> <remote> [STATE] id=xxx
+      let match = line.match(/<(sip:[^@\s]+@[^\s>]+)>\s*<(sip:[^@\s]+@[^\s>]+)>\s*\[([^\]]+)\](?:.*id[=:]([^\s]+))?/i);
+      
+      // Try older format: === Call N: local -> remote [STATE]
+      if (!match) {
+        match = line.match(/sip:([^@\s]+@[^\s>]+).*->.*sip:([^@\s]+@[^\s\[]+)\s*\[([^\]]+)\]/i);
+        if (match) {
+          match = [`sip:${match[1]}`, `sip:${match[1]}`, `sip:${match[2]}`, match[3], undefined];
+        }
+      }
+      
       if (match) {
-        const localUri = `sip:${match[1]}`;
-        const remoteUri = `sip:${match[2]}`;
-        const callState = match[3].toUpperCase();
+        const localUri = match[1];
+        const remoteUri = match[2];
+        const callState = match[3].trim().toUpperCase();
+        const callId = match[4]; // May be undefined
         
-        console.log(`Found active call: ${localUri} -> ${remoteUri} [${callState}]`);
+        console.log(`Found active call: ${localUri} -> ${remoteUri} [${callState}] ID=${callId || 'unknown'}`);
         
         // Update account call status
         const account = stateManager.getAccount(localUri);
         if (account) {
           const callStatus = (callState === 'ESTABLISHED') ? 'In Call' : 'Ringing';
-          const autoConnectStatus = (callState === 'ESTABLISHED' && account.autoConnectContact) ? 'Connected' : account.autoConnectStatus;
+          const updates: any = { callStatus };
           
-          stateManager.updateAccountStatus(localUri, { 
-            callStatus,
-            autoConnectStatus
-          });
-          console.log(`Updated ${localUri} status: callStatus=${callStatus}, autoConnectStatus=${autoConnectStatus}`);
+          // Only set callId if we found one
+          if (callId) {
+            updates.callId = callId;
+          }
+          
+          // Update autoConnectStatus if this account has auto-connect configured
+          if (account.autoConnectContact) {
+            updates.autoConnectStatus = (callState === 'ESTABLISHED') ? 'Connected' : 'Connecting';
+          }
+          
+          stateManager.updateAccountStatus(localUri, updates);
+          console.log(`Updated ${localUri} status: callStatus=${callStatus}, callId=${callId || 'none'}, autoConnectStatus=${updates.autoConnectStatus || 'unchanged'}`);
         }
       }
     }
@@ -401,11 +411,25 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   if (jsonEvent.event && (jsonEvent.class === 'call' || jsonEvent.class === 'ua')) {
     if (jsonEvent.type === 'CALL_ESTABLISHED' || jsonEvent.type === 'CALL_CONNECT') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
-      if (uri) {
+      const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri;
+      
+      if (uri && jsonEvent.id) {
         const updates: any = {
           callStatus: 'In Call',
-          callId: jsonEvent.id  // Store call ID for hangup
+          callId: jsonEvent.id
         };
+        
+        // Add call to active calls tracking
+        stateManager.addCall({
+          callId: jsonEvent.id,
+          localUri: uri,
+          remoteUri: peerUri || 'unknown',
+          peerName: jsonEvent.peername || peerUri?.split('@')[0] || 'Unknown',
+          state: 'Established',
+          direction: jsonEvent.direction || 'unknown',
+          startTime: jsonEvent.param?.includes('incoming') ? Date.now() - 1000 : Date.now(),
+          answerTime: Date.now()
+        });
         
         // Only set autoConnectStatus if this account has auto-connect configured
         const account = stateManager.getAccount(uri);
@@ -414,15 +438,28 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         }
         
         stateManager.updateAccountStatus(uri, updates);
-        console.log(`Call established for ${uri}, call ID: ${jsonEvent.id}`);
+        console.log(`[CALL_ESTABLISHED] Account: ${uri}, Call ID: ${jsonEvent.id}, Peer: ${peerUri}`);
       }
     } else if (jsonEvent.type === 'CALL_RINGING' || jsonEvent.type === 'CALL_INCOMING' || jsonEvent.type === 'CALL_OUTGOING') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
-      if (uri) {
+      const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri;
+      
+      if (uri && jsonEvent.id) {
         const updates: any = { 
           callStatus: 'Ringing',
-          callId: jsonEvent.id  // Store call ID
+          callId: jsonEvent.id
         };
+        
+        // Add call to tracking in Ringing state
+        stateManager.addCall({
+          callId: jsonEvent.id,
+          localUri: uri,
+          remoteUri: peerUri || 'unknown',
+          peerName: jsonEvent.peername || peerUri?.split('@')[0] || 'Unknown',
+          state: 'Ringing',
+          direction: jsonEvent.type === 'CALL_INCOMING' ? 'incoming' : 'outgoing',
+          startTime: Date.now()
+        });
         
         // Check if this is an auto-connect call
         const account = stateManager.getAccount(uri);
@@ -431,17 +468,35 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         }
         
         stateManager.updateAccountStatus(uri, updates);
-        console.log(`Call ringing for ${uri}, call ID: ${jsonEvent.id}`);
+        console.log(`[CALL_RINGING] Account: ${uri}, Call ID: ${jsonEvent.id}, Direction: ${jsonEvent.type}, Peer: ${peerUri}`);
       }
     } else if (jsonEvent.type === 'CALL_CLOSED' || jsonEvent.type === 'CALL_END' || jsonEvent.type === 'CALL_TERMINATE') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
+      
       if (uri) {
+        // Remove call from tracking
+        if (jsonEvent.id) {
+          const call = stateManager.getCall(jsonEvent.id);
+          if (call) {
+            stateManager.updateCall(jsonEvent.id, {
+              state: 'Closing',
+              endTime: Date.now(),
+              duration: Date.now() - call.startTime
+            });
+            
+            // Remove after short delay to allow UI to show final state
+            setTimeout(() => {
+              stateManager.removeCall(jsonEvent.id);
+            }, 1000);
+          }
+        }
+        
         stateManager.updateAccountStatus(uri, { 
           callStatus: 'Idle',
           autoConnectStatus: 'Off',
-          callId: undefined  // Clear call ID
+          callId: undefined
         });
-        console.log(`Call closed for ${uri}`);
+        console.log(`[CALL_CLOSED] Account: ${uri}, Call ID: ${jsonEvent.id}`);
         
         // Immediately reconnect if auto-connect is configured
         checkAutoConnectForAccount(uri, stateManager);

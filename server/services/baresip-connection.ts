@@ -36,6 +36,7 @@ export class BaresipConnection {
       this.sendCommand('ualist');
       this.sendCommand('reginfo');
       this.sendCommand('contacts');
+      this.sendCommand('calls');  // Query active calls on startup
 
       // Start polling contacts for presence updates
       this.startContactsPolling();

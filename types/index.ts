@@ -29,6 +29,26 @@ export interface ContactConfig {
   assignedAccount?: string;
 }
 
+export interface CallInfo {
+  callId: string;
+  localUri: string;
+  remoteUri: string;
+  peerName?: string;
+  state: 'Ringing' | 'Established' | 'Closing';
+  direction: 'incoming' | 'outgoing';
+  startTime: number;
+  answerTime?: number;
+  endTime?: number;
+  duration?: number;
+}
+
+export interface AudioMeter {
+  accountUri: string;
+  inputLevel: number;  // dB
+  outputLevel: number; // dB
+  timestamp: number;
+}
+
 export interface BaresipEvent {
   event?: string;
   class?: string;
