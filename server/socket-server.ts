@@ -26,11 +26,7 @@ export function initSocketIO(httpServer: any) {
     console.log('✅ Socket.IO: Client connected:', socket.id);
     
     // Send initial data
-    const initData = {
-      type: 'init',
-      accounts: stateManager.getAccounts(),
-      contacts: stateManager.getContacts()
-    };
+    const initData = stateManager.getInitData();
     
     socket.emit('message', initData);
     console.log('📤 Socket.IO: Sent init data to client:', socket.id);

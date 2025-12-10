@@ -3,7 +3,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="bg-gray-800 rounded-lg shadow-lg p-6">
         <div class="flex items-center justify-between mb-6">
-          <h2 class="text-2xl font-bold text-white">📝 Baresip Logs</h2>
+          <h2 class="text-2xl font-bold text-white">Baresip Logs</h2>
           <div class="flex gap-2">
             <button 
               @click="toggleAutoScroll" 

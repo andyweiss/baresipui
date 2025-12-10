@@ -3,7 +3,8 @@ import { io, Socket } from 'socket.io-client';
 
 export const useSocketIO = () => {
   const socket = ref<Socket | null>(null);
-  const connected = ref(false);
+  const connected = ref(false); // Socket.IO connection to UI server
+  const baresipConnected = ref(false); // TCP connection to Baresip
   const accounts = ref<any[]>([]);
   const contacts = ref<any[]>([]);
   const logs = ref<any[]>([]);
@@ -31,6 +32,12 @@ export const useSocketIO = () => {
       console.log('📦 Socket.IO: Received init data', data);
       accounts.value = data.accounts || [];
       contacts.value = data.contacts || [];
+      baresipConnected.value = data.baresipConnected ?? false;
+    });
+
+    socket.value.on('baresipStatus', (data: any) => {
+      console.log('🔌 Socket.IO: Baresip status update', data);
+      baresipConnected.value = data.connected;
     });
 
     socket.value.on('message', (data: any) => {
@@ -39,6 +46,7 @@ export const useSocketIO = () => {
       if (data.type === 'init') {
         accounts.value = data.accounts || [];
         contacts.value = data.contacts || [];
+        baresipConnected.value = data.baresipConnected ?? false;
       } else if (data.type === 'accountStatus') {
         console.log('📊 Socket.IO: Account status update for:', data.data.uri);
         const index = accounts.value.findIndex(a => a.uri === data.data.uri);
@@ -121,6 +129,7 @@ export const useSocketIO = () => {
   return {
     socket,
     connected,
+    baresipConnected,
     accounts,
     contacts,
     logs,

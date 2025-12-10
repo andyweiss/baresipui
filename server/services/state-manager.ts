@@ -18,6 +18,7 @@ export class StateManager {
   private sseStreams = new Set<any>(); // SSE streams
   private logs: LogEntry[] = [];
   private maxLogs = 1000; // Maximum number of logs to keep
+  private baresipConnected = false; // Track Baresip TCP connection status
 
   getAccounts(): Account[] {
     const accounts = Array.from(this.accounts.values());
@@ -46,6 +47,21 @@ export class StateManager {
       presence: this.contactPresence.get(contact) || 'unknown',
       assignedAccount: config.assignedAccount
     }));
+  }
+
+  setBaresipConnected(connected: boolean): void {
+    if (this.baresipConnected !== connected) {
+      this.baresipConnected = connected;
+      console.log(`🔌 Baresip connection status changed: ${connected ? 'CONNECTED' : 'DISCONNECTED'}`);
+      this.broadcast({
+        type: 'baresipStatus',
+        data: { connected }
+      });
+    }
+  }
+
+  getBaresipConnected(): boolean {
+    return this.baresipConnected;
   }
 
   getContactConfig(contact: string): ContactConfig | undefined {
@@ -165,6 +181,7 @@ export class StateManager {
       type: 'init',
       accounts: accounts,
       contacts: this.getContacts(),
+      baresipConnected: this.baresipConnected,
       calls: this.getCalls(),
       audioMeters: this.getAllAudioMeters()
     };

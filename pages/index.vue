@@ -1,5 +1,25 @@
 <template>
-  <div class="min-h-screen bg-gray-900">
+  <div class="min-h-screen bg-gray-900 relative">
+    <!-- Disconnection Overlay -->
+    <div 
+      v-if="!baresipConnected"
+      class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center backdrop-blur-sm"
+    >
+      <div class="bg-gray-800 rounded-lg p-8 shadow-2xl border border-red-500 max-w-md">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+          <h2 class="text-2xl font-bold text-white">Connection Lost</h2>
+        </div>
+        <p class="text-gray-300 mb-4">
+          Connection to Baresip server has been lost. 
+          Attempting to reconnect...
+        </p>
+        <div class="flex justify-center">
+          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        </div>
+      </div>
+    </div>
+
     <header class="bg-gray-800 shadow-lg">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="flex items-center justify-between">
@@ -7,10 +27,10 @@
           <div class="flex items-center gap-2">
             <div
               class="w-3 h-3 rounded-full"
-              :class="connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"
+              :class="baresipConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"
             ></div>
             <span class="text-sm text-gray-300">
-              {{ connected ? 'Connected' : 'Disconnected' }}
+              {{ baresipConnected ? 'Connected' : 'Disconnected' }}
             </span>
           </div>
         </div>
@@ -20,41 +40,60 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- Tab Navigation -->
       <div class="mb-6 border-b border-gray-700">
-        <nav class="flex space-x-8" aria-label="Tabs">
+        <nav class="flex items-center" aria-label="Tabs">
+          <div class="flex space-x-8 flex-1">
+            <button
+              @click="activeTab = 'accounts'"
+              :class="[
+                activeTab === 'accounts'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300',
+                'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition'
+              ]"
+            >
+              Accounts
+              <span class="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-700">{{ accounts.length }}</span>
+            </button>
+            <button
+              @click="activeTab = 'contacts'"
+              :class="[
+                activeTab === 'contacts'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300',
+                'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition'
+              ]"
+            >
+              Contacts
+              <span class="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-700">{{ contacts.length }}</span>
+            </button>
+            <button
+              @click="activeTab = 'logs'"
+              :class="[
+                activeTab === 'logs'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300',
+                'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition'
+              ]"
+            >
+              Logs
+            </button>
+          </div>
+          
+          <!-- Settings Tab (Right-aligned) -->
           <button
-            @click="activeTab = 'accounts'"
+            @click="activeTab = 'settings'"
             :class="[
-              activeTab === 'accounts'
+              activeTab === 'settings'
                 ? 'border-blue-500 text-blue-400'
                 : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300',
-              'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition'
+              'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition flex items-center gap-2'
             ]"
+            title="Settings"
           >
-            Accounts
-            <span class="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-700">{{ accounts.length }}</span>
-          </button>
-          <button
-            @click="activeTab = 'contacts'"
-            :class="[
-              activeTab === 'contacts'
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300',
-              'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition'
-            ]"
-          >
-            Contacts
-            <span class="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-700">{{ contacts.length }}</span>
-          </button>
-          <button
-            @click="activeTab = 'logs'"
-            :class="[
-              activeTab === 'logs'
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300',
-              'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition'
-            ]"
-          >
-            Logs
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+            </svg>
+            <span class="hidden sm:inline">Settings</span>
           </button>
         </nav>
       </div>
@@ -101,6 +140,81 @@
           style="height: calc(100vh - 300px); min-height: 600px;"
         ></iframe>
       </section>
+
+      <!-- Settings Tab -->
+      <section v-show="activeTab === 'settings'">
+        <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+          <h2 class="text-2xl font-bold text-white mb-6">⚙️ Settings</h2>
+          
+          <div class="space-y-6">
+            <!-- Configuration Section -->
+            <div class="border-b border-gray-700 pb-6">
+              <h3 class="text-lg font-semibold text-white mb-4">Configuration</h3>
+              
+              <div class="space-y-4">
+                <div class="flex items-center justify-between p-4 bg-gray-700 rounded-lg hover:bg-gray-650 transition-colors">
+                  <div>
+                    <h4 class="text-white font-medium">Reload Configuration</h4>
+                    <p class="text-sm text-gray-400">Reload config files without restarting</p>
+                  </div>
+                  <button 
+                    @click="reloadConfig"
+                    class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Reload Config
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Account Management Section -->
+            <div class="border-b border-gray-700 pb-6">
+              <h3 class="text-lg font-semibold text-white mb-4">Account Management</h3>
+              
+              <div class="space-y-4">
+                <div class="p-4 bg-gray-700 rounded-lg">
+                  <h4 class="text-white font-medium mb-2">Add New Account</h4>
+                  <p class="text-sm text-gray-400 mb-4">Create a new SIP account</p>
+                  <button class="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 transition-colors">
+                    Add Account
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Audio Codec Settings -->
+            <div class="border-b border-gray-700 pb-6">
+              <h3 class="text-lg font-semibold text-white mb-4">Audio Settings</h3>
+              
+              <div class="space-y-4">
+                <div class="p-4 bg-gray-700 rounded-lg">
+                  <h4 class="text-white font-medium mb-2">Default Audio Codecs</h4>
+                  <p class="text-sm text-gray-400 mb-4">Configure default audio codec preferences</p>
+                  <div class="text-sm text-gray-500">
+                    Coming soon...
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- System Information -->
+            <div>
+              <h3 class="text-lg font-semibold text-white mb-4">System Information</h3>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="p-4 bg-gray-700 rounded-lg">
+                  <p class="text-sm text-gray-400">Baresip Version</p>
+                  <p class="text-white font-mono">v3.16.0</p>
+                </div>
+                <div class="p-4 bg-gray-700 rounded-lg">
+                  <p class="text-sm text-gray-400">UI Version</p>
+                  <p class="text-white font-mono">v1.0.0</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 </template>
@@ -109,7 +223,7 @@
 import { ref } from 'vue';
 
 // Use Socket.IO instead of WebSocket
-const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useSocketIO();
+const { connected, baresipConnected, accounts, contacts, sendCommand, toggleAutoConnect } = useSocketIO();
 
 // Active tab state
 const activeTab = ref('accounts');
@@ -198,6 +312,17 @@ const handleToggleAutoConnect = async (contact: string, enabled: boolean) => {
     await toggleAutoConnect(contact, enabled);
   } catch (err) {
     console.error('Failed to toggle auto-connect:', err);
+  }
+};
+
+const reloadConfig = async () => {
+  try {
+    const result = await sendCommand('conf_reload');
+    console.log('Config reload result:', result);
+    alert('Configuration reloaded successfully!');
+  } catch (err) {
+    console.error('Failed to reload config:', err);
+    alert(`Failed to reload config: ${err.message || err}`);
   }
 };
 </script>

@@ -25,11 +25,7 @@ export default defineNitroPlugin((nitroApp: NitroApp) => {
         console.log('✅ Socket.IO: Client connected:', socket.id);
         
         // Send initial data
-        const initData = {
-          type: 'init',
-          accounts: stateManager.getAccounts(),
-          contacts: stateManager.getContacts()
-        };
+        const initData = stateManager.getInitData();
         
         socket.emit('message', initData);
         console.log('📤 Sent init data to client:', socket.id);

@@ -32,6 +32,7 @@ export class BaresipConnection {
     this.client.connect(this.port, this.host, () => {
       console.log(`Connected to Baresip at ${this.host}:${this.port}`);
       this.reconnectAttempts = 0;
+      stateManager.setBaresipConnected(true);
 
       this.sendCommand('ualist');
       this.sendCommand('reginfo');
@@ -60,6 +61,7 @@ export class BaresipConnection {
 
     this.client.on('close', () => {
       console.log('Baresip connection closed');
+      stateManager.setBaresipConnected(false);
       this.stopContactsPolling();
       this.scheduleReconnect();
     });
