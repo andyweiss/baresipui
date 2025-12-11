@@ -93,6 +93,12 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
         console.log('Calling parseCallsResponse...');
         parseCallsResponse(response.data, stateManager);
       }
+      
+      // Parse call statistics from callstat command
+      if (response.data.includes('Call debug') || response.data.includes('audio RTP')) {
+        console.log('📊 Parsing callstat response...');
+        parseCallStatResponse(response.data, stateManager);
+      }
 
       const cleanData = response.data.replace(/\\u001B\[[0-9;]*[mK]/g, '').replace(/\\n/g, '\n');
       if (cleanData.includes('User Agents') || response.data.includes('User Agents')) {
@@ -224,6 +230,70 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
       type: 'contactsUpdate',
       contacts: stateManager.getContacts()
     });
+  }
+}
+
+function parseCallStatResponse(data: string, stateManager: StateManager): void {
+  console.log('📊 parseCallStatResponse called');
+  
+  // Extract call ID
+  const callIdMatch = data.match(/id=([a-f0-9]+)/);
+  const callId = callIdMatch ? callIdMatch[1] : null;
+
+  // Extract codec from "local formats" section
+  const codecMatch = data.match(/\s+(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s+\([^)]*\)\s+\*/);
+  let audioCodec = undefined;
+  if (codecMatch) {
+    const codecName = codecMatch[2];
+    const sampleRate = codecMatch[3];
+    const channels = codecMatch[4];
+    audioCodec = `${codecName}/${sampleRate}/${channels}`;
+    console.log(`📊 Extracted codec: ${audioCodec}`);
+  }
+
+  // Extract RTCP_STATS line (example: RTCP_STATS: packets_rx=123 packets_tx=456 lost_rx=7 lost_tx=2 jitter_rx=12.3 jitter_tx=10.1 rtt=45.6)
+  const statsMatch = data.match(/RTCP_STATS:\s*([^\n]+)/);
+  let stats: any = {};
+  if (statsMatch) {
+    const statsStr = statsMatch[1];
+    // Parse key=value pairs
+    const pairs = statsStr.split(/\s+/);
+    for (const pair of pairs) {
+      const [key, value] = pair.split('=');
+      if (key && value !== undefined) {
+        // Convert to number if possible
+        stats[key] = isNaN(Number(value)) ? value : Number(value);
+      }
+    }
+    console.log('📊 Extracted RTCP_STATS:', stats);
+  }
+
+  // Try to find the call and update it
+  if (callId || audioCodec || Object.keys(stats).length > 0) {
+    const calls = stateManager.getCalls();
+    let updates: any = {};
+    if (audioCodec) updates.audioCodec = audioCodec;
+    if (Object.keys(stats).length > 0) {
+      // Map stats to UI fields
+      updates.audioRxStats = {
+        packets: stats.packets_rx ?? 0,
+        packetsLost: stats.lost_rx ?? 0,
+        jitter: stats.jitter_rx ?? 0,
+        rtt: stats.rtt ?? 0,
+      };
+      updates.audioTxStats = {
+        packets: stats.packets_tx ?? 0,
+        packetsLost: stats.lost_tx ?? 0,
+        jitter: stats.jitter_tx ?? 0,
+      };
+    }
+    if (callId) {
+      stateManager.updateCall(callId, updates);
+      console.log(`📊 Updated call ${callId} with`, updates);
+    } else if (calls.length === 1) {
+      stateManager.updateCall(calls[0].callId, updates);
+      console.log(`📊 Updated call ${calls[0].callId} with`, updates);
+    }
   }
 }
 
@@ -428,7 +498,20 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           state: 'Established',
           direction: jsonEvent.direction || 'unknown',
           startTime: jsonEvent.param?.includes('incoming') ? Date.now() - 1000 : Date.now(),
-          answerTime: Date.now()
+          answerTime: Date.now(),
+          // Add mock statistics for testing
+          audioCodec: 'PCMU/8000',
+          audioRxStats: {
+            packets: 0,
+            packetsLost: 0,
+            jitter: 0,
+            bitrate: 64000
+          },
+          audioTxStats: {
+            packets: 0,
+            packetsLost: 0,
+            bitrate: 64000
+          }
         });
         
         // Only set autoConnectStatus if this account has auto-connect configured
@@ -505,8 +588,150 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   }
 }
 
+function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
+  // Parse RTCP stats from rtcpstats_periodic module
+  // Format: "RTCP_STATS: call_id=xxx;media=audio;packets_rx=123;packets_tx=456;lost_rx=0;lost_tx=0;jitter_rx=12.5;jitter_tx=10.2;rtt=45.3;"
+  
+  if (!line.includes('RTCP_STATS:')) return;
+  
+  console.log('📊 Parsing RTCP stats line:', line);
+  
+  const callIdMatch = line.match(/call_id=([^;]+)/);
+  const mediaMatch = line.match(/media=([^;]+)/);
+  const packetsRxMatch = line.match(/packets_rx=(\d+)/);
+  const packetsTxMatch = line.match(/packets_tx=(\d+)/);
+  const lostRxMatch = line.match(/lost_rx=(-?\d+)/);
+  const lostTxMatch = line.match(/lost_tx=(-?\d+)/);
+  const jitterRxMatch = line.match(/jitter_rx=([\d.]+)/);
+  const jitterTxMatch = line.match(/jitter_tx=([\d.]+)/);
+  const rttMatch = line.match(/rtt=([\d.]+)/);
+  
+  if (callIdMatch && packetsRxMatch) {
+    const callId = callIdMatch[1];
+    const media = mediaMatch ? mediaMatch[1] : 'audio';
+    
+    const updates: any = {};
+    
+    // RX Stats
+    if (packetsRxMatch) {
+      const rxStats = {
+        packets: parseInt(packetsRxMatch[1]),
+        packetsLost: lostRxMatch ? parseInt(lostRxMatch[1]) : 0,
+        jitter: jitterRxMatch ? parseFloat(jitterRxMatch[1]) : 0,
+        bitrate: 0 // Will be calculated or updated elsewhere
+      };
+      
+      if (media === 'audio') {
+        updates.audioRxStats = rxStats;
+      } else if (media === 'video') {
+        updates.videoRxStats = rxStats;
+      }
+    }
+    
+    // TX Stats
+    if (packetsTxMatch) {
+      const txStats = {
+        packets: parseInt(packetsTxMatch[1]),
+        packetsLost: lostTxMatch ? parseInt(lostTxMatch[1]) : 0,
+        bitrate: 0
+      };
+      
+      if (media === 'audio') {
+        updates.audioTxStats = txStats;
+      } else if (media === 'video') {
+        updates.videoTxStats = txStats;
+      }
+    }
+    
+    // Update the call with statistics
+    stateManager.updateCall(callId, updates);
+    console.log(`📊 Updated call ${callId} with RTCP stats:`, updates);
+  }
+}
+
+function parseCallStatLine(line: string, stateManager: StateManager): void {
+  // Parse RTP statistics from Baresip callstat output
+  console.log('📊 Parsing call stat line:', line);
+  
+  const callIdMatch = line.match(/Call\s+([a-zA-Z0-9-]+):/);
+  const isRx = line.toLowerCase().includes('rx:') || line.toLowerCase().includes('receive');
+  const isTx = line.toLowerCase().includes('tx:') || line.toLowerCase().includes('transmit');
+  
+  if (!isRx && !isTx) return;
+  
+  const packetsMatch = line.match(/packets[=:\s]+(\d+)/i);
+  const lostMatch = line.match(/lost[=:\s]+(\d+)/i);
+  const jitterMatch = line.match(/jitter[=:\s]+([\d.]+)/i);
+  const bitrateMatch = line.match(/bitrate[=:\s]+(\d+)/i);
+  
+  if (packetsMatch) {
+    const stats = {
+      packets: parseInt(packetsMatch[1]),
+      packetsLost: lostMatch ? parseInt(lostMatch[1]) : 0,
+      jitter: jitterMatch ? parseFloat(jitterMatch[1]) : undefined,
+      bitrate: bitrateMatch ? parseInt(bitrateMatch[1]) : 0
+    };
+    
+    console.log(`📊 Parsed ${isRx ? 'RX' : 'TX'} stats:`, stats);
+    
+    // If we have a call ID, update that specific call
+    if (callIdMatch) {
+      const callId = callIdMatch[1];
+      const updates: any = {};
+      
+      if (isRx) {
+        updates.audioRxStats = stats;
+      } else {
+        updates.audioTxStats = { ...stats };
+        delete updates.audioTxStats.jitter; // TX doesn't have jitter
+      }
+      
+      stateManager.updateCall(callId, updates);
+      console.log(`Updated call ${callId} ${isRx ? 'RX' : 'TX'} stats:`, stats);
+    } else {
+      // Try to find active call and update it
+      const calls = stateManager.getCalls();
+      if (calls.length === 1) {
+        // Only one active call, update it
+        const updates: any = {};
+        
+        if (isRx) {
+          updates.audioRxStats = stats;
+        } else {
+          updates.audioTxStats = { ...stats };
+          delete updates.audioTxStats.jitter;
+        }
+        
+        stateManager.updateCall(calls[0].callId, updates);
+        console.log(`Updated call ${calls[0].callId} ${isRx ? 'RX' : 'TX'} stats:`, stats);
+      }
+    }
+  }
+}
+
 function handleTextLine(line: string, stateManager: StateManager): void {
   const timestamp = Date.now();
+
+  // Filter out audio bitrate statistics (will be handled via dedicated WebSocket later)
+  if (line.match(/\[\d+:\d+:\d+\]\s+audio=\d+\/\d+\s+\(bit\/s\)/)) {
+    return; // Silently ignore audio statistics
+  }
+
+  // Parse RTCP summary statistics (from rtcpsummary module)
+  // Example: "RTCP Summary: tx=1234 packets, lost=5, jitter=12.5ms, rtt=50ms"
+  if (line.includes('RTCP') || line.includes('rtcp')) {
+    parseRtcpSummaryLine(line, stateManager);
+  }
+
+  // Parse call statistics output from /callstat command
+  // Example formats:
+  // "audio RX: packets=1234 lost=5 jitter=12.5ms bitrate=64000"
+  // "       rx: 1234 packets, 5 lost, jitter=12.5ms"
+  // "Stream #0 audio RX: pt=8, packets=1234, lost=5, jitter=12.5ms"
+  if (line.match(/audio\s+(RX|TX):|\s+(rx|tx):|Stream.*audio/i)) {
+    parseCallStatLine(line, stateManager);
+    return; // Don't broadcast as log
+  }
 
   // DEBUG: Check if enhanced_presence messages arrive here
   if (line.indexOf('enhanced_presence:') !== -1) {

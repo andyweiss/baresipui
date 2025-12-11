@@ -28,7 +28,9 @@ services:
       retries: 3
 
   baresip:
-    image: ghcr.io/andyweiss/baresip:latest
+    build:
+      context: ./baresip
+      dockerfile: Dockerfile
     container_name: baresip
     restart: unless-stopped
     volumes:

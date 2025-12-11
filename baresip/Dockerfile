@@ -25,11 +25,21 @@ RUN git clone --depth 1 https://github.com/baresip/re.git /tmp/libre
 # Copy presence module source
 COPY modules/ /tmp/modules/
 
+# Copy rtcpstats_periodic module source
+COPY rtcpstats_periodic.c /tmp/rtcpstats_periodic/
+COPY Makefile /tmp/rtcpstats_periodic/
+
 # Build presence module (nur das Modul, mit baresip-Headern)
 WORKDIR /tmp/modules
 RUN cmake . \
     && make \
     && cp libpresence.so /usr/lib/x86_64-linux-gnu/baresip/modules/presence.so
+
+# Build rtcpstats_periodic module
+WORKDIR /tmp/rtcpstats_periodic
+RUN make SYSROOT=/usr \
+    && cp rtcpstats_periodic.so /usr/lib/x86_64-linux-gnu/baresip/modules/ || \
+    echo "Failed to build rtcpstats_periodic, continuing anyway"
 
 
 

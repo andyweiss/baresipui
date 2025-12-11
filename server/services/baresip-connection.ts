@@ -5,12 +5,66 @@ import { parseBaresipEvent } from './baresip-parser';
 import { getAutoConnectConfigManager } from './autoconnect-config';
 
 export class BaresipConnection {
+    // Parser for 'contacts' response
+    private parseContactsResponse(data: string): void {
+      const lines = data.split('\n');
+      for (const line of lines) {
+        const match = line.match(/<sip:([^>]+)>/);
+        if (match) {
+          const contact = `sip:${match[1]}`;
+          // Optionally extract name
+          const nameMatch = line.match(/^([^<]+)</);
+          const name = nameMatch ? nameMatch[1].trim() : contact;
+          stateManager.setContactConfig(contact, { name, enabled: true, status: 'Unknown', source: 'baresip' });
+        }
+      }
+      stateManager.broadcast({ type: 'contactsUpdate', contacts: stateManager.getContacts() });
+    }
+
+    /**
+     * Parses the response from the 'listcalls' command and updates the state manager.
+     * Example line: "call: #1 <sip:alice@domain> <sip:bob@domain> [ESTABLISHED] id=abc123"
+     */
+    private parseListCallsResponse(data: string): void {
+      const lines = data.split('\n');
+      for (const line of lines) {
+        // Try to match local and remote URI, state, and callId
+        const match = line.match(/<(sip:[^>]+)>\s*<(sip:[^>]+)>\s*\[(\w+)\][^\n]*id[=:]([^\s]+)/);
+        if (match) {
+          const localUri = match[1] || null;
+          const remoteUri = match[2] || null;
+          const state = match[3] || 'Unknown';
+          const callId = match[4] || null;
+          stateManager.addCall({ callId, localUri, remoteUri, state, startTime: Date.now() });
+        }
+      }
+      // Broadcast the updated calls list
+      stateManager.broadcast({ type: 'callsUpdate', calls: stateManager.getCalls() });
+    }
+
+    // Parser for 'callstat' response
+    private parseCallStatResponse(data: string): void {
+      // Example: RTCP_STATS: packets_rx=123 packets_tx=456 lost_rx=7 lost_tx=2 jitter_rx=12.3 jitter_tx=10.1 rtt=45.6
+      const statsMatch = data.match(/RTCP_STATS:\s*([^\n]+)/);
+      if (statsMatch) {
+        const statsStr = statsMatch[1];
+        const stats: any = {};
+        statsStr.split(/\s+/).forEach(pair => {
+          const [key, value] = pair.split('=');
+          stats[key] = isNaN(Number(value)) ? value : Number(value);
+        });
+        // CallId may need to be extracted from context!
+        // Example: stateManager.updateCall(callId, { audioRxStats: { ... } });
+      }
+    }
   private client: net.Socket | null = null;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 10;
   private readonly BASE_RECONNECT_DELAY = 1000;
   private contactsPollingInterval: NodeJS.Timeout | null = null;
   private readonly CONTACTS_POLL_INTERVAL = 5000; // Poll contacts every 5 seconds
+  private callStatsPollingInterval: NodeJS.Timeout | null = null;
+  private readonly CALL_STATS_POLL_INTERVAL = 2000; // Poll call stats every 2 seconds
 
   constructor(
     private host: string,
@@ -34,13 +88,14 @@ export class BaresipConnection {
       this.reconnectAttempts = 0;
       stateManager.setBaresipConnected(true);
 
-      this.sendCommand('ualist');
-      this.sendCommand('reginfo');
       this.sendCommand('contacts');
-      this.sendCommand('calls');  // Query active calls on startup
+      this.sendCommand('listcalls');
+      this.sendCommand('callstat');  // Query active calls on startup
 
       // Start polling contacts for presence updates
       this.startContactsPolling();
+      // Start polling call statistics
+      this.startCallStatsPolling();
 
       setTimeout(() => {
         console.log(`Accounts loaded via API: ${stateManager.getAccountsSize()}`);
@@ -63,7 +118,11 @@ export class BaresipConnection {
       console.log('Baresip connection closed');
       stateManager.setBaresipConnected(false);
       this.stopContactsPolling();
+      this.stopCallStatsPolling();
       this.scheduleReconnect();
+      // Alle Calls aufräumen und Status auf Idle setzen
+      stateManager.clearCalls();
+      stateManager.setAllCallStatus('Idle');
     });
   }
 
@@ -123,6 +182,24 @@ export class BaresipConnection {
       console.log('Stopping contacts polling');
       clearInterval(this.contactsPollingInterval);
       this.contactsPollingInterval = null;
+    }
+  }
+
+  private startCallStatsPolling(): void {
+    // Stop any existing polling
+    this.stopCallStatsPolling();
+
+    console.log(`📊 Call stats polling enabled - rtcpstats_periodic module will send stats automatically every 2 seconds`);
+    
+    // No need to poll - the rtcpstats_periodic module outputs RTCP_STATS automatically
+    // when a call is active. We just need to parse the incoming data.
+  }
+
+  private stopCallStatsPolling(): void {
+    if (this.callStatsPollingInterval) {
+      console.log('Stopping call stats polling');
+      clearInterval(this.callStatsPollingInterval);
+      this.callStatsPollingInterval = null;
     }
   }
 

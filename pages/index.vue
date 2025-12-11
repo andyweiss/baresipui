@@ -109,6 +109,7 @@
             :key="account.uri"
             :account="account"
             :contacts="contacts"
+            :calls="calls"
             @call="handleCall"
             @hangup="handleHangup"
             @assignContact="handleAssignContact"
@@ -223,7 +224,7 @@
 import { ref } from 'vue';
 
 // Use Socket.IO instead of WebSocket
-const { connected, baresipConnected, accounts, contacts, sendCommand, toggleAutoConnect } = useSocketIO();
+const { connected, baresipConnected, accounts, contacts, calls, sendCommand, toggleAutoConnect } = useSocketIO();
 
 // Active tab state
 const activeTab = ref('accounts');

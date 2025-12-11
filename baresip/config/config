@@ -155,6 +155,7 @@ module                  presence.so
 # Compatibility modules
 module                  ebuacip.so
 module                  uuid.so
+module_app              rtcpstats_periodic.so
 
 # Media NAT modules
 module                  stun.so

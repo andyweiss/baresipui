@@ -70,6 +70,18 @@ RUN rm -rf modules/presence
 # Copy custom modules (presence, notifier, publisher, subscriber)
 COPY modules/ modules/presence/
 
+# Copy rtcpstats_periodic module
+COPY rtcpstats_periodic.c modules/rtcpstats_periodic/module.c
+RUN echo 'project(rtcpstats_periodic)\n\
+list(APPEND MODULES_DETECTED ${PROJECT_NAME})\n\
+set(MODULES_DETECTED ${MODULES_DETECTED} PARENT_SCOPE)\n\
+set(SRCS module.c)\n\
+if(STATIC)\n\
+  add_library(${PROJECT_NAME} OBJECT ${SRCS})\n\
+else()\n\
+  add_library(${PROJECT_NAME} MODULE ${SRCS})\n\
+endif()' > modules/rtcpstats_periodic/CMakeLists.txt
+
 # Apply any additional patches
 COPY patches/baresip-*.patch ./
 RUN for p in baresip-*.patch; do [ -f "$p" ] && patch -p1 < "$p" || true; done

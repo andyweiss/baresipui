@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-gray-800 rounded-lg shadow-lg p-6 border-l-4" :class="borderColor">
+  <div class="bg-gray-800 rounded-lg shadow-lg p-6 border-l-4 relative" :class="borderColor">
     <div class="flex items-start justify-between mb-4">
       <div class="flex-1">
         <h3 class="text-lg font-semibold text-white mb-1">{{ account.displayName || accountName }}</h3>
@@ -18,7 +18,9 @@
     <div class="grid grid-cols-2 gap-4 mb-4 relative">
       <div class="relative">
         <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Call Status</p>
-        <p class="text-sm font-medium" :class="callStatusColor">{{ account.callStatus || 'Idle' }}</p>
+        <div class="flex items-center gap-2">
+          <p class="text-sm font-medium" :class="callStatusColor">{{ account.callStatus || 'Idle' }}</p>
+        </div>
       </div>
       
       <div class="relative">
@@ -104,18 +106,50 @@
     <div class="mt-3 text-xs text-gray-500">
       Last update: {{ formatTimestamp(account.lastEvent) }}
     </div>
+
+    <!-- Call Stats Button - Bottom Right -->
+    <button 
+      v-if="hasActiveCall"
+      @click="showCallStats = true"
+      class="absolute bottom-3 right-3 bg-gray-600 hover:bg-gray-500 text-white rounded-full p-1.5 shadow transition-all hover:scale-110 z-10"
+      title="Call statistics"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </button>
+
+    <!-- Call Statistics Modal -->
+    <CallStatisticsModal 
+      v-if="activeCall"
+      :show="showCallStats"
+      :call="activeCall"
+      @close="showCallStats = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import type { CallInfo } from '~/types';
 
 const props = defineProps<{
   account: any;
   contacts: any[];
+  calls: CallInfo[];
 }>();
 
 const emit = defineEmits(['call', 'hangup', 'assignContact']);
+
+const showCallStats = ref(false);
+
+const activeCall = computed(() => {
+  return props.calls.find(call => call.localUri === props.account.uri);
+});
+
+const hasActiveCall = computed(() => {
+  return !!activeCall.value && (activeCall.value.state === 'Established' || activeCall.value.state === 'Ringing');
+});
 
 const handleContactChange = (event: Event) => {
   const target = event.target as HTMLSelectElement;
@@ -215,17 +249,9 @@ const autoConnectColor = computed(() => {
 
 const getAutoConnectDisplayText = () => {
   if (!props.account.autoConnectContact) return 'Off';
-  
   const contact = getContactByUri(props.account.autoConnectContact);
   if (!contact) return 'Off';
-  
-  const displayName = getContactDisplayName(contact);
-  const presence = contact.presence || 'unknown';
-  
-  // Capitalize first letter
-  const presenceText = presence.charAt(0).toUpperCase() + presence.slice(1);
-  
-  return `${displayName} (${presenceText})`;
+  return getContactDisplayName(contact);
 };
 
 const showConnectionLine = computed(() => {

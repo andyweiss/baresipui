@@ -7,6 +7,7 @@ export const useSocketIO = () => {
   const baresipConnected = ref(false); // TCP connection to Baresip
   const accounts = ref<any[]>([]);
   const contacts = ref<any[]>([]);
+  const calls = ref<any[]>([]);
   const logs = ref<any[]>([]);
 
   const connect = () => {
@@ -32,6 +33,7 @@ export const useSocketIO = () => {
       console.log('📦 Socket.IO: Received init data', data);
       accounts.value = data.accounts || [];
       contacts.value = data.contacts || [];
+      calls.value = data.calls || [];
       baresipConnected.value = data.baresipConnected ?? false;
     });
 
@@ -40,12 +42,17 @@ export const useSocketIO = () => {
       baresipConnected.value = data.connected;
     });
 
+    socket.value.on('baresipDisconnected', () => {
+      calls.value = [];
+    });
+
     socket.value.on('message', (data: any) => {
       console.log('📨 Socket.IO: Received message', data);
 
       if (data.type === 'init') {
         accounts.value = data.accounts || [];
         contacts.value = data.contacts || [];
+        calls.value = data.calls || [];
         baresipConnected.value = data.baresipConnected ?? false;
       } else if (data.type === 'accountStatus') {
         console.log('📊 Socket.IO: Account status update for:', data.data.uri);
@@ -78,6 +85,23 @@ export const useSocketIO = () => {
         }
       } else if (data.type === 'contactsUpdate') {
         contacts.value = data.contacts || [];
+      } else if (data.type === 'callAdded' || data.type === 'callUpdated') {
+        console.log('📞 Call event:', data.type, data.data);
+        const callIndex = calls.value.findIndex(c => c.callId === data.data.callId);
+        if (callIndex >= 0) {
+          // Update existing call - force reactivity
+          calls.value = [
+            ...calls.value.slice(0, callIndex),
+            data.data,
+            ...calls.value.slice(callIndex + 1)
+          ];
+        } else {
+          // Add new call
+          calls.value = [...calls.value, data.data];
+        }
+      } else if (data.type === 'callRemoved') {
+        console.log('📞 Call removed:', data.data.callId);
+        calls.value = calls.value.filter(c => c.callId !== data.data.callId);
       }
     });
 
@@ -121,7 +145,6 @@ export const useSocketIO = () => {
 
   onUnmounted(() => {
     if (socket.value) {
-      console.log('👋 Socket.IO: Disconnecting...');
       socket.value.disconnect();
     }
   });
@@ -132,6 +155,7 @@ export const useSocketIO = () => {
     baresipConnected,
     accounts,
     contacts,
+    calls,
     logs,
     sendCommand,
     toggleAutoConnect

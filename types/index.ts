@@ -40,6 +40,31 @@ export interface CallInfo {
   answerTime?: number;
   endTime?: number;
   duration?: number;
+  // Stream statistics
+  audioCodec?: string;
+  videoCodec?: string;
+  audioRxStats?: {
+    packets: number;
+    packetsLost: number;
+    jitter: number; // in ms
+    bitrate: number; // in bit/s
+  };
+  audioTxStats?: {
+    packets: number;
+    packetsLost: number;
+    bitrate: number; // in bit/s
+  };
+  videoRxStats?: {
+    packets: number;
+    packetsLost: number;
+    jitter: number; // in ms
+    bitrate: number; // in bit/s
+  };
+  videoTxStats?: {
+    packets: number;
+    packetsLost: number;
+    bitrate: number; // in bit/s
+  };
 }
 
 export interface AudioMeter {
