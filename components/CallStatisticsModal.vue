@@ -7,10 +7,7 @@
     <div class="bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4 border border-gray-700 relative">
       <!-- Header -->
       <div class="flex items-start justify-between mb-4">
-        <button 
-          class="absolute top-2 right-2 bg-gray-700 text-xs text-white px-2 py-1 rounded hover:bg-gray-600 z-20"
-          @click.stop
-        >DEBUG STICKY</button>
+        
         <h3 class="text-lg font-semibold text-white">Call Statistics</h3>
         <button 
           @click="$emit('close')"
@@ -64,7 +61,7 @@
         </div>
 
         <!-- Audio RX Statistics -->
-        <div v-if="call && call.audioRxStats" class="bg-gray-900 rounded p-3">
+        <div v-if="call && call.audioRxStats" class="bg-gray-900 rounded p-3 mb-2">
           <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Audio RX (Incoming)</p>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div>
@@ -75,6 +72,23 @@
               <span class="text-gray-500">Lost:</span>
               <span :class="call.audioRxStats.packetsLost > 0 ? 'text-red-400' : 'text-green-400'" class="ml-1">
                 {{ call.audioRxStats.packetsLost }} ({{ packetLossPercent(call.audioRxStats) }}%)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audio TX Statistics -->
+        <div v-if="call && call.audioTxStats" class="bg-gray-900 rounded p-3">
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Audio TX (Outgoing)</p>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span class="text-gray-500">Packets:</span>
+              <span class="text-white ml-1">{{ call.audioTxStats.packets }}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">Lost:</span>
+              <span :class="call.audioTxStats.packetsLost > 0 ? 'text-red-400' : 'text-green-400'" class="ml-1">
+                {{ call.audioTxStats.packetsLost }} ({{ packetLossPercent(call.audioTxStats) }}%)
               </span>
             </div>
           </div>
@@ -143,10 +157,22 @@ const stateColor = computed(() => {
 const formattedDuration = computed(() => {
   const baseTime = props.call?.answerTime || props.call?.startTime;
   if (!baseTime) return '0:00';
-  const seconds = Math.floor((currentTime.value - baseTime) / 1000);
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  let totalSeconds = Math.floor((currentTime.value - baseTime) / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  totalSeconds %= 86400;
+  const hours = Math.floor(totalSeconds / 3600);
+  totalSeconds %= 3600;
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  let result = '';
+  if (days > 0) {
+    result += `${days}d `;
+  }
+  if (hours > 0 || days > 0) {
+    result += `${hours}:`;
+  }
+  result += `${mins}:${secs.toString().padStart(2, '0')}`;
+  return result;
 });
 
 const formatUri = (uri: string) => {

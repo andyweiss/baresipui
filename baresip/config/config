@@ -66,8 +66,8 @@ audio_jitter_buffer_size        5              # [packets]
 video_jitter_buffer_type        fixed           # off, fixed, adaptive
 video_jitter_buffer_ms  100-200         # Min. - Max. [ms]
 video_jitter_buffer_size        250             # [packets]
-rtp_stats               no
-#rtp_timeout            60
+rtp_stats               yes
+rtp_timeout             10
 #avt_bundle             no
 #rtp_rxmode             main
 
@@ -108,7 +108,7 @@ module                  l16.so
 # Audio filter Modules (in encoding order)
 module                  auconv.so
 module                  auresamp.so
-#module                 vumeter.so
+module                 vumeter.so
 #module                 sndfile.so
 #module                 plc.so
 #module                 webrtc_aec.so
