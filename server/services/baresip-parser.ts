@@ -240,15 +240,46 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   const callIdMatch = data.match(/id=([a-f0-9]+)/);
   const callId = callIdMatch ? callIdMatch[1] : null;
 
-  // Extract codec from "local formats" section
-  const codecMatch = data.match(/\s+(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s+\([^)]*\)\s+\*/);
-  let audioCodec = undefined;
-  if (codecMatch) {
-    const codecName = codecMatch[2];
-    const sampleRate = codecMatch[3];
-    const channels = codecMatch[4];
-    audioCodec = `${codecName}/${sampleRate}/${channels}`;
-    console.log(`📊 Extracted codec: ${audioCodec}`);
+  // Extract codec from "local formats" section (find all codecs, mark active)
+  const localFormatsSection = data.split('local formats:')[1]?.split('remote formats:')[0] || '';
+  let activeCodec: any = null;
+  let codecs: any[] = [];
+  if (localFormatsSection) {
+    // Zeilenweise durchsuchen
+    const lines = localFormatsSection.split('\n');
+    for (const line of lines) {
+      // Beispiel: "     96 opus/48000/2 (stereo=1;sprop-stereo=1;maxaveragebitrate=128000) *"
+      const match = line.match(/\s*(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s*\(([^)]*)\)\s*(\*)?/);
+      if (match) {
+        const payloadType = match[1];
+        const codecName = match[2];
+        const sampleRate = match[3];
+        const channels = match[4];
+        const params = match[5];
+        const isActive = !!match[6];
+        const paramObj: Record<string, string> = {};
+        params.split(';').forEach(p => {
+          const [k, v] = p.split('=');
+          if (k && v) paramObj[k.trim()] = v.trim();
+        });
+        const codecInfo = {
+          payloadType,
+          codec: codecName,
+          sampleRate: Number(sampleRate),
+          channels: Number(channels),
+          params: paramObj,
+          isActive
+        };
+        codecs.push(codecInfo);
+        if (isActive) activeCodec = codecInfo;
+      }
+    }
+    if (activeCodec) {
+      console.log('📊 Aktiver Codec:', activeCodec);
+    }
+    if (codecs.length > 0) {
+      console.log('📊 Alle Codecs:', codecs);
+    }
   }
 
   // Extract RTCP_STATS line (example: RTCP_STATS: packets_rx=123 packets_tx=456 lost_rx=7 lost_tx=2 jitter_rx=12.3 jitter_tx=10.1 rtt=45.6)
@@ -269,10 +300,11 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   }
 
   // Try to find the call and update it
-  if (callId || audioCodec || Object.keys(stats).length > 0) {
+  if (callId || activeCodec || codecs.length > 0 || Object.keys(stats).length > 0) {
     const calls = stateManager.getCalls();
     let updates: any = {};
-    if (audioCodec) updates.audioCodec = audioCodec;
+    if (activeCodec) updates.audioCodec = activeCodec;
+    if (codecs.length > 0) updates.audioCodecs = codecs;
     if (Object.keys(stats).length > 0) {
       // Map stats to UI fields
       updates.audioRxStats = {

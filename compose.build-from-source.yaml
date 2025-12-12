@@ -23,6 +23,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - baresip-network
     healthcheck:

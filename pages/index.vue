@@ -101,7 +101,7 @@
       <!-- Accounts Tab -->
       <section v-show="activeTab === 'accounts'">
         <div v-if="accounts.length === 0" class="bg-gray-800 rounded-lg shadow-lg p-8 text-center">
-          <p class="text-gray-400">No accounts registered yet</p>
+          <p class="text-gray-400">No accounts to display yet</p>
         </div>
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <AccountCard

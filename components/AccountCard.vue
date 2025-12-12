@@ -109,7 +109,7 @@
 
     <!-- Call Stats Button - Bottom Right -->
     <button 
-      v-if="hasActiveCall"
+      v-if="activeCall"
       @click="showCallStats = true"
       class="absolute bottom-3 right-3 bg-gray-600 hover:bg-gray-500 text-white rounded-full p-1.5 shadow transition-all hover:scale-110 z-10"
       title="Call statistics"
@@ -147,8 +147,9 @@ const activeCall = computed(() => {
   return props.calls.find(call => call.localUri === props.account.uri);
 });
 
+// Button und Modal sollen immer angezeigt werden, sobald ein Call existiert
 const hasActiveCall = computed(() => {
-  return !!activeCall.value && (activeCall.value.state === 'Established' || activeCall.value.state === 'Ringing');
+  return !!activeCall.value;
 });
 
 const handleContactChange = (event: Event) => {

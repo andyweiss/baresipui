@@ -41,7 +41,12 @@ export interface CallInfo {
   endTime?: number;
   duration?: number;
   // Stream statistics
-  audioCodec?: string;
+  audioCodec?: {
+    codec: string;
+    sampleRate: number;
+    channels: number;
+    params?: Record<string, string>;
+  };
   videoCodec?: string;
   audioRxStats?: {
     packets: number;
