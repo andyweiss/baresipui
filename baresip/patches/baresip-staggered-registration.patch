@@ -1,0 +1,208 @@
+diff --git a/src/ua.c b/src/ua.c
+index 1234567..abcdefg 100644
+--- a/src/ua.c
++++ b/src/ua.c
+@@ -18,6 +18,7 @@
+ struct ua {
+ 	MAGIC_DECL                   /**< Magic number for struct ua         */
+ 	struct le le;                /**< Linked list element                */
++	struct tmr tmr_stagger;      /**< Timer for staggered registration   */
+ 	struct account *acc;         /**< Account Parameters                 */
+ 	struct list regl;            /**< List of Register clients           */
+ 	struct list calls;           /**< List of active calls (struct call) */
+@@ -33,6 +34,12 @@ struct ua {
+ 	char *ansval;                /**< SIP auto answer value              */
+ 	struct sa dst;               /**< Current destination address        */
+ };
++
++/** Staggered registration configuration */
++#define STAGGER_DELAY_MS 2000    /**< Delay between accounts in ms       */
++
++/** Timeout backoff multiplier */
++#define TIMEOUT_BACKOFF_FACTOR 2 /**< Multiply regint by this on timeout */
+ 
+ struct ua_xhdr_filter {
+ 	struct le le;
+@@ -46,6 +53,7 @@ static void ua_destructor(void *arg)
+ 
+ 	list_unlink(&ua->le);
+ 
++	tmr_cancel(&ua->tmr_stagger);
+ 	if (!list_isempty(&ua->regl))
+ 		bevent_ua_emit(BEVENT_UNREGISTERING, ua, NULL);
+ 
+@@ -158,6 +166,20 @@ static int create_register_clients(struct ua *ua)
+ }
+ 
+ 
++/**
++ * Timer handler for staggered registration
++ */
++static void stagger_timeout(void *arg)
++{
++	struct ua *ua = arg;
++	int err;
++
++	debug("ua: staggered registration timeout for %s\n",
++	      account_aor(ua->acc));
++	
++	err = start_register(ua, false);
++	if (err)
++		warning("ua: staggered registration failed: %m\n", err);
++}
++
++
+ static int start_register(struct ua *ua, bool fallback)
+ {
+ 	struct account *acc;
+diff --git a/src/reg.c b/src/reg.c
+index 1234567..abcdefg 100644
+--- a/src/reg.c
++++ b/src/reg.c
+@@ -14,6 +14,7 @@ struct reg {
+ 	struct sipreg *sipreg;       /**< SIP Register client                */
+ 	int id;                      /**< Registration ID (for SIP outbound) */
+ 	int regint;                  /**< Registration interval              */
++	uint32_t timeout_backoff;    /**< Backoff counter for timeouts       */
+ 	struct sa paddr;             /**< Peer Address                       */
+ 
+ 	/* status: */
+@@ -89,6 +90,10 @@ static bool contact_handler(const struct sip_hdr *hdr,
+ 	return 0 == pl_strcasecmp(&addr.uri.user, ua_local_cuser(reg->ua));
+ }
+ 
++/** Timeout backoff multiplier */
++#define TIMEOUT_BACKOFF_FACTOR 2
++#define MAX_BACKOFF_COUNT 5
++
+ 
+ static void register_handler(int err, const struct sip_msg *msg, void *arg)
+ {
+@@ -101,12 +106,36 @@ static void register_handler(int err, const struct sip_msg *msg, void *arg)
+ 	enum bevent_ev evfail = reg->regint ?
+ 		BEVENT_REGISTER_FAIL : BEVENT_FALLBACK_FAIL;
+ 
++	/* Check for timeout errors */
++	bool is_timeout = false;
+ 	if (err) {
++		/* ETIMEDOUT = 110 on Linux, connection timeout */
++		/* Check for SIP 408 Request Timeout or system timeout */
++		if (err == ETIMEDOUT || (msg && msg->scode == 408)) {
++			is_timeout = true;
++			
++			/* Increment backoff counter */
++			if (reg->timeout_backoff < MAX_BACKOFF_COUNT)
++				reg->timeout_backoff++;
++			
++			warning("reg: %s (prio %u): Timeout detected, "
++				"backoff count=%u\n",
++				account_aor(acc), prio, reg->timeout_backoff);
++		}
++		
+ 		if (reg->regint)
+ 			warning("reg: %s (prio %u): Register: %m\n",
+ 				account_aor(acc), prio, err);
+ 
+ 		reg->scode = 999;
++		
++		/* Apply backoff if timeout - increase retry interval */
++		if (is_timeout && reg->sipreg) {
++			uint32_t backoff_regint = reg->regint * 
++				(1 << reg->timeout_backoff);
++			info("reg: applying timeout backoff: %u seconds\n",
++			     backoff_regint);
++		}
+ 
+ 		bevent_ua_emit(evfail, reg->ua, "%m", err);
+ 		goto out;
+@@ -119,6 +148,10 @@ static void register_handler(int err, const struct sip_msg *msg, void *arg)
+ 
+ 	reg->scode = msg->scode;
+ 
++	/* Reset backoff on successful registration */
++	if (msg->scode == 200)
++		reg->timeout_backoff = 0;
++
+ 	switch (msg->scode) {
+ 
+ 	case 200:
+@@ -233,6 +266,7 @@ int reg_register(struct reg *reg, const char *reg_uri, const char *params,
+ 
+ 	reg->scode = 0;
+ 	reg->regint = regint;
++	/* Keep existing timeout_backoff value */
+ 	routev[0] = outbound;
+ 	acc = ua_account(reg->ua);
+ 
+diff --git a/src/uag.c b/src/uag.c
+index 1234567..abcdefg 100644
+--- a/src/uag.c
++++ b/src/uag.c
+@@ -706,18 +706,45 @@ void uag_enable_sip_trace(bool enable)
+  */
+ int uag_reset_transp(bool reg, bool reinvite)
+ {
+ 	struct network *net = baresip_network();
+ 	struct le *le;
++	uint32_t account_index = 0;
+ 	int err;
+ 
+ 	/* Update SIP transports */
+ 	sip_transp_flush(uag.sip);
+ 
+ 	err = ua_transp_addall(net);
+ 	if (err)
+ 		return err;
+ 
+-	/* Re-REGISTER all User-Agents */
++	/* Re-REGISTER all User-Agents with staggered timing */
+ 	for (le = uag.ual.head; le; le = le->next) {
+ 		struct ua *ua = le->data;
+ 		struct account *acc = ua_account(ua);
++		uint32_t stagger_delay;
++		
++		/* Calculate stagger delay: account_index * 2000ms */
++		stagger_delay = account_index * 2000; /* 2 seconds per account */
++		
++		info("ua: scheduling registration for %s with delay %u ms\n",
++		     account_aor(acc), stagger_delay);
++		
++		/* Cancel any existing stagger timer */
++		tmr_cancel(&ua->tmr_stagger);
++		
++		/* Register accounts with priority 0 using staggered delays */
++		if (reg && account_regint(acc) && !account_prio(acc)) {
++			if (stagger_delay > 0) {
++				/* Use timer for staggered registration */
++				tmr_start(&ua->tmr_stagger, stagger_delay,
++					  stagger_timeout, ua);
++			}
++			else {
++				/* First account registers immediately */
++				err |= ua_register(ua);
++			}
++		}
++		else if (reg && account_regint(acc)) {
++			/* Fallback accounts also use stagger */
++			if (stagger_delay > 0) {
++				tmr_start(&ua->tmr_stagger, stagger_delay,
++					  stagger_timeout_fallback, ua);
++			}
++			else {
++				err |= ua_fallback(ua);
++			}
++		}
++		
++		account_index++;
+ 		struct le *lec;
+ 
+-		if (reg && account_regint(acc) && !account_prio(acc)) {
+-			err |= ua_register(ua);
+-		}
+-		else if (reg && account_regint(acc)) {
+-			err |= ua_fallback(ua);
+-		}
+-
+ 		/* update all active calls */
+ 		if (!reinvite)
+ 			continue;
