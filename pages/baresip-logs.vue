@@ -218,27 +218,25 @@ onUnmounted(() => {
 });
 
 const filteredLogs = computed(() => {
-  console.log('🔍 Filtering logs. Total:', logs.value.length, 'Filters:', { level: filterLevel.value, account: filterAccount.value, search: searchQuery.value });
   let filtered = logs.value;
 
   if (filterLevel.value) {
-    filtered = filtered.filter(log => log.level === filterLevel.value);
+    filtered = filtered.filter(log => (log.level || '').toLowerCase() === filterLevel.value.toLowerCase());
   }
 
   if (filterAccount.value) {
-    filtered = filtered.filter(log => log.accountUri === filterAccount.value);
+    filtered = filtered.filter(log => (log.accountUri || '') === filterAccount.value);
   }
 
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase();
-    filtered = filtered.filter(log => 
-      log.message.toLowerCase().includes(query) ||
-      log.source.toLowerCase().includes(query) ||
-      (log.accountUri && log.accountUri.toLowerCase().includes(query))
+    filtered = filtered.filter(log =>
+      (log.message || '').toLowerCase().includes(query) ||
+      (log.source || '').toLowerCase().includes(query) ||
+      (log.accountUri || '').toLowerCase().includes(query)
     );
   }
 
-  console.log('✅ Filtered result:', filtered.length, 'logs');
   return filtered;
 });
 

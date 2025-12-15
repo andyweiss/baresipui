@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: baresip-ui
     ports:
-      - "3000:3000"
-      - "3001:3001"
+      - "3300:3000"
+      - "3301:3001"
     environment:
       - NUXT_HOST=0.0.0.0
       - NUXT_PORT=3000
@@ -22,7 +22,7 @@ services:
     networks:
       - baresip-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3300/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -1,25 +1,5 @@
 <template>
-  <div class="min-h-screen bg-gray-900 relative">
-    <!-- Disconnection Overlay -->
-    <div 
-      v-if="!baresipConnected"
-      class="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center backdrop-blur-sm"
-    >
-      <div class="bg-gray-800 rounded-lg p-8 shadow-2xl border border-red-500 max-w-md">
-        <div class="flex items-center gap-4 mb-4">
-          <div class="w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-          <h2 class="text-2xl font-bold text-white">Connection Lost</h2>
-        </div>
-        <p class="text-gray-300 mb-4">
-          Connection to Baresip server has been lost. 
-          Attempting to reconnect...
-        </p>
-        <div class="flex justify-center">
-          <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-        </div>
-      </div>
-    </div>
-
+  <div class="min-h-screen bg-gray-900">
     <header class="bg-gray-800 shadow-lg">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="flex items-center justify-between">
@@ -27,10 +7,10 @@
           <div class="flex items-center gap-2">
             <div
               class="w-3 h-3 rounded-full"
-              :class="baresipConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"
+              :class="connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"
             ></div>
             <span class="text-sm text-gray-300">
-              {{ baresipConnected ? 'Connected' : 'Disconnected' }}
+              {{ connected ? 'Connected' : 'Disconnected' }}
             </span>
           </div>
         </div>
@@ -101,7 +81,7 @@
       <!-- Accounts Tab -->
       <section v-show="activeTab === 'accounts'">
         <div v-if="accounts.length === 0" class="bg-gray-800 rounded-lg shadow-lg p-8 text-center">
-          <p class="text-gray-400">No accounts to display yet</p>
+          <p class="text-gray-400">No accounts registered yet</p>
         </div>
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <AccountCard
@@ -109,7 +89,6 @@
             :key="account.uri"
             :account="account"
             :contacts="contacts"
-            :calls="calls"
             @call="handleCall"
             @hangup="handleHangup"
             @assignContact="handleAssignContact"
@@ -224,7 +203,7 @@
 import { ref } from 'vue';
 
 // Use Socket.IO instead of WebSocket
-const { connected, baresipConnected, accounts, contacts, calls, sendCommand, toggleAutoConnect } = useSocketIO();
+const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useSocketIO();
 
 // Active tab state
 const activeTab = ref('accounts');

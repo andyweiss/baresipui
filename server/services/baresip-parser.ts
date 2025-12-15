@@ -209,15 +209,7 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
         
         console.log(`Loaded contact from API: ${name} <${contact}> [${presenceStatus}]`);
         
-        // If this contact URI matches an account, set the displayName on the account
-        if (stateManager.hasAccount(contact)) {
-          const account = stateManager.getAccount(contact);
-          if (account) {
-            account.displayName = name;
-            stateManager.setAccount(contact, account);
-            console.log(`Set displayName for account ${contact}: "${name}"`);
-          }
-        }
+        // Entfernt: Kein Überschreiben von account.displayName durch Kontaktnamen
       } else {
         console.log(`No match for line: "${cleanLine}"`);
       }
@@ -979,9 +971,10 @@ function handleTextLine(line: string, stateManager: StateManager): void {
       }
     }
   } else if (line.includes('sip:') && line.includes('@') && !line.includes('presence:') && !line.includes('reg:')) {
-    const match = line.match(/(sip:[^@\s]+@[^\s>;,)]+)/);
+      const match = line.match(/([^<]*)<\s*(sip:[^@\s]+@[^\s>;,)]+)\s*>?/);
     if (match) {
-      const uri = match[1];
+        const name = match[1] ? match[1].trim() : undefined;
+        const uri = match[2];
       if (!stateManager.hasAccount(uri)) {
         const accountData = {
           uri,
@@ -990,14 +983,14 @@ function handleTextLine(line: string, stateManager: StateManager): void {
           autoConnectStatus: 'Off',
           lastEvent: timestamp,
           configured: true
-        };
-        stateManager.setAccount(uri, accountData);
-        console.log(`Loaded configured account from text: ${uri}`);
+          };
+          stateManager.setAccount(uri, accountData);
+          console.log(`Loaded configured account from text: ${uri} displayName: ${name}`);
 
-        stateManager.broadcast({
-          type: 'accountStatus',
-          data: accountData
-        });
+          stateManager.broadcast({
+            type: 'accountStatus',
+            data: accountData
+          });
       }
     }
   }

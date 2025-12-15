@@ -10,6 +10,7 @@ export interface Account {
   source?: string;
   autoConnectContact?: string;
   callId?: string;
+  displayName?: string;
 }
 
 export interface Contact {
