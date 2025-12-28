@@ -68,45 +68,84 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
   console.log('=== Command Response ===');
   const timestamp = Date.now();
 
+  if (response && response.data !== undefined) {
+    console.log('[BARESIP RAW RESPONSE]', response.data);
+  } else {
+    console.log('[BARESIP RAW RESPONSE] <undefined>');
+  }
   console.log(`Command Response: ${JSON.stringify(response)}`);
 
+  // Zentrale Dispatch-Logik für verschiedene Response-Typen
+  if (typeof response.data === 'string') {
+    const data = response.data;
+    // 1. Banner/Version
+    if (data.match(/baresip.*\d+\.\d+\.\d+/i) || data.match(/\u001B\[\d+;\d+m/)) {
+      parseBannerResponse(response, stateManager, timestamp);
+      return;
+    }
+    // 2. Kontakte
+    if (data.includes('--- Contacts')) {
+      parseContactsFromResponse(data, stateManager);
+      return;
+    }
+    // 3. Calls
+    if (data.includes('=== Call') || data.includes('call:')) {
+      parseCallsResponse(data, stateManager);
+      return;
+    }
+    // 4. Callstat/Statistiken
+    if (data.includes('Call debug') || data.includes('audio RTP')) {
+      parseCallStatResponse(data, stateManager);
+      return;
+    }
+    // 5. Registrierung
+    if (data.includes('User Agents')) {
+      const cleanData = data.replace(/\u001B\[[0-9;]*[mK]/g, '').replace(/\n/g, '\n');
+      parseRegistrationInfo(cleanData, stateManager);
+      return;
+    }
+    // Default: generisch loggen
+    stateManager.broadcast({
+      type: 'log',
+      timestamp,
+      message: `Command Response: ${JSON.stringify(response)}`
+    });
+    return;
+  }
+  // Fallback: generisch loggen
   stateManager.broadcast({
     type: 'log',
     timestamp,
     message: `Command Response: ${JSON.stringify(response)}`
   });
+}
 
-  if (response.ok && response.data) {
-    console.log(`Command executed successfully: ${response.data}`);
-
-    if (typeof response.data === 'string') {
-      console.log(`Checking response data for contacts: includes "--- Contacts" = ${response.data.includes('--- Contacts')}`);
-      parseApiResponse(response.data, stateManager, response.token);
-
-      if (response.data.includes('--- Contacts')) {
-        console.log('Calling parseContactsFromResponse...');
-        parseContactsFromResponse(response.data, stateManager);
-      }
-      
-      // Parse active calls to sync call status after restart
-      if (response.data.includes('=== Call')) {
-        console.log('Calling parseCallsResponse...');
-        parseCallsResponse(response.data, stateManager);
-      }
-      
-      // Parse call statistics from callstat command
-      if (response.data.includes('Call debug') || response.data.includes('audio RTP')) {
-        console.log('📊 Parsing callstat response...');
-        parseCallStatResponse(response.data, stateManager);
-      }
-
-      const cleanData = response.data.replace(/\\u001B\[[0-9;]*[mK]/g, '').replace(/\\n/g, '\n');
-      if (cleanData.includes('User Agents') || response.data.includes('User Agents')) {
-        parseRegistrationInfo(cleanData, stateManager);
-      }
+// Banner/Version-Parser
+function parseBannerResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
+  let version: string | undefined;
+  const ok = response.ok === true || response.ok === 'true';
+  if (ok && response.data && typeof response.data === 'string') {
+    const ansiRegex = /\x1b\[[0-9;]*[mK]|\u001B\[[0-9;]*[mK]|\\u001B\[[0-9;]*[mK]/g;
+    const clean = response.data.replace(ansiRegex, '');
+    let match = clean.match(/baresip\s+([\d]+\.[\d]+\.[\d]+)/i);
+    if (match) version = match[1];
+    if (!version) {
+      match = clean.match(/sip\s+([\d]+\.[\d]+\.[\d]+)/i);
+      if (match) version = match[1];
     }
-  } else {
-    console.error(`Command failed: ${response.data}`);
+    if (!version) {
+      match = clean.match(/([\d]+\.[\d]+\.[\d]+)/);
+      if (match) version = match[1];
+    }
+  }
+  stateManager.broadcast({
+    type: 'log',
+    timestamp,
+    message: `Command Response: ${JSON.stringify(response)}`,
+    version
+  });
+  if (version && version !== '.' && version !== 'unbekannt') {
+    stateManager.addLog('log', `Command Response: ${JSON.stringify(response)}`, { version });
   }
 }
 
@@ -120,7 +159,7 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
       // Match: number - URI   STATUS (with flexible whitespace)
       const match = cleanLine.match(/\d+\s*-\s*(sip:[^@]+@\S+)\s+(OK|ERR)/);
       if (match) {
-        const uri = match[1];
+        const uri = match[1] ? match[1].toLowerCase().trim() : undefined;
         const status = match[2];
 
         console.log(`Registration status for ${uri}: ${status} (status length: ${status.length}, charCodes: ${Array.from(status).map(c => c.charCodeAt(0)).join(',')})`);
@@ -163,12 +202,14 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
           console.log(`Set error status for ${uri}: ${errorStatus}`);
         }
 
-        stateManager.setAccount(uri, account);
+        if (uri) stateManager.setAccount(uri, account);
 
-        stateManager.broadcast({
-          type: 'accountStatus',
-          data: account
-        });
+        if (uri) {
+          stateManager.broadcast({
+            type: 'accountStatus',
+            data: account
+          });
+        }
 
         console.log(`Updated account ${uri}: registered=${account.registered}, error=${account.registrationError}`);
       }
@@ -209,7 +250,7 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
         
         console.log(`Loaded contact from API: ${name} <${contact}> [${presenceStatus}]`);
         
-        // Entfernt: Kein Überschreiben von account.displayName durch Kontaktnamen
+        // removed 
       } else {
         console.log(`No match for line: "${cleanLine}"`);
       }
@@ -330,13 +371,12 @@ function parseCallsResponse(data: string, stateManager: StateManager): void {
   // Format examples from baresip v3.16.0:
   // "call: #1 <sip:2061616@sip.srgssr.ch> <sip:2061531@sip.srgssr.ch> [ESTABLISHED] id=abc123"
   // Or older format: "=== Call 1: sip:2061616@sip.srgssr.ch -> sip:2061531@sip.srgssr.ch [ESTABLISHED]"
+  const activeCallIds: Set<string> = new Set();
   for (const line of lines) {
     if ((line.includes('call:') || line.includes('=== Call')) && line.includes('sip:')) {
       console.log(`Parsing call line: "${line}"`);
-      
       // Try new format first: call: #1 <local> <remote> [STATE] id=xxx
       let match = line.match(/<(sip:[^@\s]+@[^\s>]+)>\s*<(sip:[^@\s]+@[^\s>]+)>\s*\[([^\]]+)\](?:.*id[=:]([^\s]+))?/i);
-      
       // Try older format: === Call N: local -> remote [STATE]
       if (!match) {
         match = line.match(/sip:([^@\s]+@[^\s>]+).*->.*sip:([^@\s]+@[^\s\[]+)\s*\[([^\]]+)\]/i);
@@ -344,89 +384,69 @@ function parseCallsResponse(data: string, stateManager: StateManager): void {
           match = [`sip:${match[1]}`, `sip:${match[1]}`, `sip:${match[2]}`, match[3], undefined];
         }
       }
-      
       if (match) {
         const localUri = match[1];
         const remoteUri = match[2];
         const callState = match[3].trim().toUpperCase();
-        const callId = match[4]; // May be undefined
-        
-        console.log(`Found active call: ${localUri} -> ${remoteUri} [${callState}] ID=${callId || 'unknown'}`);
-        
+        const callId = match[4] || `${localUri}->${remoteUri}`; // Fallback-ID
+        activeCallIds.add(callId);
+        console.log(`Found active call: ${localUri} -> ${remoteUri} [${callState}] ID=${callId}`);
         // Update account call status
         const account = stateManager.getAccount(localUri);
-        if (account) {
-          const callStatus = (callState === 'ESTABLISHED') ? 'In Call' : 'Ringing';
-          const updates: any = { callStatus };
-          
-          // Only set callId if we found one
-          if (callId) {
-            updates.callId = callId;
-          }
-          
-          // Update autoConnectStatus if this account has auto-connect configured
-          if (account.autoConnectContact) {
-            updates.autoConnectStatus = (callState === 'ESTABLISHED') ? 'Connected' : 'Connecting';
-          }
-          
-          stateManager.updateAccountStatus(localUri, updates);
-          console.log(`Updated ${localUri} status: callStatus=${callStatus}, callId=${callId || 'none'}, autoConnectStatus=${updates.autoConnectStatus || 'unchanged'}`);
+        let callStatus: string;
+        let callDirection: 'incoming' | 'outgoing' | 'unknown' = 'unknown';
+        if (callState === 'ESTABLISHED') {
+          callStatus = 'In Call';
+        } else if ([
+          'TRYING', 'OUTGOING', 'PROGRESS', 'RINGING', 'EARLY', 'CALLING'
+        ].includes(callState)) {
+          callStatus = 'Ringing';
+        } else {
+          callStatus = callState;
         }
+        // Direction heuristik: Wenn localUri == eigenem Account, outgoing
+        if (account && account.autoConnectContact) {
+          callDirection = 'outgoing';
+        }
+        // Updates für Account
+        const updates: any = { callStatus };
+        if (callId) updates.callId = callId;
+        if (account && account.autoConnectContact) {
+          updates.autoConnectStatus = (callState === 'ESTABLISHED') ? 'Connected' : 'Connecting';
+        }
+        if (account && localUri) {
+          stateManager.updateAccountStatus(String(localUri).toLowerCase().trim(), updates);
+        }
+        // Call-Objekt: update, wenn vorhanden, sonst add
+        const existingCall = stateManager.getCall(callId);
+        const callObj = {
+          callId,
+          localUri,
+          remoteUri,
+          peerName: remoteUri.split('@')[0],
+          state: callState === 'ESTABLISHED' ? 'Established' : 'Ringing',
+          direction: callDirection,
+          startTime: Date.now(),
+          answerTime: callState === 'ESTABLISHED' ? Date.now() : undefined
+        };
+        if (existingCall) {
+          stateManager.updateCall(callId, callObj);
+        } else {
+          stateManager.addCall(callObj);
+        }
+        console.log(`Updated ${localUri} status: callStatus=${callStatus}, callId=${callId}, autoConnectStatus=${updates.autoConnectStatus || 'unchanged'}, direction=${callDirection}`);
       }
     }
   }
-  
+  // remove calls that are no longer active
+  const allCalls = stateManager.getCalls();
+  for (const call of allCalls) {
+    if (!activeCallIds.has(call.callId)) {
+      stateManager.removeCall(call.callId);
+      console.log(`Removed inactive call: ${call.callId}`);
+    }
+  }
   console.log('Call status sync complete');
-}
-
-function parseApiResponse(data: string, stateManager: StateManager, token?: string): void {
-  const lines = data.split('\n');
-
-  for (const line of lines) {
-    if (line.includes('sip:') && line.includes('@')) {
-      const match = line.match(/(sip:[^@\s]+@[^\s>;,)]+)/);
-      if (match) {
-        const uri = match[1];
-
-        // Nur Accounts aus der Contact-Liste erstellen, aber NICHT als Account hinzufügen
-        // Diese werden nur für Auto-Connect verwendet
-        if (!stateManager.hasAccount(uri)) {
-          console.log(`Found contact (not adding as account): ${uri}`);
-          // Wir erstellen hier KEINEN Account mehr für Kontakte
-        }
-      }
-    }
-
-    if (line.includes('<sip:')) {
-      const cleanLine = line.replace(/\x1b\[[0-9;]*[mK]/g, '');
-      console.log(`Parsing contact line: "${cleanLine}"`);
-      const match = cleanLine.match(/(?:"([^"]+)"\s*|([^<\u001b]+?))\s*<(sip:[^@]+@[^>]+)>/);
-      if (match) {
-        const name = (match[1] || match[2] || 'Unknown').trim();
-        const contact = match[3];
-        console.log(`Found contact match: name="${name}", contact="${contact}"`);
-
-        if (!stateManager.hasContactConfig(contact)) {
-          const contactConfig = {
-            name: name,
-            enabled: false,
-            status: 'Off',
-            source: 'api'
-          };
-
-          stateManager.setContactConfig(contact, contactConfig);
-          console.log(`Loaded contact from API: ${name} <${contact}>`);
-        }
-      }
-    }
-  }
-
-  if (stateManager.getContactsSize() > 0) {
-    stateManager.broadcast({
-      type: 'contactsUpdate',
-      contacts: stateManager.getContacts()
-    });
-  }
 }
 
 function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): void {

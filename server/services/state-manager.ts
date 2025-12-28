@@ -22,20 +22,28 @@ export class StateManager {
 
   getAccounts(): Account[] {
     const accounts = Array.from(this.accounts.values());
+    // Stabile Sortierung: Immer lexikografisch nach URI (z.B. 1061202 vor 2061224)
+    accounts.sort((a, b) => a.uri.localeCompare(b.uri));
     console.log(`StateManager.getAccounts() called - returning ${accounts.length} accounts:`, accounts.map(a => a.uri));
     return accounts;
   }
 
+
   getAccount(uri: string): Account | undefined {
-    return this.accounts.get(uri);
+    if (!uri) return undefined;
+    return this.accounts.get(String(uri).toLowerCase().trim());
   }
+
 
   hasAccount(uri: string): boolean {
-    return this.accounts.has(uri);
+    if (!uri) return false;
+    return this.accounts.has(String(uri).toLowerCase().trim());
   }
 
+
   setAccount(uri: string, account: Account): void {
-    this.accounts.set(uri, account);
+    if (!uri) return;
+    this.accounts.set(String(uri).toLowerCase().trim(), account);
   }
 
   getContacts(): Contact[] {
@@ -84,23 +92,23 @@ export class StateManager {
     this.contactPresence.set(contact, presence);
   }
 
+
   updateAccountStatus(uri: string, updates: Partial<Account>): void {
-    const current = this.accounts.get(uri) || {
-      uri,
+    if (!uri) return;
+    const normUri = String(uri).toLowerCase().trim();
+    const current = this.accounts.get(normUri) || {
+      uri: normUri,
       registered: false,
       callStatus: 'Idle' as const,
       autoConnectStatus: 'Off',
       lastEvent: Date.now(),
-      configured: true  // Wenn baresip Events für diesen Account sendet, ist er konfiguriert
+      configured: true
     };
-
     const updated = { ...current, ...updates, lastEvent: Date.now() };
-    this.accounts.set(uri, updated);
-    
-    console.log(`Account updated: ${uri}`, updated);
+    this.accounts.set(normUri, updated);
+    console.log(`Account updated: ${normUri}`, updated);
     console.log(`Total accounts in state: ${this.accounts.size}`);
     console.log(`WebSocket clients connected: ${this.wsClients.size}`);
-
     this.broadcast({
       type: 'accountStatus',
       data: updated
@@ -196,21 +204,23 @@ export class StateManager {
   }
 
   addLog(type: string, message: string, data?: any): void {
+    // Extrahiere Version immer auf Top-Level, falls vorhanden
+    let version: string | undefined = undefined;
+    if (data && typeof data === 'object') {
+      if (data.version) version = data.version;
+      else if (data.data && data.data.version) version = data.data.version;
+    }
     const logEntry: LogEntry = {
       timestamp: Date.now(),
       type,
       message,
-      data
+      data,
+      ...(version ? { version } : {})
     };
-    
     this.logs.push(logEntry);
-    
-    // Keep only the last maxLogs entries
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(-this.maxLogs);
     }
-
-    // Broadcast log to WebSocket clients
     this.broadcast({
       type: 'log',
       log: logEntry

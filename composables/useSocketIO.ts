@@ -2,6 +2,43 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { io, Socket } from 'socket.io-client';
 
 export const useSocketIO = () => {
+    // Hilfsfunktion: Accounts ergänzen/aktualisieren und numerisch sortieren
+    function mergeAndSortAccounts(incoming: any[]) {
+      for (const acc of incoming) {
+        const idx = accounts.value.findIndex(a => a.uri === acc.uri);
+        if (idx >= 0) {
+          accounts.value[idx] = { ...accounts.value[idx], ...acc };
+        } else {
+          accounts.value.push(acc);
+        }
+      }
+      accounts.value.sort(accountSortFn);
+    }
+
+    // Sortierfunktion: numerisch nach SIP-Nummer, sonst lexikografisch
+    function accountSortFn(a: any, b: any) {
+      // Noch robustere Extraktion: alle nicht-Ziffern vor der Nummer ignorieren
+      function extractNumber(uri: string): number | null {
+        if (!uri) return null;
+        // Entferne führende Leerzeichen und alles bis zur ersten Ziffer nach 'sip:'
+        const match = uri.replace(/^sip:/, '').match(/(\d+)/);
+        if (match) {
+          const n = parseInt(match[1].replace(/^0+/, ''), 10);
+          return isNaN(n) ? null : n;
+        }
+        return null;
+      }
+      const nA = extractNumber(a.uri);
+      const nB = extractNumber(b.uri);
+      if (nA !== null && nB !== null) {
+        if (nA !== nB) return nA - nB;
+      } else if (nA !== null) {
+        return -1;
+      } else if (nB !== null) {
+        return 1;
+      }
+      return (a.uri || '').localeCompare(b.uri || '');
+    }
   const socket = ref<Socket | null>(null);
   const connected = ref(false); // Socket.IO connection to UI server
   const baresipConnected = ref(false); // TCP connection to Baresip
@@ -31,7 +68,7 @@ export const useSocketIO = () => {
 
     socket.value.on('init', (data: any) => {
       console.log('📦 Socket.IO: Received init data', data);
-      accounts.value = data.accounts || [];
+      mergeAndSortAccounts(data.accounts || []);
       contacts.value = data.contacts || [];
       calls.value = data.calls || [];
       baresipConnected.value = data.baresipConnected ?? false;
@@ -50,25 +87,36 @@ export const useSocketIO = () => {
       console.log('📨 Socket.IO: Received message', data);
 
       if (data.type === 'init') {
-        accounts.value = data.accounts || [];
+        mergeAndSortAccounts(data.accounts || []);
         contacts.value = data.contacts || [];
         calls.value = data.calls || [];
         baresipConnected.value = data.baresipConnected ?? false;
+        // Sortierfunktion: numerisch nach SIP-Nummer, sonst lexikografisch
+        function accountSortFn(a: any, b: any) {
+          const numA = a.uri?.match(/^sip:(\d+)/)?.[1];
+          const numB = b.uri?.match(/^sip:(\d+)/)?.[1];
+          if (numA && numB) {
+            const nA = parseInt(numA, 10);
+            const nB = parseInt(numB, 10);
+            if (!isNaN(nA) && !isNaN(nB)) {
+              return nA - nB;
+            }
+          }
+          return (a.uri || '').localeCompare(b.uri || '');
+        }
       } else if (data.type === 'accountStatus') {
         console.log('📊 Socket.IO: Account status update for:', data.data.uri);
         const index = accounts.value.findIndex(a => a.uri === data.data.uri);
         if (index >= 0) {
-          console.log('🔄 Socket.IO: Updating account at index', index, 'with data:', data.data);
-          // Force reactivity by replacing the entire array
-          const updated = [...accounts.value];
-          // Replace entire object instead of merge to handle undefined values
-          updated[index] = data.data;
-          accounts.value = updated;
+          // Update bestehendes Objekt (damit Vue-Reaktivität erhalten bleibt)
+          accounts.value[index] = { ...accounts.value[index], ...data.data };
         } else {
-          console.log('➕ Socket.IO: Adding new account');
           accounts.value.push(data.data);
         }
+        // Nach jedem accountStatus-Update sortieren
+        accounts.value.sort(accountSortFn);
       } else if (data.type === 'log') {
+        // ...
         logs.value.push(data.log || data);
         if (logs.value.length > 1000) {
           logs.value.shift();

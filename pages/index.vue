@@ -123,7 +123,7 @@
 
       <!-- Settings Tab -->
       <section v-show="activeTab === 'settings'">
-        <SettingsPanel :reloadConfig="reloadConfig" />
+        <SettingsPanel :reloadConfig="reloadConfig" :sendCommand="sendCommand" />
       </section>
     </main>
   </div>
@@ -143,12 +143,31 @@ const handleAssignContact = async (accountUri: string, contactUri: string) => {
   // ...existing code...
 };
 
-const handleCall = async (uri: string) => {
-  // ...existing code...
+const handleCall = async (accountUri: string) => {
+  const input = prompt('Zielnummer oder SIP-Adresse wählen:', '');
+  if (!input) return;
+  let target = input.trim();
+  // Wenn keine SIP-URI, dann Domain aus Account extrahieren
+  if (!target.startsWith('sip:')) {
+    const match = accountUri.match(/^sip:[^@]+@(.+)$/);
+    const domain = match ? match[1] : '';
+    if (domain) {
+      target = `sip:${target}@${domain}`;
+    }
+  }
+  try {
+    await sendCommand('dial', { accountUri, target });
+  } catch (err: any) {
+    alert('Fehler beim Wählen: ' + (err?.message || err));
+  }
 };
 
-const handleHangup = async (uri: string) => {
-  // ...existing code...
+const handleHangup = async (accountUri: string) => {
+  try {
+    await sendCommand('hangup', { accountUri });
+  } catch (err: any) {
+    alert('Fehler beim Auflegen: ' + (err?.message || err));
+  }
 };
 
 const handleToggleAutoConnect = async (contact: string, enabled: boolean) => {

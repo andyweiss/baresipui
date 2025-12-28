@@ -144,7 +144,11 @@ const emit = defineEmits(['call', 'hangup', 'assignContact']);
 const showCallStats = ref(false);
 
 const activeCall = computed(() => {
-  return props.calls.find(call => call.localUri === props.account.uri);
+  if (!props.account?.uri) return undefined;
+  const accountUri = String(props.account.uri).toLowerCase().trim();
+  return props.calls.find(call =>
+    call.localUri && String(call.localUri).toLowerCase().trim() === accountUri
+  );
 });
 
 // Button und Modal sollen immer angezeigt werden, sobald ein Call existiert
