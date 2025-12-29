@@ -2,7 +2,31 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { io, Socket } from 'socket.io-client';
 
 export const useSocketIO = () => {
-    // Hilfsfunktion: Accounts ergänzen/aktualisieren und numerisch sortieren
+    // Robuste Sortierfunktion: numerisch nach SIP-Nummer, sonst lexikografisch
+    function extractNumber(uri: string): number | null {
+      if (!uri) return null;
+      const match = uri.replace(/^sip:/, '').match(/(\d+)/);
+      if (match) {
+        const n = parseInt(match[1].replace(/^0+/, ''), 10);
+        return isNaN(n) ? null : n;
+      }
+      return null;
+    }
+    function accountSortFn(a: any, b: any) {
+      const nA = extractNumber(a.uri);
+      const nB = extractNumber(b.uri);
+      if (nA !== null && nB !== null) {
+        if (nA !== nB) return nA - nB;
+        return (a.uri || '').localeCompare(b.uri || '');
+      } else if (nA !== null) {
+        return -1;
+      } else if (nB !== null) {
+        return 1;
+      }
+      return (a.uri || '').localeCompare(b.uri || '');
+    }
+
+    // Accounts ergänzen/aktualisieren und sortieren
     function mergeAndSortAccounts(incoming: any[]) {
       for (const acc of incoming) {
         const idx = accounts.value.findIndex(a => a.uri === acc.uri);
@@ -13,31 +37,6 @@ export const useSocketIO = () => {
         }
       }
       accounts.value.sort(accountSortFn);
-    }
-
-    // Sortierfunktion: numerisch nach SIP-Nummer, sonst lexikografisch
-    function accountSortFn(a: any, b: any) {
-      // Noch robustere Extraktion: alle nicht-Ziffern vor der Nummer ignorieren
-      function extractNumber(uri: string): number | null {
-        if (!uri) return null;
-        // Entferne führende Leerzeichen und alles bis zur ersten Ziffer nach 'sip:'
-        const match = uri.replace(/^sip:/, '').match(/(\d+)/);
-        if (match) {
-          const n = parseInt(match[1].replace(/^0+/, ''), 10);
-          return isNaN(n) ? null : n;
-        }
-        return null;
-      }
-      const nA = extractNumber(a.uri);
-      const nB = extractNumber(b.uri);
-      if (nA !== null && nB !== null) {
-        if (nA !== nB) return nA - nB;
-      } else if (nA !== null) {
-        return -1;
-      } else if (nB !== null) {
-        return 1;
-      }
-      return (a.uri || '').localeCompare(b.uri || '');
     }
   const socket = ref<Socket | null>(null);
   const connected = ref(false); // Socket.IO connection to UI server
@@ -69,6 +68,7 @@ export const useSocketIO = () => {
     socket.value.on('init', (data: any) => {
       console.log('📦 Socket.IO: Received init data', data);
       mergeAndSortAccounts(data.accounts || []);
+      console.log('[DEBUG] Accounts nach init:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
       contacts.value = data.contacts || [];
       calls.value = data.calls || [];
       baresipConnected.value = data.baresipConnected ?? false;
@@ -88,33 +88,27 @@ export const useSocketIO = () => {
 
       if (data.type === 'init') {
         mergeAndSortAccounts(data.accounts || []);
+        console.log('[DEBUG] Accounts nach init (message):', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
         contacts.value = data.contacts || [];
         calls.value = data.calls || [];
         baresipConnected.value = data.baresipConnected ?? false;
-        // Sortierfunktion: numerisch nach SIP-Nummer, sonst lexikografisch
-        function accountSortFn(a: any, b: any) {
-          const numA = a.uri?.match(/^sip:(\d+)/)?.[1];
-          const numB = b.uri?.match(/^sip:(\d+)/)?.[1];
-          if (numA && numB) {
-            const nA = parseInt(numA, 10);
-            const nB = parseInt(numB, 10);
-            if (!isNaN(nA) && !isNaN(nB)) {
-              return nA - nB;
-            }
-          }
-          return (a.uri || '').localeCompare(b.uri || '');
-        }
       } else if (data.type === 'accountStatus') {
-        console.log('📊 Socket.IO: Account status update for:', data.data.uri);
-        const index = accounts.value.findIndex(a => a.uri === data.data.uri);
-        if (index >= 0) {
-          // Update bestehendes Objekt (damit Vue-Reaktivität erhalten bleibt)
-          accounts.value[index] = { ...accounts.value[index], ...data.data };
+        console.log('📊 Socket.IO: Account status update für:', data.data.uri);
+        // Account-Liste stabil aktualisieren und sortieren
+        const idx = accounts.value.findIndex(a => a.uri === data.data.uri);
+        if (idx >= 0) {
+          // Nur das Objekt aktualisieren
+          accounts.value[idx] = { ...accounts.value[idx], ...data.data };
         } else {
+          // Neuen Account ergänzen
           accounts.value.push(data.data);
         }
-        // Nach jedem accountStatus-Update sortieren
+        // Nach jedem Update stabil sortieren
         accounts.value.sort(accountSortFn);
+        console.log('[DEBUG] Accounts nach accountStatus:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
+      } else if (data.type === 'accountsUpdate') {
+        mergeAndSortAccounts(data.accounts || []);
+        console.log('[DEBUG] Accounts nach accountsUpdate:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
       } else if (data.type === 'log') {
         // ...
         logs.value.push(data.log || data);

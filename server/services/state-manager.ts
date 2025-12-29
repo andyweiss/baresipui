@@ -21,9 +21,32 @@ export class StateManager {
   private baresipConnected = false; // Track Baresip TCP connection status
 
   getAccounts(): Account[] {
-    const accounts = Array.from(this.accounts.values());
-    // Stabile Sortierung: Immer lexikografisch nach URI (z.B. 1061202 vor 2061224)
-    accounts.sort((a, b) => a.uri.localeCompare(b.uri));
+    // 1. Accounts kopieren (autoConnectContact bleibt wie gespeichert)
+    const accounts = Array.from(this.accounts.values()).map(acc => ({ ...acc }));
+
+    // 2. Stabile Sortierung: numerisch nach SIP-Nummer, dann lexikografisch nach URI
+    function extractNumber(uri: string): number | null {
+      if (!uri) return null;
+      const match = uri.replace(/^sip:/, '').match(/(\d+)/);
+      if (match) {
+        const n = parseInt(match[1].replace(/^0+/, ''), 10);
+        return isNaN(n) ? null : n;
+      }
+      return null;
+    }
+    accounts.sort((a, b) => {
+      const nA = extractNumber(a.uri);
+      const nB = extractNumber(b.uri);
+      if (nA !== null && nB !== null) {
+        if (nA !== nB) return nA - nB;
+        return (a.uri || '').localeCompare(b.uri || '');
+      } else if (nA !== null) {
+        return -1;
+      } else if (nB !== null) {
+        return 1;
+      }
+      return (a.uri || '').localeCompare(b.uri || '');
+    });
     console.log(`StateManager.getAccounts() called - returning ${accounts.length} accounts:`, accounts.map(a => a.uri));
     return accounts;
   }
