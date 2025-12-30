@@ -34,13 +34,13 @@
       <div v-if="showConnectionLine" 
            class="absolute top-[70%] flex items-center pointer-events-none" style="width: 5.5rem; left: calc(50% - 5.5rem);">
         <!-- Left arrow ◀ pointing LEFT (triangle opens to left) -->
-        <svg class="w-2 h-2 text-red-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
+        <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
           <path d="M 0 5 L 10 0 L 10 10 Z"/>
         </svg>
         <!-- Connecting line -->
-        <div class="flex-1 h-px bg-red-400"></div>
+        <div class="flex-1 h-px bg-green-400"></div>
         <!-- Right arrow ▶ pointing RIGHT (triangle opens to right) -->
-        <svg class="w-2 h-2 text-red-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
+        <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
           <path d="M 10 5 L 0 0 L 0 10 Z"/>
         </svg>
       </div>
@@ -103,9 +103,13 @@
       </div>
     </div>
 
+
     <div class="mt-3 text-xs text-gray-500">
       Last update: {{ formatTimestamp(account.lastEvent) }}
     </div>
+
+    <!-- Sichtbarer Debug-Output für Call-Zuordnung -->
+    <!-- Debug-Block entfernt -->
 
     <!-- Call Stats Button - Bottom Right -->
     <button 
@@ -130,14 +134,15 @@
 </template>
 
 <script setup lang="ts">
+
 import { computed, ref } from 'vue';
 import type { CallInfo } from '~/types';
 
-const props = defineProps<{
-  account: any;
-  contacts: any[];
-  calls: CallInfo[];
-}>();
+const props = defineProps({
+  account: { type: Object, required: true },
+  contacts: { type: Array, required: true },
+  calls: { type: Array, required: true },
+});
 
 const emit = defineEmits(['call', 'hangup', 'assignContact']);
 
@@ -146,15 +151,27 @@ const showCallStats = ref(false);
 const activeCall = computed(() => {
   if (!props.account?.uri) return undefined;
   const accountUri = String(props.account.uri).toLowerCase().trim();
-  return props.calls.find(call =>
-    call.localUri && String(call.localUri).toLowerCase().trim() === accountUri
+  // 1. Suche per callId im Account (wie vor Refactoring)
+  if (props.account.callId) {
+    const byId = props.calls.find(call => call.callId === props.account.callId);
+    if (byId && (byId.state === 'Established' || byId.state === 'Ringing')) return byId;
+  }
+  // 2. Fallback: Suche per localUri
+  const byUri = props.calls.find(call =>
+    call.localUri && String(call.localUri).toLowerCase().trim() === accountUri &&
+    (call.state === 'Established' || call.state === 'Ringing')
   );
+  console.log('[AccountCard] Account:', accountUri, 'Calls:', props.calls, 'ActiveCall:', byUri);
+  return byUri;
 });
+
 
 // Button und Modal sollen immer angezeigt werden, sobald ein Call existiert
 const hasActiveCall = computed(() => {
   return !!activeCall.value;
 });
+
+
 
 const handleContactChange = (event: Event) => {
   const target = event.target as HTMLSelectElement;
@@ -186,10 +203,9 @@ const getContactByUri = (uri: string) => {
 
 const borderColor = computed(() => {
   const status = props.account.callStatus || 'Idle';
-  if (status === 'In Call') return 'border-red-500';
+  if (status === 'In Call') return 'border-green-500'; // Connected = grün
   if (status === 'Ringing') return 'border-orange-500';
-  // Idle - grün wenn registered, sonst grau
-  if (props.account.registered) return 'border-green-500';
+  if (status === 'Idle') return 'border-blue-500'; // Idle = blau
   return 'border-gray-500';
 });
 
@@ -233,22 +249,22 @@ const hangupButtonClass = computed(() => {
 
 const callStatusColor = computed(() => {
   const status = props.account.callStatus || 'Idle';
-  if (status === 'In Call') return 'text-red-400';
+  if (status === 'In Call') return 'text-green-400'; // In Call = grün
+  if (status === 'Idle') return 'text-blue-400'; // Idle = blau
   if (status === 'Ringing') return 'text-orange-400';
-  // Idle - nur grün wenn registered, sonst grau
-  if (props.account.registered) return 'text-green-400';
   return 'text-gray-400';
 });
 
 const autoConnectColor = computed(() => {
   if (!props.account.autoConnectContact) return 'text-gray-300';
-  
   const contact = getContactByUri(props.account.autoConnectContact);
   if (!contact) return 'text-gray-300';
-  
+  // Wenn aktiver Call, dann grün
+  if (activeCall.value) return 'text-green-400';
+  // Wenn online, dann blau
   const presence = contact.presence || 'unknown';
-  if (presence === 'online') return 'text-green-400';
-  if (presence === 'busy') return 'text-red-400';
+  if (presence === 'online') return 'text-blue-400';
+  if (presence === 'busy') return 'text-green-400';
   return 'text-gray-400'; // offline or unknown
 });
 

@@ -11,7 +11,7 @@
           class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium"
           :class="presenceStatusColor"
         >
-          {{ (contact.presence || 'unknown').toUpperCase() }}
+          {{ presenceDisplay }}
         </span>
       </div>
     </div>
@@ -58,21 +58,28 @@ const getAccountName = (uri: string) => {
   return match ? match[1] : uri;
 };
 
+
 const borderColor = computed(() => {
   const presence = props.contact.presence?.toLowerCase() || 'unknown';
-  if (presence === 'online') return 'border-green-500';
-  if (presence === 'busy') return 'border-red-500';
+  if (presence === 'online') return 'border-blue-500';
+  if (presence === 'busy') return 'border-green-500';
   if (presence === 'away') return 'border-yellow-500';
   return 'border-gray-300';
 });
 
 const presenceStatusColor = computed(() => {
   const presence = props.contact.presence?.toLowerCase() || 'unknown';
-  if (presence === 'online') return 'bg-green-900 text-green-300';
-  if (presence === 'busy') return 'bg-red-900 text-red-300';
+  if (presence === 'online') return 'bg-blue-900 text-blue-300';
+  if (presence === 'busy') return 'bg-green-900 text-green-300';
   if (presence === 'away') return 'bg-yellow-900 text-yellow-300';
   if (presence === 'offline') return 'bg-gray-700 text-gray-300';
   return 'bg-gray-700 text-gray-400'; // unknown
+});
+
+const presenceDisplay = computed(() => {
+  const presence = props.contact.presence?.toLowerCase() || 'unknown';
+  if (presence === 'busy') return 'CONNECTED';
+  return (presence || 'unknown').toUpperCase();
 });
 
 const autoConnectColor = computed(() => {

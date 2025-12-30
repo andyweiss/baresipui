@@ -438,15 +438,8 @@ function parseCallsResponse(data: string, stateManager: StateManager): void {
       }
     }
   }
-  // remove calls that are no longer active
-  const allCalls = stateManager.getCalls();
-  for (const call of allCalls) {
-    if (!activeCallIds.has(call.callId)) {
-      stateManager.removeCall(call.callId);
-      console.log(`Removed inactive call: ${call.callId}`);
-    }
-  }
-  console.log('Call status sync complete');
+  // Calls werden NICHT mehr automatisch entfernt. Entfernen erfolgt nur noch durch explizite Events (CALL_CLOSED etc.)
+  console.log('Call status sync complete (keine automatischen Removals mehr)');
 }
 
 function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): void {

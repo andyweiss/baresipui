@@ -89,6 +89,7 @@
             :key="account.uri"
             :account="account"
             :contacts="contacts"
+            :calls="calls"
             @call="handleCall"
             @hangup="handleHangup"
             @assignContact="handleAssignContact"
@@ -132,15 +133,26 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import SettingsPanel from '@/components/SettingsPanel.vue';
+import { useSocketIO } from '@/composables/useSocketIO';
 
 // Use Socket.IO instead of WebSocket
-const { connected, accounts, contacts, sendCommand, toggleAutoConnect } = useSocketIO();
+const { connected, accounts, contacts, calls, sendCommand, toggleAutoConnect } = useSocketIO();
 
 // Active tab state
 const activeTab = ref('accounts');
 
 const handleAssignContact = async (accountUri: string, contactUri: string) => {
-  // ...existing code...
+  // AutoConnect-Zuweisung an Backend senden
+  try {
+    await fetch('/api/autoconnect/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: accountUri, contact: contactUri })
+    });
+    // Nach erfolgreicher Zuweisung: UI wird durch Socket-Event aktualisiert
+  } catch (err: any) {
+    alert('Fehler bei AutoConnect-Zuweisung: ' + (err?.message || err));
+  }
 };
 
 const handleCall = async (accountUri: string) => {

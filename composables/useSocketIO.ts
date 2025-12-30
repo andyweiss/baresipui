@@ -94,18 +94,21 @@ export const useSocketIO = () => {
         baresipConnected.value = data.baresipConnected ?? false;
       } else if (data.type === 'accountStatus') {
         console.log('📊 Socket.IO: Account status update für:', data.data.uri);
-        // Account-Liste stabil aktualisieren und sortieren
-        const idx = accounts.value.findIndex(a => a.uri === data.data.uri);
-        if (idx >= 0) {
-          // Nur das Objekt aktualisieren
-          accounts.value[idx] = { ...accounts.value[idx], ...data.data };
-        } else {
-          // Neuen Account ergänzen
-          accounts.value.push(data.data);
-        }
-        // Nach jedem Update stabil sortieren
-        accounts.value.sort(accountSortFn);
-        console.log('[DEBUG] Accounts nach accountStatus:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
+          // Account-Liste stabil aktualisieren und sortieren
+          const idx = accounts.value.findIndex(a => a.uri === data.data.uri);
+          if (idx >= 0) {
+            // Bestehendes Objekt mit neuen Feldern MERGEN, nie Felder verlieren!
+            for (const key in data.data) {
+              accounts.value[idx][key] = data.data[key];
+            }
+            // Felder, die im Update fehlen, bleiben erhalten
+          } else {
+            // Neuen Account ergänzen
+            accounts.value.push(data.data);
+          }
+          // Nach jedem Update stabil sortieren
+          accounts.value.sort(accountSortFn);
+          console.log('[DEBUG] Accounts nach accountStatus:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
       } else if (data.type === 'accountsUpdate') {
         mergeAndSortAccounts(data.accounts || []);
         console.log('[DEBUG] Accounts nach accountsUpdate:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
@@ -128,7 +131,6 @@ export const useSocketIO = () => {
       } else if (data.type === 'contactsUpdate') {
         contacts.value = data.contacts || [];
       } else if (data.type === 'callAdded' || data.type === 'callUpdated') {
-        console.log('📞 Call event:', data.type, data.data);
         const callIndex = calls.value.findIndex(c => c.callId === data.data.callId);
         if (callIndex >= 0) {
           // Update existing call - force reactivity
@@ -142,7 +144,6 @@ export const useSocketIO = () => {
           calls.value = [...calls.value, data.data];
         }
       } else if (data.type === 'callRemoved') {
-        console.log('📞 Call removed:', data.data.callId);
         calls.value = calls.value.filter(c => c.callId !== data.data.callId);
       }
     });

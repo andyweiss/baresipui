@@ -276,23 +276,33 @@ export class BaresipConnection {
   private applySavedConfigs(): void {
     const configManager = getAutoConnectConfigManager();
     const allConfigs = configManager.getAllConfigs();
-    
     console.log('Applying saved auto-connect configs...');
-    
     for (const [accountUri, config] of Object.entries(allConfigs.accounts)) {
-      const account = stateManager.getAccount(accountUri);
-      if (account && config.autoConnectContact) {
-        account.autoConnectContact = config.autoConnectContact;
-        stateManager.setAccount(accountUri, account);
-        console.log(`Applied config for ${accountUri}: contact=${config.autoConnectContact}, enabled=${config.enabled}`);
-        
-        // Broadcast account update
-        stateManager.broadcast({
-          type: 'accountStatus',
-          data: account
-        });
+      let account = stateManager.getAccount(accountUri);
+      if (!account) {
+        // Account-Objekt anlegen, falls nicht vorhanden
+        account = {
+          uri: accountUri,
+          registered: false,
+          callStatus: 'Idle',
+          autoConnectStatus: 'Off',
+          lastEvent: Date.now(),
+          configured: true
+        };
       }
+      if (config.autoConnectContact) {
+        account.autoConnectContact = config.autoConnectContact;
+      }
+      stateManager.setAccount(accountUri, account);
+      console.log(`Applied config for ${accountUri}: contact=${config.autoConnectContact}, enabled=${config.enabled}`);
+      // Broadcast account update
+      stateManager.broadcast({
+        type: 'accountStatus',
+        data: account
+      });
     }
+    // Nach Anwendung aller Configs: Initialdaten broadcasten
+    stateManager.broadcast(stateManager.getInitData());
   }
 
   sendCommand(command: string, params?: string, token?: string): void {
