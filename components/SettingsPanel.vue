@@ -1,10 +1,7 @@
 <template>
-    <div v-if="debugResponse" class="bg-yellow-100 text-black p-2 mb-2 rounded text-xs">
-      <strong>Debug:</strong> {{ debugResponse }}
-    </div>
   <div class="bg-gray-800 rounded-lg shadow-lg p-6">
     <h2 class="text-2xl font-bold text-white mb-6">⚙️ Settings</h2>
-    <!-- System Information (jetzt zuoberst) -->
+    <!-- System Information -->
     <div class="mb-8">
       <h3 class="text-lg font-semibold text-white mb-4">System Information</h3>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -76,26 +73,22 @@
 </template>
 
 <script setup lang="ts">
+
 import { defineProps, ref, onMounted } from 'vue';
 const props = defineProps<{ reloadConfig: () => void, sendCommand?: (cmd: string) => Promise<any> }>();
 
 const baresipVersion = ref('...');
-const debugResponse = ref('');
 
 async function fetchBaresipVersion() {
   if (props.sendCommand) {
     try {
       const result = await props.sendCommand('about');
-      debugResponse.value = JSON.stringify(result);
-      // Version direkt aus Backend übernehmen
       baresipVersion.value = result.version ?? 'unbekannt';
     } catch (err) {
       baresipVersion.value = 'Fehler';
-      debugResponse.value = String(err);
     }
   } else {
     baresipVersion.value = 'nicht verfügbar';
-    debugResponse.value = 'sendCommand nicht verfügbar';
   }
 }
 

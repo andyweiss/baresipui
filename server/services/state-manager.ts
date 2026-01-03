@@ -19,6 +19,14 @@ export class StateManager {
   private logs: LogEntry[] = [];
   private maxLogs = 1000; // Maximum number of logs to keep
   private baresipConnected = false; // Track Baresip TCP connection status
+  private baresipVersion: string | undefined = undefined;
+
+  setBaresipVersion(version: string) {
+    this.baresipVersion = version;
+  }
+  getBaresipVersion(): string | undefined {
+    return this.baresipVersion;
+  }
 
   getAccounts(): Account[] {
     // 1. Accounts kopieren (autoConnectContact bleibt wie gespeichert)

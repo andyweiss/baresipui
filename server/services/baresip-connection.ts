@@ -157,6 +157,7 @@ export class BaresipConnection {
       this.sendCommand('contacts');
       this.sendCommand('listcalls');
       this.sendCommand('callstat');  // Query active calls on startup
+      this.sendCommand('about');    // get baresip version
 
       // Start polling contacts for presence updates
       this.startContactsPolling();
@@ -186,7 +187,7 @@ export class BaresipConnection {
       this.stopContactsPolling();
       this.stopCallStatsPolling();
       this.scheduleReconnect();
-      // Alle Calls aufräumen und Status auf Idle setzen
+      // clear all calls on disconnect
       stateManager.clearCalls();
       stateManager.setAllCallStatus('Idle');
     });
@@ -257,7 +258,7 @@ export class BaresipConnection {
 
     console.log(`📊 Call stats polling enabled - sending 'callstat' command alle 2s wenn Calls aktiv sind`);
 
-    // Poll alle 2 Sekunden, solange mindestens ein Call aktiv ist
+    // poll every 2 seconds if there are active calls
     this.callStatsPollingInterval = setInterval(() => {
       if (this.isConnected() && stateManager.getCalls().length > 0) {
         this.sendCommand('callstat');
@@ -280,7 +281,7 @@ export class BaresipConnection {
     for (const [accountUri, config] of Object.entries(allConfigs.accounts)) {
       let account = stateManager.getAccount(accountUri);
       if (!account) {
-        // Account-Objekt anlegen, falls nicht vorhanden
+        // create account object if not existing
         account = {
           uri: accountUri,
           registered: false,
@@ -301,13 +302,12 @@ export class BaresipConnection {
         data: account
       });
     }
-    // Nach Anwendung aller Configs: Initialdaten broadcasten
+    // After applying all configs: broadcast initial data
     stateManager.broadcast(stateManager.getInitData());
   }
 
   sendCommand(command: string, params?: string, token?: string): void {
     if (this.client && !this.client.destroyed) {
-      // Erstelle JSON-Nachricht für Baresip (exakt wie im alten Backend)
       const jsonMessage: any = {
         command: command,
         ...(params && { params: params }),

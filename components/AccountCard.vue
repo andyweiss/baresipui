@@ -203,9 +203,11 @@ const getContactByUri = (uri: string) => {
 
 const borderColor = computed(() => {
   const status = props.account.callStatus || 'Idle';
-  if (status === 'In Call') return 'border-green-500'; // Connected = grün
+  if (status === 'In Call') return 'border-green-500'; // Connected = green
   if (status === 'Ringing') return 'border-orange-500';
-  if (status === 'Idle') return 'border-blue-500'; // Idle = blau
+  if (status === 'Idle') {
+    return props.account.registered ? 'border-blue-500' : 'border-gray-500'; // Idle: blue if registered, else gray
+  }
   return 'border-gray-500';
 });
 
@@ -249,8 +251,8 @@ const hangupButtonClass = computed(() => {
 
 const callStatusColor = computed(() => {
   const status = props.account.callStatus || 'Idle';
-  if (status === 'In Call') return 'text-green-400'; // In Call = grün
-  if (status === 'Idle') return 'text-blue-400'; // Idle = blau
+  if (status === 'In Call') return 'text-green-400'; // In Call = green
+  if (status === 'Idle') return props.account.registered ? 'text-blue-400' : 'text-gray-400'; // Idle: blue if registered, else gray
   if (status === 'Ringing') return 'text-orange-400';
   return 'text-gray-400';
 });

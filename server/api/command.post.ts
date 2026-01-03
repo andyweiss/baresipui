@@ -42,24 +42,39 @@ export default defineEventHandler(async (event) => {
     const config = useRuntimeConfig();
     const connection = getBaresipConnection(config.baresipHost, parseInt(config.baresipPort));
 
+    if (command === 'about') {
+      connection.sendCommand('about', params, token);
+      // Version direkt aus StateManager holen (wird beim Parsen gesetzt)
+      // Optional: kurz warten, falls noch keine Version gesetzt
+      let version = stateManager.getBaresipVersion() || 'unbekannt';
+      for (let i = 0; i < 10 && version === 'unbekannt'; i++) {
+        await new Promise(r => setTimeout(r, 60));
+        version = stateManager.getBaresipVersion() || 'unbekannt';
+      }
+      return {
+        success: true,
+        command,
+        params,
+        timestamp: Date.now(),
+        version
+      };
+    }
+
+    // Standard-Logik für andere Kommandos
     if (command === 'dial' && params) {
-      // params: { accountUri, target }
       const { accountUri, target } = typeof params === 'object' ? params : { accountUri: undefined, target: params };
       if (!accountUri || !target) {
         throw createError({ statusCode: 400, message: 'accountUri und target erforderlich' });
       }
-      // Zuerst Account selektieren, dann wählen (wie Auto-Connect)
       connection.sendCommand('uafind', accountUri, token);
       setTimeout(() => {
         connection.sendCommand('dial', target, token);
       }, 150);
     } else if (command === 'hangup' && params) {
-      // params: { accountUri }
       const { accountUri } = typeof params === 'object' ? params : { accountUri: params };
       if (!accountUri) {
         throw createError({ statusCode: 400, message: 'accountUri erforderlich' });
       }
-      // Zuerst Account selektieren, dann auflegen (ohne Parameter)
       connection.sendCommand('uafind', accountUri, token);
       setTimeout(() => {
         connection.sendCommand('hangup', undefined, token);
@@ -72,26 +87,8 @@ export default defineEventHandler(async (event) => {
       connection.sendCommand(command, params, token);
     }
 
-    // Version aus StateManager holen (letztes Log mit type 'log' und version)
-    let baresipVersion = 'unbekannt';
-    const logs = stateManager.getLogs(20).reverse();
-    for (const log of logs) {
-      if (log.type === 'log') {
-        if (log.version) {
-          baresipVersion = log.version;
-          break;
-        }
-        if (log.data && log.data.version) {
-          baresipVersion = log.data.version;
-          break;
-        }
-        if (log.log && log.log.version) {
-          baresipVersion = log.log.version;
-          break;
-        }
-      }
-    }
-
+    // Fallback: Version wie bisher aus Log suchen
+    let baresipVersion = stateManager.getBaresipVersion() || 'unbekannt';
     return {
       success: true,
       command,

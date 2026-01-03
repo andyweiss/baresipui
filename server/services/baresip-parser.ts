@@ -75,15 +75,15 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
   }
   console.log(`Command Response: ${JSON.stringify(response)}`);
 
-  // Zentrale Dispatch-Logik für verschiedene Response-Typen
+  //  Dispatch-Logic for different response types
   if (typeof response.data === 'string') {
     const data = response.data;
     // 1. Banner/Version
-    if (data.match(/baresip.*\d+\.\d+\.\d+/i) || data.match(/\u001B\[\d+;\d+m/)) {
+    if (data.includes('------------------------------------------------------------')) {
       parseBannerResponse(response, stateManager, timestamp);
       return;
     }
-    // 2. Kontakte
+    // 2. Contacts
     if (data.includes('--- Contacts')) {
       parseContactsFromResponse(data, stateManager);
       return;
@@ -93,12 +93,12 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       parseCallsResponse(data, stateManager);
       return;
     }
-    // 4. Callstat/Statistiken
+    // 4. Callstats
     if (data.includes('Call debug') || data.includes('audio RTP')) {
       parseCallStatResponse(data, stateManager);
       return;
     }
-    // 5. Registrierung
+    // 5. Registrations
     if (data.includes('User Agents')) {
       const cleanData = data.replace(/\u001B\[[0-9;]*[mK]/g, '').replace(/\n/g, '\n');
       parseRegistrationInfo(cleanData, stateManager);
@@ -122,30 +122,19 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
 
 // Banner/Version-Parser
 function parseBannerResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
-  let version: string | undefined;
-  const ok = response.ok === true || response.ok === 'true';
-  if (ok && response.data && typeof response.data === 'string') {
-    const ansiRegex = /\x1b\[[0-9;]*[mK]|\u001B\[[0-9;]*[mK]|\\u001B\[[0-9;]*[mK]/g;
-    const clean = response.data.replace(ansiRegex, '');
-    let match = clean.match(/baresip\s+([\d]+\.[\d]+\.[\d]+)/i);
-    if (match) version = match[1];
-    if (!version) {
-      match = clean.match(/sip\s+([\d]+\.[\d]+\.[\d]+)/i);
-      if (match) version = match[1];
+  if (response.data && typeof response.data === 'string') {
+    const version = response.data.replace(/\u001b\[[0-9;]*m/gi, '').match(/\d+\.\d+\.\d+/)?.[0];
+    console.log('[BannerParser] Extracted version:', version);
+    if (version) {
+      stateManager.setBaresipVersion(version);
+      stateManager.broadcast({
+        type: 'log',
+        timestamp,
+        message: `Command Response: ${JSON.stringify(response)}`,
+        version
+      });
+      stateManager.addLog('log', `Command Response Baresip Version: ${JSON.stringify(response)}`, { version });
     }
-    if (!version) {
-      match = clean.match(/([\d]+\.[\d]+\.[\d]+)/);
-      if (match) version = match[1];
-    }
-  }
-  stateManager.broadcast({
-    type: 'log',
-    timestamp,
-    message: `Command Response: ${JSON.stringify(response)}`,
-    version
-  });
-  if (version && version !== '.' && version !== 'unbekannt') {
-    stateManager.addLog('log', `Command Response: ${JSON.stringify(response)}`, { version });
   }
 }
 
