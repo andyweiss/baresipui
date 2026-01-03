@@ -33,13 +33,13 @@
       <!-- Connection line with arrows in the gap between columns -->
       <div v-if="showConnectionLine" 
            class="absolute top-[70%] flex items-center pointer-events-none" style="width: 5.5rem; left: calc(50% - 5.5rem);">
-        <!-- Left arrow ◀ pointing LEFT (triangle opens to left) -->
+        <!-- Left arrow ◀ -->
         <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
           <path d="M 0 5 L 10 0 L 10 10 Z"/>
         </svg>
         <!-- Connecting line -->
         <div class="flex-1 h-px bg-green-400"></div>
-        <!-- Right arrow ▶ pointing RIGHT (triangle opens to right) -->
+        <!-- Right arrow ▶  -->
         <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
           <path d="M 10 5 L 0 0 L 0 10 Z"/>
         </svg>
@@ -108,9 +108,6 @@
       Last update: {{ formatTimestamp(account.lastEvent) }}
     </div>
 
-    <!-- Sichtbarer Debug-Output für Call-Zuordnung -->
-    <!-- Debug-Block entfernt -->
-
     <!-- Call Stats Button - Bottom Right -->
     <button 
       v-if="activeCall"
@@ -151,12 +148,12 @@ const showCallStats = ref(false);
 const activeCall = computed(() => {
   if (!props.account?.uri) return undefined;
   const accountUri = String(props.account.uri).toLowerCase().trim();
-  // 1. Suche per callId im Account (wie vor Refactoring)
+  // 1. search by callId if available
   if (props.account.callId) {
     const byId = props.calls.find(call => call.callId === props.account.callId);
     if (byId && (byId.state === 'Established' || byId.state === 'Ringing')) return byId;
   }
-  // 2. Fallback: Suche per localUri
+  // 2. fallback: search by localUri
   const byUri = props.calls.find(call =>
     call.localUri && String(call.localUri).toLowerCase().trim() === accountUri &&
     (call.state === 'Established' || call.state === 'Ringing')
@@ -166,7 +163,7 @@ const activeCall = computed(() => {
 });
 
 
-// Button und Modal sollen immer angezeigt werden, sobald ein Call existiert
+// button and modal visibility according to active call
 const hasActiveCall = computed(() => {
   return !!activeCall.value;
 });
@@ -261,9 +258,9 @@ const autoConnectColor = computed(() => {
   if (!props.account.autoConnectContact) return 'text-gray-300';
   const contact = getContactByUri(props.account.autoConnectContact);
   if (!contact) return 'text-gray-300';
-  // Wenn aktiver Call, dann grün
+  // green if active call
   if (activeCall.value) return 'text-green-400';
-  // Wenn online, dann blau
+  // blue if online
   const presence = contact.presence || 'unknown';
   if (presence === 'online') return 'text-blue-400';
   if (presence === 'busy') return 'text-green-400';

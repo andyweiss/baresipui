@@ -97,7 +97,7 @@ onMounted(fetchBaresipVersion);
 async function sendTestCommand() {
   if (props.sendCommand) {
     try {
-      await props.sendCommand('about');
+      await props.sendCommand('uastat');
     } catch (err) {
       alert('Fehler beim Senden des Kommandos: ' + (err?.message || err));
     }

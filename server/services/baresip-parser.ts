@@ -80,7 +80,7 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
     const data = response.data;
     // 1. Banner/Version
     if (data.includes('------------------------------------------------------------')) {
-      parseBannerResponse(response, stateManager, timestamp);
+      parseAboutResponse(response, stateManager, timestamp);
       return;
     }
     // 2. Contacts
@@ -121,19 +121,11 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
 }
 
 // Banner/Version-Parser
-function parseBannerResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
+function parseAboutResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
   if (response.data && typeof response.data === 'string') {
     const version = response.data.replace(/\u001b\[[0-9;]*m/gi, '').match(/\d+\.\d+\.\d+/)?.[0];
-    console.log('[BannerParser] Extracted version:', version);
     if (version) {
       stateManager.setBaresipVersion(version);
-      stateManager.broadcast({
-        type: 'log',
-        timestamp,
-        message: `Command Response: ${JSON.stringify(response)}`,
-        version
-      });
-      stateManager.addLog('log', `Command Response Baresip Version: ${JSON.stringify(response)}`, { version });
     }
   }
 }

@@ -1,3 +1,7 @@
+docker build -f Dockerfile.build-from-source -t baresip-custom:latest .
+docker build --no-cache -f Dockerfile.build-from-source -t baresip-custom:latest .
+docker build \
+
 # Build baresip from source
 # This Dockerfile builds libre, baresip, and custom modules
 
@@ -7,20 +11,20 @@
 - **Custom modules**: presence.so, notifier.so
 - **Compiler**: clang-19 with relaxed warnings for implicit declarations
 
-## Build-Prozess
+## Build process
 
-### Schnell-Build (ohne Cache-Clear):
+### Quick build (without cache clear):
 ```bash
 cd /home/debdev/baresipui/baresip
 docker build -f Dockerfile.build-from-source -t baresip-custom:latest .
 ```
 
-### Full-Build (mit Cache-Clear):
+### Full build (with cache clear):
 ```bash
 docker build --no-cache -f Dockerfile.build-from-source -t baresip-custom:latest .
 ```
 
-### Build mit anderem baresip/libre Version:
+### Build with different baresip/libre version:
 ```bash
 docker build \
   --build-arg RE_VERSION=v3.16.0 \
@@ -29,22 +33,22 @@ docker build \
   -t baresip-custom:latest .
 ```
 
-## Patches hinzufügen
+## Adding patches
 
-1. Erstelle `patches/` Verzeichnis
-2. Patches dort ablegen:
-   - `libre-*.patch` für libre
-   - `baresip-*.patch` für baresip
-3. Uncomment die COPY/RUN Zeilen im Dockerfile
+1. Create a `patches/` directory
+2. Place patches there:
+   - `libre-*.patch` for libre
+   - `baresip-*.patch` for baresip
+3. Uncomment the COPY/RUN lines in the Dockerfile
 
-## Build-Zeit
+## Build time
 
-- **Erster Build**: ~15-25 Minuten
-- **Re-Build mit Cache**: ~2-5 Minuten (nur geänderte Stages)
-- **Nur Custom-Modules**: ~30 Sekunden
+- **First build**: ~15-25 minutes
+- **Re-build with cache**: ~2-5 minutes (only changed stages)
+- **Only custom modules**: ~30 seconds
 
-## Multi-Stage Vorteile
+## Multi-stage advantages
 
-- **kleine Image-Größe**: Nur Runtime-Dependencies im Final Image
-- **schnelle Rebuilds**: Cached Stages für libre/baresip
-- **Flexibilität**: Patches können einfach hinzugefügt werden
+- **Small image size**: Only runtime dependencies in the final image
+- **Fast rebuilds**: Cached stages for libre/baresip
+- **Flexibility**: Patches can be easily added

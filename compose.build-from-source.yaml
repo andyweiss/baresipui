@@ -7,7 +7,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        BARESIP_HOST: baresip-custom
+        BARESIP_HOST: baresip
         BARESIP_PORT: 4444
     container_name: baresip-ui
     ports:
@@ -16,10 +16,10 @@ services:
     environment:
       - NUXT_HOST=0.0.0.0
       - NUXT_PORT=3000
-      - BARESIP_HOST=baresip-custom
+      - BARESIP_HOST=baresip
       - BARESIP_PORT=4444
     depends_on:
-      - baresip-custom
+      - baresip
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
@@ -37,11 +37,11 @@ services:
       timeout: 10s
       retries: 3
 
-  baresip-custom:
+  baresip:
     build:
       context: ./baresip
       dockerfile: Dockerfile.build-from-source
-    container_name: baresip-custom
+    container_name: baresip
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
