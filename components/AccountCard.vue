@@ -173,12 +173,8 @@ const hasActiveCall = computed(() => {
 const handleContactChange = (event: Event) => {
   const target = event.target as HTMLSelectElement;
   const contactUri = target.value;
-  console.log('🔥 Contact changed:', contactUri, 'for account:', props.account.uri);
-  console.log('🔥 Event type:', event.type);
-  console.log('🔥 Emitting assignContact event...');
-  emit('assignContact', props.account.uri, contactUri);
-  console.log('🔥 Event emitted!');
-};
+    emit('assignContact', props.account.uri, contactUri);
+  };
 
 const accountName = computed(() => {
   const match = props.account.uri?.match(/^sip:([^@]+)/);

@@ -104,6 +104,12 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       parseRegistrationInfo(cleanData, stateManager);
       return;
     }
+    // 6. uastat -> Accountstatus (--- sip:... --- blocks) 
+    if (data.includes('--- sip:') && data.includes('Account:')) {
+      parseAccountStatusResponse(data, stateManager);
+      return;
+    }
+
     // Default: generisch loggen
     stateManager.broadcast({
       type: 'log',
@@ -155,6 +161,75 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
   }
 }
 
+// Parser for account status response uastat (--- sip:... --- blocks)
+    function parseAccountStatusResponse(data: string, stateManager: StateManager): void {
+      // Remove ANSI color codes
+      const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '');
+      // Split into blocks per account
+      const blocks = cleanData.split(/--- sip:/g).map(b => b.trim()).filter(Boolean);
+      for (const block of blocks) {
+        // The URI is in the first line of the block
+        const lines = block.split('\n').map(l => l.trim());
+        const uriMatch = lines[0].match(/^([^\s-]+) ---/);
+        const uri = uriMatch ? `sip:${uriMatch[1]}` : `sip:${lines[0].split(' ')[0]}`;
+        const account: any = {
+          uri,
+          registered: false,
+          callStatus: 'Idle',
+          autoConnectStatus: 'Off',
+          lastEvent: Date.now(),
+          configured: true
+        };
+        // Parse fields
+        let displayName = '';
+        for (const line of lines) {
+          if (line.startsWith('address:')) {
+            account.address = line.split('address:')[1].trim();
+            // Try to extract name from address if no dispname is present
+            const addrMatch = account.address.match(/^([^<]+)</);
+            if (addrMatch) {
+              displayName = addrMatch[1].trim();
+            }
+          }
+          if (line.startsWith('luri:')) {
+            account.luri = line.split('luri:')[1].trim();
+          }
+          if (line.startsWith('aor:')) {
+            account.aor = line.split('aor:')[1].trim();
+          }
+          if (line.startsWith('dispname:')) {
+            displayName = line.split('dispname:')[1].trim();
+          }
+          if (line.startsWith('scode:')) {
+            const scode = line.split('scode:')[1].trim();
+            account.scode = scode;
+            if (scode.startsWith('200')) {
+              account.registered = true;
+              account.registrationError = undefined;
+            } else {
+              account.registered = false;
+              account.registrationError = scode;
+            }
+          }
+        }
+        if (displayName) {
+          account.displayName = displayName;
+        }
+        // Store in StateManager
+        if (uri) stateManager.setAccount(uri, account);
+        // Broadcast
+        if (uri) {
+          stateManager.broadcast({
+            type: 'accountStatus',
+            data: account
+          });
+        }
+      }
+    }
+    
+    
+    
+    
 function parseRegistrationInfo(data: string, stateManager: StateManager): void {
   console.log('Parsing registration info...');
   const lines = data.split('\n');

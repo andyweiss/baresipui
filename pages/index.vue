@@ -131,7 +131,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
+// On initial mount, fetch account status (uastat) so names are available on first load
+onMounted(() => {
+  if (typeof sendCommand === 'function') {
+    sendCommand('uastat');
+  }
+});
 import SettingsPanel from '@/components/SettingsPanel.vue';
 import { useSocketIO } from '@/composables/useSocketIO';
 
@@ -142,10 +148,13 @@ const { connected, accounts, contacts, calls, sendCommand, toggleAutoConnect } =
 const activeTab = ref('accounts');
 const settingsPanelRef = ref();
 
-// Beim Tab-Wechsel auf 'settings' Info neu laden
+// On tab change: fetch baresip info for settings, and uastat for accounts
 watch(activeTab, (newTab) => {
   if (newTab === 'settings' && settingsPanelRef.value?.fetchBaresipInfo) {
     settingsPanelRef.value.fetchBaresipInfo();
+  }
+  if (newTab === 'accounts' && typeof sendCommand === 'function') {
+    sendCommand('uastat');
   }
 });
 
