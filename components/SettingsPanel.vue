@@ -1,17 +1,22 @@
 <template>
   <div class="bg-gray-800 rounded-lg shadow-lg p-6">
-    <h2 class="text-2xl font-bold text-white mb-6">⚙️ Settings</h2>
     <!-- System Information -->
     <div class="mb-8">
       <h3 class="text-lg font-semibold text-white mb-4">System Information</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="p-4 bg-gray-700 rounded-lg">
-          <p class="text-sm text-gray-400">Baresip Version</p>
-          <p class="text-white font-mono">{{ baresipVersion }}</p>
+          <p class="text-white font-medium">Baresip Info</p>
+          <p class="text-sm text-gray-400">
+            Version: {{ baresipInfo.version ?? '...' }}<br>
+            Uptime: {{ baresipInfo.uptime ?? '...' }}<br>
+            Started: {{ baresipInfo.started ?? '...' }}
+          </p>
         </div>
         <div class="p-4 bg-gray-700 rounded-lg">
-          <p class="text-sm text-gray-400">UI Version</p>
-          <p class="text-white font-mono">v1.0.0</p>
+          <p class="text-white font-medium">UI Info</p>
+          <p class="ttext-sm text-gray-400">
+            Version: 0.9.0
+          </p>
         </div>
       </div>
     </div>
@@ -74,30 +79,32 @@
 
 <script setup lang="ts">
 
-import { defineProps, ref, onMounted } from 'vue';
+import { defineProps, ref, onMounted, onActivated, defineExpose } from 'vue';
 const props = defineProps<{ reloadConfig: () => void, sendCommand?: (cmd: string) => Promise<any> }>();
 
-const baresipVersion = ref('...');
+const baresipInfo = ref<{ version?: string; uptime?: string; started?: string }>({});
 
-async function fetchBaresipVersion() {
+async function fetchBaresipInfo() {
   if (props.sendCommand) {
     try {
-      const result = await props.sendCommand('about');
-      baresipVersion.value = result.version ?? 'unbekannt';
+      const result = await props.sendCommand('sysinfo');
+      baresipInfo.value = result ?? {};
     } catch (err) {
-      baresipVersion.value = 'Fehler';
+      baresipInfo.value = { version: 'Fehler', uptime: 'Fehler', started: 'Fehler' };
     }
   } else {
-    baresipVersion.value = 'nicht verfügbar';
+    baresipInfo.value = { version: 'nicht verfügbar', uptime: 'nicht verfügbar', started: 'nicht verfügbar' };
   }
 }
 
-onMounted(fetchBaresipVersion);
+onMounted(fetchBaresipInfo);
+onActivated(fetchBaresipInfo);
+defineExpose({ fetchBaresipInfo });
 
 async function sendTestCommand() {
   if (props.sendCommand) {
     try {
-      await props.sendCommand('uastat');
+      await props.sendCommand('reginfo');
     } catch (err) {
       alert('Fehler beim Senden des Kommandos: ' + (err?.message || err));
     }

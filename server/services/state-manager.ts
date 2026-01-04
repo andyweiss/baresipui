@@ -19,13 +19,18 @@ export class StateManager {
   private logs: LogEntry[] = [];
   private maxLogs = 1000; // Maximum number of logs to keep
   private baresipConnected = false; // Track Baresip TCP connection status
-  private baresipVersion: string | undefined = undefined;
+  private baresipInfo: { version?: string; uptime?: string; started?: string } = {};
 
-  setBaresipVersion(version: string) {
-    this.baresipVersion = version;
+  setBaresipInfo(info: { version?: string; uptime?: string; started?: string }) {
+    this.baresipInfo = { ...this.baresipInfo, ...info };
+    this.broadcast({
+      type: 'baresipInfo',
+      data: this.baresipInfo
+    });
   }
-  getBaresipVersion(): string | undefined {
-    return this.baresipVersion;
+
+  getBaresipInfo() {
+    return this.baresipInfo;
   }
 
   getAccounts(): Account[] {

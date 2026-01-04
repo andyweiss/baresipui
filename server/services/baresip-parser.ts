@@ -78,9 +78,9 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
   //  Dispatch-Logic for different response types
   if (typeof response.data === 'string') {
     const data = response.data;
-    // 1. Banner/Version
-    if (data.includes('------------------------------------------------------------')) {
-      parseAboutResponse(response, stateManager, timestamp);
+    // 1. System Info
+    if (data.includes('--- System info: ---')) {
+      parseSysinfoResponse(response, stateManager, timestamp);
       return;
     }
     // 2. Contacts
@@ -120,12 +120,37 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
   });
 }
 
-// Banner/Version-Parser
-function parseAboutResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
+
+// System Info Parser
+function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
   if (response.data && typeof response.data === 'string') {
-    const version = response.data.replace(/\u001b\[[0-9;]*m/gi, '').match(/\d+\.\d+\.\d+/)?.[0];
-    if (version) {
-      stateManager.setBaresipVersion(version);
+    // Example sysinfo response:
+    // --- System info: ---
+    //  Machine:  x86_64/Linux
+    //  Version:  4.4.0 (libre v4.4.0)
+    //  Build:    64-bit little endian
+    //  Kernel:   Linux ...
+    //  Uptime:   23 hours 27 mins 45 secs
+    //  Started:  Sat Jan  3 21:14:30 2026
+    //  Compiler: ...
+    //  OpenSSL:  ...
+    const lines = response.data.split('\n');
+    let version = '';
+    let uptime = '';
+    let started = '';
+    for (const line of lines) {
+      if (line.trim().startsWith('Version:')) {
+        version = line.split('Version:')[1]?.trim() || '';
+      }
+      if (line.trim().startsWith('Uptime:')) {
+        uptime = line.split('Uptime:')[1]?.trim() || '';
+      }
+      if (line.trim().startsWith('Started:')) {
+        started = line.split('Started:')[1]?.trim() || '';
+      }
+    }
+    if (typeof stateManager.setBaresipInfo === 'function') {
+      stateManager.setBaresipInfo({ version, uptime, started });
     }
   }
 }

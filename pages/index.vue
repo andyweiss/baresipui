@@ -124,14 +124,14 @@
 
       <!-- Settings Tab -->
       <section v-show="activeTab === 'settings'">
-        <SettingsPanel :reloadConfig="reloadConfig" :sendCommand="sendCommand" />
+        <SettingsPanel ref="settingsPanelRef" :reloadConfig="reloadConfig" :sendCommand="sendCommand" />
       </section>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import SettingsPanel from '@/components/SettingsPanel.vue';
 import { useSocketIO } from '@/composables/useSocketIO';
 
@@ -140,6 +140,14 @@ const { connected, accounts, contacts, calls, sendCommand, toggleAutoConnect } =
 
 // Active tab state
 const activeTab = ref('accounts');
+const settingsPanelRef = ref();
+
+// Beim Tab-Wechsel auf 'settings' Info neu laden
+watch(activeTab, (newTab) => {
+  if (newTab === 'settings' && settingsPanelRef.value?.fetchBaresipInfo) {
+    settingsPanelRef.value.fetchBaresipInfo();
+  }
+});
 
 const handleAssignContact = async (accountUri: string, contactUri: string) => {
   // AutoConnect-Zuweisung an Backend senden

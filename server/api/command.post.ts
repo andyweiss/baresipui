@@ -87,14 +87,14 @@ export default defineEventHandler(async (event) => {
       connection.sendCommand(command, params, token);
     }
 
-    // Fallback: Version wie bisher aus Log suchen
-    let baresipVersion = stateManager.getBaresipVersion() || 'unbekannt';
+    // Fallback: baresipInfo wie im StateManager
+    let baresipInfo = stateManager.getBaresipInfo ? stateManager.getBaresipInfo() : {};
     return {
       success: true,
       command,
       params,
       timestamp: Date.now(),
-      version: baresipVersion
+      ...baresipInfo
     };
   } catch (error: any) {
     console.error('Command execution error:', error);
