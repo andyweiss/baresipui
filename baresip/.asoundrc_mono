@@ -1,0 +1,1640 @@
+
+# ALSA configuration for RAVENNA – single shared dmix/dsnoop, plus mono route devices per channel
+# Numbering starts at 1 (in_ch1..in_ch64, out_ch1..out_ch64)
+#
+# This file exposes:
+#  - pcm.ravenna_shared_out : shared playback to hw:CARD=RAVENNA (64ch)
+#  - pcm.ravenna_shared_in  : shared capture  from hw:CARD=RAVENNA (64ch)
+#
+# Notes:
+#  - Channel indexing in ALSA ttable remains zero-based internally, but names start at 1.
+#  - Keep period/buffer timings aligned to your Ravenna engine; adjust if needed.
+#  - Format set to S16_LE to match provided config; change to S24_3LE or S32_LE if your workflow requires.
+
+pcm.ravenna_shared_out {
+    type dmix
+    ipc_key 0x999999
+    slave {
+        pcm "hw:CARD=RAVENNA"
+        channels 64
+        rate 48000
+        format S16_LE
+        period_time 2500
+        buffer_time 10000
+        periods 4
+    }
+}
+
+pcm.ravenna_shared_in {
+    type dsnoop
+    ipc_key 0x888888
+    slave {
+        pcm "hw:CARD=RAVENNA"
+        channels 64
+        rate 48000
+        format S16_LE
+        period_time 2500
+        buffer_time 10000
+        periods 4
+    }
+}
+
+
+# Mono capture: RAVENNA channel 1
+pcm.in_ch1 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.0  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 1
+pcm.out_ch1 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.0  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 2
+pcm.in_ch2 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.1  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 2
+pcm.out_ch2 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.1  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 3
+pcm.in_ch3 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.2  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 3
+pcm.out_ch3 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.2  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 4
+pcm.in_ch4 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.3  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 4
+pcm.out_ch4 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.3  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 5
+pcm.in_ch5 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.4  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 5
+pcm.out_ch5 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.4  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 6
+pcm.in_ch6 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.5  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 6
+pcm.out_ch6 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.5  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 7
+pcm.in_ch7 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.6  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 7
+pcm.out_ch7 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.6  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 8
+pcm.in_ch8 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.7  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 8
+pcm.out_ch8 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.7  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 9
+pcm.in_ch9 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.8  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 9
+pcm.out_ch9 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.8  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 10
+pcm.in_ch10 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.9  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 10
+pcm.out_ch10 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.9  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 11
+pcm.in_ch11 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.10  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 11
+pcm.out_ch11 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.10  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 12
+pcm.in_ch12 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.11  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 12
+pcm.out_ch12 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.11  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 13
+pcm.in_ch13 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.12  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 13
+pcm.out_ch13 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.12  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 14
+pcm.in_ch14 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.13  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 14
+pcm.out_ch14 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.13  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 15
+pcm.in_ch15 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.14  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 15
+pcm.out_ch15 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.14  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 16
+pcm.in_ch16 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.15  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 16
+pcm.out_ch16 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.15  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 17
+pcm.in_ch17 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.16  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 17
+pcm.out_ch17 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.16  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 18
+pcm.in_ch18 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.17  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 18
+pcm.out_ch18 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.17  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 19
+pcm.in_ch19 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.18  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 19
+pcm.out_ch19 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.18  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 20
+pcm.in_ch20 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.19  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 20
+pcm.out_ch20 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.19  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 21
+pcm.in_ch21 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.20  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 21
+pcm.out_ch21 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.20  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 22
+pcm.in_ch22 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.21  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 22
+pcm.out_ch22 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.21  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 23
+pcm.in_ch23 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.22  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 23
+pcm.out_ch23 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.22  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 24
+pcm.in_ch24 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.23  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 24
+pcm.out_ch24 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.23  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 25
+pcm.in_ch25 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.24  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 25
+pcm.out_ch25 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.24  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 26
+pcm.in_ch26 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.25  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 26
+pcm.out_ch26 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.25  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 27
+pcm.in_ch27 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.26  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 27
+pcm.out_ch27 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.26  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 28
+pcm.in_ch28 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.27  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 28
+pcm.out_ch28 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.27  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 29
+pcm.in_ch29 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.28  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 29
+pcm.out_ch29 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.28  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 30
+pcm.in_ch30 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.29  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 30
+pcm.out_ch30 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.29  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 31
+pcm.in_ch31 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.30  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 31
+pcm.out_ch31 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.30  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 32
+pcm.in_ch32 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.31  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 32
+pcm.out_ch32 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.31  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 33
+pcm.in_ch33 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.32  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 33
+pcm.out_ch33 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.32  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 34
+pcm.in_ch34 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.33  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 34
+pcm.out_ch34 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.33  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 35
+pcm.in_ch35 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.34  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 35
+pcm.out_ch35 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.34  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 36
+pcm.in_ch36 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.35  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 36
+pcm.out_ch36 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.35  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 37
+pcm.in_ch37 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.36  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 37
+pcm.out_ch37 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.36  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 38
+pcm.in_ch38 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.37  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 38
+pcm.out_ch38 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.37  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 39
+pcm.in_ch39 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.38  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 39
+pcm.out_ch39 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.38  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 40
+pcm.in_ch40 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.39  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 40
+pcm.out_ch40 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.39  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 41
+pcm.in_ch41 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.40  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 41
+pcm.out_ch41 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.40  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 42
+pcm.in_ch42 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.41  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 42
+pcm.out_ch42 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.41  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 43
+pcm.in_ch43 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.42  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 43
+pcm.out_ch43 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.42  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 44
+pcm.in_ch44 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.43  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 44
+pcm.out_ch44 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.43  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 45
+pcm.in_ch45 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.44  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 45
+pcm.out_ch45 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.44  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 46
+pcm.in_ch46 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.45  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 46
+pcm.out_ch46 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.45  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 47
+pcm.in_ch47 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.46  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 47
+pcm.out_ch47 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.46  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 48
+pcm.in_ch48 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.47  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 48
+pcm.out_ch48 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.47  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 49
+pcm.in_ch49 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.48  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 49
+pcm.out_ch49 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.48  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 50
+pcm.in_ch50 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.49  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 50
+pcm.out_ch50 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.49  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 51
+pcm.in_ch51 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.50  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 51
+pcm.out_ch51 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.50  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 52
+pcm.in_ch52 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.51  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 52
+pcm.out_ch52 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.51  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 53
+pcm.in_ch53 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.52  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 53
+pcm.out_ch53 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.52  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 54
+pcm.in_ch54 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.53  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 54
+pcm.out_ch54 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.53  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 55
+pcm.in_ch55 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.54  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 55
+pcm.out_ch55 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.54  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 56
+pcm.in_ch56 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.55  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 56
+pcm.out_ch56 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.55  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 57
+pcm.in_ch57 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.56  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 57
+pcm.out_ch57 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.56  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 58
+pcm.in_ch58 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.57  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 58
+pcm.out_ch58 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.57  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 59
+pcm.in_ch59 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.58  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 59
+pcm.out_ch59 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.58  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 60
+pcm.in_ch60 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.59  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 60
+pcm.out_ch60 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.59  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 61
+pcm.in_ch61 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.60  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 61
+pcm.out_ch61 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.60  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 62
+pcm.in_ch62 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.61  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 62
+pcm.out_ch62 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.61  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 63
+pcm.in_ch63 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.62  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 63
+pcm.out_ch63 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.62  1.0
+    }
+}
+
+
+# Mono capture: RAVENNA channel 64
+pcm.in_ch64 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.63  1.0
+    }
+}
+
+# Mono playback: RAVENNA channel 64
+pcm.out_ch64 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.63  1.0
+    }
+}
