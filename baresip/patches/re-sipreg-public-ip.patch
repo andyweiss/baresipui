@@ -1,0 +1,120 @@
+--- a/src/sipreg/reg.c	2026-01-22 11:15:49.657652464 +0100
++++ b/src/sipreg/reg.c	2026-01-22 12:26:59.963563110 +0100
+@@ -51,6 +51,8 @@
+ 	char *params;
+ 	int regid;
+ 	uint16_t srcport;
++	struct sa public_addr;
++	bool has_public_addr;
+ };
+ 
+ 
+@@ -189,6 +191,10 @@
+ }
+ 
+ 
++
++/* Debug file handle */
++static FILE *debug_fp = NULL;
++
+ static void response_handler(int err, const struct sip_msg *msg, void *arg)
+ {
+ 	const struct sip_hdr *minexp;
+@@ -196,6 +202,15 @@
+ 	uint16_t last_scode = reg->ls.last_scode;
+ 
+ 	reg->wait = failwait(reg->failc + 1);
++
++	/* DEBUG: Log every call to response_handler */
++	if (!debug_fp) debug_fp = fopen("/tmp/re_debug.log", "a");
++	if (debug_fp) {
++		fprintf(debug_fp, "[response_handler] err=%d scode=%u\n", 
++		        err, msg ? msg->scode : 0);
++		fflush(debug_fp);
++	}
++
+ 	if (err || !msg || sip_request_loops(&reg->ls, msg->scode)) {
+ 		reg->failc++;
+ 		goto out;
+@@ -224,7 +239,38 @@
+ 	switch (msg->scode) {
+ 
+ 	case 401:
++		if (debug_fp) {
++			fprintf(debug_fp, "[401] Via params: %s\n",
++			        msg->via.params.p ? "YES" : "NO");
++			if (msg->via.params.p) {
++				fprintf(debug_fp, "[401] Params content: %.*s\n",
++				        (int)msg->via.params.l, msg->via.params.p);
++			}
++			fflush(debug_fp);
++		}
+ 	case 407:
++		if (debug_fp) {
++			fprintf(debug_fp, "[407] Via params: %s\n",
++			        msg->via.params.p ? "YES" : "NO");
++			fflush(debug_fp);
++		}
++
++		/* Extract public IP from Via received parameter */
++		{
++			struct pl received;
++			if (0 == msg_param_decode(&msg->via.params, "received", &received)) {
++				if (0 == sa_decode(&reg->public_addr, received.p, received.l)) {
++					sa_set_port(&reg->public_addr, sa_port(&reg->laddr));
++					reg->has_public_addr = true;
++					if (debug_fp) {
++						char buf[64];
++						re_snprintf(buf, sizeof(buf), "%J", &reg->public_addr);
++						fprintf(debug_fp, "[407] Extracted public IP: %s\n", buf);
++						fflush(debug_fp);
++					}
++				}
++			}
++		}
+ 		if (reg->ls.failc > 1 && last_scode == msg->scode) {
+ 			reg->failc++;
+ 			goto out;
+@@ -298,6 +344,16 @@
+ 			struct mbuf **contp, void *arg)
+ {
+ 	struct sipreg *reg = arg;
++
++	/* DEBUG: Log send_handler call */
++	if (!debug_fp) debug_fp = fopen("/tmp/re_debug.log", "a");
++	if (debug_fp) {
++		char buf[64];
++		re_snprintf(buf, sizeof(buf), "%J", src);
++		fprintf(debug_fp, "[send_handler] called, src=%s\n", buf);
++		fflush(debug_fp);
++	}
++
+ 	int err;
+ 
+ 	(void)contp;
+@@ -307,7 +363,24 @@
+ 	if (reg->srcport && tp != SIP_TRANSP_UDP)
+ 		sa_set_port(src, reg->srcport);
+ 
+-	reg->laddr = *src;
++	/* Use public IP if available, otherwise local */
++	if (reg->has_public_addr) {
++		reg->laddr = reg->public_addr;
++		if (debug_fp) {
++			char buf[64];
++			re_snprintf(buf, sizeof(buf), "%J", &reg->laddr);
++			fprintf(debug_fp, "[send_handler] Using PUBLIC IP: %s\n", buf);
++			fflush(debug_fp);
++		}
++	} else {
++		reg->laddr = *src;
++		if (debug_fp) {
++			char buf[64];
++			re_snprintf(buf, sizeof(buf), "%J", &reg->laddr);
++			fprintf(debug_fp, "[send_handler] Using LOCAL IP: %s\n", buf);
++			fflush(debug_fp);
++		}
++	}
+ 	err = mbuf_printf(mb, "Contact: <sip:%s@%J%s%s%s>;expires=%u%s%s",
+ 			  reg->cuser, &reg->laddr, sip_transp_param(reg->tp),
+ 			  reg->cparams ? ";" : "",

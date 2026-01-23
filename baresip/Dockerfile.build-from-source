@@ -28,7 +28,20 @@ RUN git clone -b ${RE_VERSION} --depth=1 https://github.com/baresip/re.git
 
 WORKDIR /root/re
 
-# Build libre (no patches needed - vanilla works!)
+# Copy patches directory (for re-specific patches)
+COPY patches/ ./patches/
+
+# Apply re patches if they exist
+RUN for p in patches/re-*.patch; do \
+    if [ -f "$p" ]; then \
+        echo "=== Applying RE patch: $p ===" && \
+        patch -p1 < "$p" && \
+        echo "=== Patch $p applied successfully ===" || \
+        (echo "=== ERROR: Patch $p FAILED ===" && exit 1); \
+    fi \
+done
+
+# Build libre
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_FLAGS="-g" \
@@ -84,7 +97,10 @@ endif()' > modules/rtcpstats_periodic/CMakeLists.txt
 
 # Apply any additional patches
 COPY patches/baresip-*.patch ./
-RUN for p in baresip-*.patch; do [ -f "$p" ] && patch -p1 < "$p" || true; done
+RUN for p in baresip-*.patch; do \
+    echo "=== Applying patch: $p ===" && \
+    [ -f "$p" ] && patch -p1 < "$p"; \
+done
 
 # Build baresip
 RUN cmake -B build \
