@@ -1,0 +1,28 @@
+--- src/sipreg/reg.c.original	2026-01-24 23:49:47.257180688 +0100
++++ src/sipreg/reg.c	2026-01-24 23:50:22.394550049 +0100
+@@ -258,8 +258,23 @@
+ 		/* Extract public IP from Via received parameter */
+ 		{
+ 			struct pl received;
+-			if (0 == msg_param_decode(&msg->via.params, "received", &received)) {
+-				if (0 == sa_decode(&reg->public_addr, received.p, received.l)) {
++			int decode_err = msg_param_decode(&msg->via.params, "received", &received);
++			if (debug_fp) {
++				fprintf(debug_fp, "[407] msg_param_decode result: %d\n", decode_err);
++				fflush(debug_fp);
++			}
++			if (0 == decode_err) {
++				if (debug_fp) {
++					fprintf(debug_fp, "[407] received param: %.*s\n",
++					        (int)received.l, received.p);
++					fflush(debug_fp);
++				}
++				int sa_err = sa_decode(&reg->public_addr, received.p, received.l);
++				if (debug_fp) {
++					fprintf(debug_fp, "[407] sa_decode result: %d\n", sa_err);
++					fflush(debug_fp);
++				}
++				if (0 == sa_err) {
+ 					sa_set_port(&reg->public_addr, sa_port(&reg->laddr));
+ 					reg->has_public_addr = true;
+ 					if (debug_fp) {

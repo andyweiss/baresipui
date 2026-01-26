@@ -1,5 +1,5 @@
---- a/src/sipreg/reg.c	2026-01-26 22:43:34.915299683 +0100
-+++ b/src/sipreg/reg.c	2026-01-26 22:44:13.092787644 +0100
+--- a/src/sipreg/reg.c	2026-01-22 11:15:49.657652464 +0100
++++ b/src/sipreg/reg.c	2026-01-22 12:26:59.963563110 +0100
 @@ -51,6 +51,8 @@
  	char *params;
  	int regid;
@@ -36,7 +36,7 @@
  	if (err || !msg || sip_request_loops(&reg->ls, msg->scode)) {
  		reg->failc++;
  		goto out;
-@@ -224,7 +239,52 @@
+@@ -224,7 +239,38 @@
  	switch (msg->scode) {
  
  	case 401:
@@ -59,23 +59,9 @@
 +		/* Extract public IP from Via received parameter */
 +		{
 +			struct pl received;
-+			int decode_err = msg_param_decode(&msg->via.params, "received", &received);
-+			if (debug_fp) {
-+				fprintf(debug_fp, "[407] msg_param_decode result: %d\n", decode_err);
-+				fflush(debug_fp);
-+			}
-+			if (0 == decode_err) {
-+				if (debug_fp) {
-+					fprintf(debug_fp, "[407] received param: %.*s\n",
-+					        (int)received.l, received.p);
-+					fflush(debug_fp);
-+				}
-+				int sa_err = sa_set(&reg->public_addr, &received, sa_port(&reg->laddr));
-+				if (debug_fp) {
-+					fprintf(debug_fp, "[407] sa_set result: %d\n", sa_err);
-+					fflush(debug_fp);
-+				}
-+				if (0 == sa_err) {
++			if (0 == msg_param_decode(&msg->via.params, "received", &received)) {
++				if (0 == sa_decode(&reg->public_addr, received.p, received.l)) {
++					sa_set_port(&reg->public_addr, sa_port(&reg->laddr));
 +					reg->has_public_addr = true;
 +					if (debug_fp) {
 +						char buf[64];
@@ -89,7 +75,7 @@
  		if (reg->ls.failc > 1 && last_scode == msg->scode) {
  			reg->failc++;
  			goto out;
-@@ -298,6 +358,16 @@
+@@ -298,6 +344,16 @@
  			struct mbuf **contp, void *arg)
  {
  	struct sipreg *reg = arg;
@@ -106,7 +92,7 @@
  	int err;
  
  	(void)contp;
-@@ -307,7 +377,24 @@
+@@ -307,7 +363,24 @@
  	if (reg->srcport && tp != SIP_TRANSP_UDP)
  		sa_set_port(src, reg->srcport);
  
