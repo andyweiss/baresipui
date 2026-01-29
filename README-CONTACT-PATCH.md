@@ -18,20 +18,6 @@ Dieser Patch ermöglicht es Baresip, die **öffentliche IP-Adresse** im Contact-
 
 ## 🚀 Quick Start
 
-### 1. Patch anwenden (Automatisch)
-```bash
-cd /home/debdev/baresipui
-./apply-contact-patch.sh ./baresip
-```
-
-### 2. Kompilieren
-```bash
-cd baresip
-make clean && make
-```
-
-### 3. Testen
-```bash
 # PCAP-Datei erstellen
 docker-compose up &
 sudo tcpdump -i any -w baresip-patched.pcap "tcp port 5060"
@@ -42,76 +28,9 @@ tshark -r baresip-patched.pcap -Y "sip.method == REGISTER" | grep Contact
 ```
 
 ---
-
-## 📁 Dateien
-
-| Datei | Größe | Beschreibung |
-|-------|-------|-------------|
-| `baresip-contact-public-ip.patch` | 3.4K | ⭐ Empfohlener Patch |
-| `baresip-contact-header-rewrite.patch` | 4.6K | Erweiterte Variante |
-| `apply-contact-patch.sh` | 5.3K | Automatisiertes Anwendungs-Skript |
-| `PATCH-SUMMARY.md` | 6.3K | Schnelle Zusammenfassung |
-| `CONTACT-HEADER-PATCH-DOCUMENTATION.md` | 6.3K | Detaillierte Dokumentation |
-| `TEST-PLAN-CONTACT-PATCH.md` | 6.4K | Test- & Verifizierungs-Plan |
-| `baresip/modules/pubip.c` | 8K | Nicht-invasives Modul |
-
 ---
 
-## 🔧 Was ändert sich im Code
 
-### Neue Funktion
-```c
-static int extract_public_contact_addr(struct reg *reg,
-                                       const struct sip_msg *msg)
-```
-- Wird in `register_handler()` aufgerufen bei 401/407 Responses
-- Parst Via-Header um öffentliche IP zu extrahieren
-- Loggt Debugging-Info
-
-### Integration
-```c
-// In register_handler() bei Authentication-Response:
-if (msg->scode == 401 || msg->scode == 407) {
-    (void)extract_public_contact_addr(reg, msg);
-}
-```
-
----
-
-## ✅ Verifizierungs-Checkliste
-
-- [ ] Patch angewendet ohne Fehler
-- [ ] Baresip kompiliert erfolgreich
-- [ ] PCAP-Datei erstellt
-- [ ] Via-Header enthält öffentliche IP
-- [ ] Contact-Header enthält öffentliche IP
-- [ ] Debug-Logs zeigen "extracted public IP"
-- [ ] Anrufe können empfangen werden (optional)
-
----
-
-## 🐛 Häufige Probleme
-
-### Patch lässt sich nicht anwenden
-```
-patching file src/reg.c
-Hunk #1 FAILED
-```
-→ **Lösung:** Baresip-Version zu alt. Mindestens 0.7.x erforderlich.
-
-### "extract_public_contact_addr is not defined"
-```
-error: 'extract_public_contact_addr' undeclared
-```
-→ **Lösung:** Beide Funktionen (Deklaration + Aufruf) hinzufügen.
-
-### Contact Header ändert sich nicht
-```
-Contact: <sip:user@172.23.0.2:59771>  (Immer noch alt)
-```
-→ **Lösung:** Die `re`-Bibliothek muss auch gepatch sein, oder verwende das `pubip.c` Modul statt.
-
----
 
 ## 📊 Vergleich: Vorher vs. Nachher
 
@@ -158,23 +77,7 @@ Authorization: Digest username="2061831"...
 
 ---
 
-## 🎯 Anwendungs-Szenarien
-
-### ✅ Wo dieser Patch hilft
-
-1. **Docker/Container** - Interne IP-Adressen sind von außen nicht erreichbar
-2. **Cloud-Deployments** - Public/Private IP Mismatch
-3. **NAT-Netzwerke** - Externe Firewall-Regeln
-4. **Proxy-Server** - Korrekte Contact-Registration
-5. **Mobile-Netzwerke** - IP-Adressen-Wechsel
-
-### ❌ Nicht notwendig bei
-
-- Direkter Verbindung ohne NAT
-- Wenn Outbound-Proxy konfiguriert
-- Wenn nur SIP-Calls initiiert werden (kein Empfang nötig)
-
----
+#
 
 ## 🔗 SIP-Konzepte
 
@@ -213,17 +116,166 @@ sudo tcpdump -i any -w test.pcap "tcp port 5060"
 tshark -r test.pcap -Y "sip.method == REGISTER" -V | grep -E "Via:|Contact:"
 ```
 
----
+================================================================================
+Vorgehen Patch entwicklung
+================================================================================
 
-## 📞 Support
+📁 DATEI ZUM PATCHEN: /tmp/re/src/sipreg/reg.c (RE Library)
 
-- **Patch funktioniert nicht?** → Siehe "Häufige Probleme"
-- **Mehr Details?** → Lese `CONTACT-HEADER-PATCH-DOCUMENTATION.md`
-- **Tests nicht sicher?** → Folge `TEST-PLAN-CONTACT-PATCH.md`
-- **Nicht-invasiv?** → Verwende `baresip/modules/pubip.c`
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SCHRITT 1: struct sipreg erweitern (nach Zeile 53)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   struct sipreg {                                                           │
+│       ...                                                                   │
+│       uint16_t srcport;                 ← Zeile 53                          │
+│   +   struct sa public_addr;            ← NEU: Öffentliche IP speichern     │
+│   +   bool has_public_addr;             ← NEU: Flag ob gesetzt              │
+│   };                                                                        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 
----
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SCHRITT 2: response_handler() patchen (Zeile 226-240)                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   case 401:                                                                 │
+│   case 407:                                                                 │
+│       if (reg->ls.failc > 1 && last_scode == msg->scode) {                  │
+│           reg->failc++;                                                     │
+│           goto out;                                                         │
+│       }                                                                     │
+│                                                                             │
+│       sip_auth_reset(reg->auth);                                            │
+│       err = sip_auth_authenticate(reg->auth, msg);                          │
+│       if (err) {                                                            │
+│           err = (err == EAUTH) ? 0 : err;                                   │
+│           break;                                                            │
+│       }                                                                     │
+│                                                                             │
+│   +   /* Extract public IP from Via received parameter */                  │
+│   +   struct pl received;                                                   │
+│   +   if (0 == msg_param_decode(&msg->via.params, "received", &received)) {│
+│   +       if (0 == sa_decode(&reg->public_addr,                            │
+│   +                          received.p, received.l)) {                     │
+│   +           sa_set_port(&reg->public_addr, sa_port(&reg->laddr));        │
+│   +           reg->has_public_addr = true;                                  │
+│   +       }                                                                 │
+│   +   }                                                                     │
+│                                                                             │
+│       err = request(reg, false);                                            │
+│       ...                                                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 
-**Status:** ✅ Patch erstellt & dokumentiert  
-**Stand:** 2026-01-06  
-**Version:** 1.0
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SCHRITT 3: send_handler() patchen (Zeile 310)                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   reg->tp = tp;                                                             │
+│   if (reg->srcport && tp != SIP_TRANSP_UDP)                                 │
+│       sa_set_port(src, reg->srcport);                                       │
+│                                                                             │
+│   - reg->laddr = *src;                      ← ALT: immer lokale IP         │
+│   + if (reg->has_public_addr) {             ← NEU: Check public IP         │
+│   +     reg->laddr = reg->public_addr;      ← NEU: Verwende public IP      │
+│   + } else {                                                                │
+│   +     reg->laddr = *src;                  ← NEU: Fallback zu lokal       │
+│   + }                                                                       │
+│                                                                             │
+│   err = mbuf_printf(mb, "Contact: <sip:%s@%J...", &reg->laddr, ...);       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+�� VERWENDETE RE-LIBRARY FUNKTIONEN
+================================================================================
+
+✅ msg_param_decode()           [/tmp/re/include/re_msg.h:20]
+   → Extrahiert Parameter aus struct pl
+   → Verwendung: msg_param_decode(&msg->via.params, "received", &received)
+   → Return: 0 bei Erfolg
+
+✅ sa_decode()                  [/tmp/re/include/re_sa.h:53]
+   → Parst IP-Adresse String zu struct sa
+   → Verwendung: sa_decode(&reg->public_addr, received.p, received.l)
+   → Return: 0 bei Erfolg
+
+✅ sa_set_port()                [/tmp/re/include/re_sa.h:52]
+   → Setzt Port in struct sa
+   → Verwendung: sa_set_port(&reg->public_addr, port)
+   → Return: void
+
+✅ sa_port()                    [/tmp/re/include/re_sa.h]
+   → Liest Port aus struct sa
+   → Verwendung: sa_port(&reg->laddr)
+   → Return: uint16_t
+
+================================================================================
+🔄 ABLAUF IM DETAIL
+================================================================================
+
+1. Baresip sendet REGISTER mit lokaler IP:
+   Contact: <sip:user@172.20.0.2:59771>
+
+2. Server antwortet 401 Unauthorized mit Via received Parameter:
+   Via: SIP/2.0/TCP 172.20.0.2:59771;received=109.202.196.180;branch=...
+
+3. response_handler() wird aufgerufen (Zeile 192):
+   ├─ msg->scode == 401
+   ├─ UNSER PATCH: Extrahiert "109.202.196.180" aus msg->via.params
+   ├─ Speichert in reg->public_addr
+   └─ Setzt reg->has_public_addr = true
+
+4. request(reg, false) wird aufgerufen → sendet neues REGISTER
+
+5. send_handler() wird aufgerufen (Zeile 296):
+   ├─ UNSER PATCH: Prüft reg->has_public_addr
+   ├─ Verwendet reg->public_addr statt *src
+   └─ Contact Header wird erstellt mit: <sip:user@109.202.196.180:5060>
+
+6. Server empfängt authenticated REGISTER mit öffentlicher IP ✓
+
+================================================================================
+❓ OFFENE FRAGEN / RISIKEN
+================================================================================
+
+1. ✅ Funktioniert msg_param_decode mit msg->via.params?
+   → JA! Wird bereits in reply.c für "maddr" verwendet (Zeile 250)
+
+2. ✅ Ist msg->via.params verfügbar in response_handler?
+   → JA! msg->via wird in struct sip_msg Zeile 214 geparst
+
+3. ✅ Wird response_handler bei 401/407 aufgerufen?
+   → JA! Bestätigt durch Code-Analyse (Zeile 226-240)
+
+4. ⚠️  Wird der Port korrekt übernommen?
+   → MUSS GETESTET WERDEN: sa_set_port(&reg->public_addr, sa_port(&reg->laddr))
+   → Alternative: sa_set_port(&reg->public_addr, 5060) für Standard-Port
+
+5. ⚠️  Was wenn kein "received" Parameter vorhanden?
+   → msg_param_decode returns != 0
+   → has_public_addr bleibt false
+   → Fallback zu lokaler IP ✓
+
+6. ⚠️  Was bei Re-Registration (nach 300 Sekunden)?
+   → has_public_addr bleibt true (bis nächster 401)
+   → Verwendet weiterhin public IP ✓
+
+================================================================================
+✅ NÄCHSTER SCHRITT
+================================================================================
+
+Soll ich den Patch jetzt mit Python generieren?
+
+Der Patch wird:
+├─ Tabs verwenden (wie Original-Code)
+├─ Drei Hunks haben:
+│  1. struct sipreg erweitern
+│  2. response_handler() 401/407 case
+│  └─ 3. send_handler() laddr Zuweisung
+├─ Mit --dry-run getestet
+└─ In baresip/patches/re-sipreg-public-contact.patch gespeichert
+
+Wenn du einverstanden bist, gebe ich dir vorher nochmal den EXAKTEN
+Code-Diff zum Review!
