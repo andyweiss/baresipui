@@ -1,13 +1,15 @@
 diff --git a/src/call.c b/src/call.c
-index e7c9f63..c6621c4 100644
+index e7c9f63..517671c 100644
 --- a/src/call.c
 +++ b/src/call.c
-@@ -2539,6 +2539,8 @@ static int sipsess_desc_handler(struct mbuf **descp, const struct sa *src,
+@@ -2539,7 +2539,9 @@ static int sipsess_desc_handler(struct mbuf **descp, const struct sa *src,
  	MAGIC_CHECK(call);
  	call->af     = sa_af(src);
  	if (!call->acc->mnat)
-+		/* PATCHED: Keep existing laddr (public IP) instead of overwriting with local src */
+-		sdp_session_set_laddr(call->sdp, src);
++		/* Only set laddr if not already set (preserves public IP) */
 +		if (!sa_isset(sdp_session_laddr(call->sdp), SA_ADDR))
- 		sdp_session_set_laddr(call->sdp, src);
++			sdp_session_set_laddr(call->sdp, src);
  
  	if (list_isempty(&call->streaml)) {
+ 		err = call_streams_alloc(call);

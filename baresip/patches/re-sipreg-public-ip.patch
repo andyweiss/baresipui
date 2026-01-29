@@ -1,6 +1,47 @@
---- a/src/sipreg/reg.c	2026-01-26 23:46:41.098595453 +0100
-+++ b/src/sipreg/reg.c	2026-01-26 23:46:42.246640152 +0100
-@@ -51,6 +51,8 @@
+diff --git a/include/re_sip.h b/include/re_sip.h
+index bd3c4c9..605c996 100644
+--- a/include/re_sip.h
++++ b/include/re_sip.h
+@@ -458,3 +458,8 @@ int sip_uas_auth_print(struct re_printf *pf,
+ 		       const struct sip_uas_auth *auth);
+ int sip_uas_auth_check(struct sip_uas_auth *auth, const struct sip_msg *msg,
+ 		       sip_uas_auth_h *authh, void *arg);
++
++
++/* Public IP for NAT traversal (learned from Via received parameter) */
++void sip_set_public_addr(const struct sa *addr);
++const struct sa *sip_get_public_addr(void);
+diff --git a/src/sip/sip.c b/src/sip/sip.c
+index 9e5649c..3cda782 100644
+--- a/src/sip/sip.c
++++ b/src/sip/sip.c
+@@ -326,3 +326,21 @@ struct sip_conncfg *sip_conncfg_find(struct sip *sip,
+ 
+ 	return NULL;
+ }
++
++
++/* Public IP storage for NAT traversal */
++static struct sa global_public_addr;
++static bool has_global_public_addr = false;
++
++void sip_set_public_addr(const struct sa *addr)
++{
++	if (addr && sa_isset(addr, SA_ADDR)) {
++		sa_cpy(&global_public_addr, addr);
++		has_global_public_addr = true;
++	}
++}
++
++const struct sa *sip_get_public_addr(void)
++{
++	return has_global_public_addr ? &global_public_addr : NULL;
++}
+diff --git a/src/sipreg/reg.c b/src/sipreg/reg.c
+index ca87884..76d4e8a 100644
+--- a/src/sipreg/reg.c
++++ b/src/sipreg/reg.c
+@@ -51,6 +51,8 @@ struct sipreg {
  	char *params;
  	int regid;
  	uint16_t srcport;
@@ -9,143 +50,65 @@
  };
  
  
-@@ -189,12 +191,24 @@
- }
- 
- 
-+/* Debug file handle */
-+static FILE *debug_fp = NULL;
-+
- static void response_handler(int err, const struct sip_msg *msg, void *arg)
- {
- 	const struct sip_hdr *minexp;
- 	struct sipreg *reg = arg;
- 	uint16_t last_scode = reg->ls.last_scode;
- 
-+
-+	/* DEBUG: Log every call to response_handler */
-+	if (!debug_fp) debug_fp = fopen("/tmp/re_debug.log", "a");
-+	if (debug_fp) {
-+		fprintf(debug_fp, "[response_handler] err=%d scode=%u\n", 
-+		        err, msg ? msg->scode : 0);
-+		fflush(debug_fp);
-+	}
-+
- 	reg->wait = failwait(reg->failc + 1);
- 	if (err || !msg || sip_request_loops(&reg->ls, msg->scode)) {
- 		reg->failc++;
-@@ -224,7 +238,52 @@
- 	switch (msg->scode) {
+@@ -225,6 +227,16 @@ static void response_handler(int err, const struct sip_msg *msg, void *arg)
  
  	case 401:
-+		if (debug_fp) {
-+			fprintf(debug_fp, "[401] Via params: %s\n",
-+			        msg->via.params.p ? "YES" : "NO");
-+			if (msg->via.params.p) {
-+				fprintf(debug_fp, "[401] Params content: %.*s\n",
-+				        (int)msg->via.params.l, msg->via.params.p);
-+			}
-+			fflush(debug_fp);
-+		}
  	case 407:
-+		if (debug_fp) {
-+			fprintf(debug_fp, "[407] Via params: %s\n",
-+			        msg->via.params.p ? "YES" : "NO");
-+			fflush(debug_fp);
-+		}
-+
 +		/* Extract public IP from Via received parameter */
 +		{
 +			struct pl received;
-+			int decode_err = msg_param_decode(&msg->via.params, "received", &received);
-+			if (debug_fp) {
-+				fprintf(debug_fp, "[407] msg_param_decode result: %d\n", decode_err);
-+				fflush(debug_fp);
-+			}
-+			if (0 == decode_err) {
-+				if (debug_fp) {
-+					fprintf(debug_fp, "[407] received param: %.*s\n",
-+					        (int)received.l, received.p);
-+					fflush(debug_fp);
-+				}
-+				int sa_err = sa_set(&reg->public_addr, &received, sa_port(&reg->laddr));
-+				if (debug_fp) {
-+					fprintf(debug_fp, "[407] sa_set result: %d\n", sa_err);
-+					fflush(debug_fp);
-+				}
-+				if (0 == sa_err) {
++			if (0 == msg_param_decode(&msg->via.params, "received", &received)) {
++				if (0 == sa_set(&reg->public_addr, &received, sa_port(&reg->laddr))) {
 +					reg->has_public_addr = true;
-+					if (debug_fp) {
-+						char buf[64];
-+						re_snprintf(buf, sizeof(buf), "%J", &reg->public_addr);
-+						fprintf(debug_fp, "[407] Extracted public IP: %s\n", buf);
-+						fflush(debug_fp);
-+					}
++					sip_set_public_addr(&reg->public_addr);
 +				}
 +			}
 +		}
  		if (reg->ls.failc > 1 && last_scode == msg->scode) {
  			reg->failc++;
  			goto out;
-@@ -307,7 +366,34 @@
+@@ -307,7 +319,12 @@ static int send_handler(enum sip_transp tp, struct sa *src,
  	if (reg->srcport && tp != SIP_TRANSP_UDP)
  		sa_set_port(src, reg->srcport);
  
 -	reg->laddr = *src;
-+
-+	/* DEBUG: Log send_handler call */
-+	if (!debug_fp) debug_fp = fopen("/tmp/re_debug.log", "a");
-+	if (debug_fp) {
-+		char buf[64];
-+		re_snprintf(buf, sizeof(buf), "%J", src);
-+		fprintf(debug_fp, "[send_handler] called, src=%s\n", buf);
-+		fflush(debug_fp);
-+	}
-+
-+	/* Use public IP if available, otherwise local */
++	/* Use public IP for Contact if available */
 +	if (reg->has_public_addr) {
 +		reg->laddr = reg->public_addr;
-+		if (debug_fp) {
-+			char buf[64];
-+			re_snprintf(buf, sizeof(buf), "%J", &reg->laddr);
-+			fprintf(debug_fp, "[send_handler] Using PUBLIC IP: %s\n", buf);
-+			fflush(debug_fp);
-+		}
 +	} else {
 +		reg->laddr = *src;
-+		if (debug_fp) {
-+			char buf[64];
-+			re_snprintf(buf, sizeof(buf), "%J", &reg->laddr);
-+			fprintf(debug_fp, "[send_handler] Using LOCAL IP: %s\n", buf);
-+			fflush(debug_fp);
-+		}
 +	}
  	err = mbuf_printf(mb, "Contact: <sip:%s@%J%s%s%s>;expires=%u%s%s",
  			  reg->cuser, &reg->laddr, sip_transp_param(reg->tp),
  			  reg->cparams ? ";" : "",
-@@ -510,7 +596,24 @@
+@@ -510,7 +527,7 @@ int sipreg_set_rwait(struct sipreg *reg, uint32_t rwait)
   */
  const struct sa *sipreg_laddr(const struct sipreg *reg)
  {
 -	return reg ? &reg->laddr : NULL;
-+	/* DEBUG */
-+	if (!debug_fp) debug_fp = fopen("/tmp/re_debug.log", "a");
-+	if (debug_fp) {
-+		fprintf(debug_fp, "[sipreg_laddr] called, reg=%p has_public_addr=%d\n",
-+		        reg, reg ? reg->has_public_addr : -1);
-+		if (reg) {
-+			char buf1[64], buf2[64];
-+			re_snprintf(buf1, sizeof(buf1), "%J", &reg->laddr);
-+			if (reg->has_public_addr) {
-+				re_snprintf(buf2, sizeof(buf2), "%J", &reg->public_addr);
-+				fprintf(debug_fp, "[sipreg_laddr] laddr=%s public_addr=%s (RETURNING PUBLIC)\n", buf1, buf2);
-+			} else {
-+				fprintf(debug_fp, "[sipreg_laddr] laddr=%s (RETURNING LOCAL)\n", buf1);
-+			}
-+		}
-+		fflush(debug_fp);
-+	}
 +	return reg ? (reg->has_public_addr ? &reg->public_addr : &reg->laddr) : NULL;
  }
  
  
+diff --git a/src/sipsess/connect.c b/src/sipsess/connect.c
+index 9a3f234..ce3d1bb 100644
+--- a/src/sipsess/connect.c
++++ b/src/sipsess/connect.c
+@@ -38,7 +38,16 @@ static int send_handler(enum sip_transp tp, struct sa *src,
+ 			return err;
+ 	}
+ 
+-	sip_contact_set(&contact, sess->cuser, src, tp);
++	/* Use public IP for Contact if available */
++	const struct sa *contact_addr = sip_get_public_addr();
++	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
++		struct sa pub_with_port;
++		sa_cpy(&pub_with_port, contact_addr);
++		sa_set_port(&pub_with_port, sa_port(src));
++		sip_contact_set(&contact, sess->cuser, &pub_with_port, tp);
++	} else {
++		sip_contact_set(&contact, sess->cuser, src, tp);
++	}
+ 	err = mbuf_printf(mb, "%H", sip_contact_print, &contact);
+ 	if (err)
+ 		goto out;
