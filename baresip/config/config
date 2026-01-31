@@ -126,6 +126,9 @@ module                  alsa.so
 # Presence Module (MUST be loaded before UA registration)
 module                  presence.so
 
+# Public IP module disabled - functionality is provided by re-sipreg-public-ip.patch in libre
+# module                  pubip.so
+
 # Video codec Modules (in order)
 #module                 avcodec.so
 #module                 vp8.so

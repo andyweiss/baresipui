@@ -12,14 +12,13 @@ index bd3c4c9..605c996 100644
 +void sip_set_public_addr(const struct sa *addr);
 +const struct sa *sip_get_public_addr(void);
 diff --git a/src/sip/sip.c b/src/sip/sip.c
-index 9e5649c..3cda782 100644
+index 9e5649c..4007ac8 100644
 --- a/src/sip/sip.c
 +++ b/src/sip/sip.c
-@@ -326,3 +326,21 @@ struct sip_conncfg *sip_conncfg_find(struct sip *sip,
+@@ -326,3 +326,20 @@ struct sip_conncfg *sip_conncfg_find(struct sip *sip,
  
  	return NULL;
  }
-+
 +
 +/* Public IP storage for NAT traversal */
 +static struct sa global_public_addr;
@@ -112,3 +111,43 @@ index 9a3f234..ce3d1bb 100644
  	err = mbuf_printf(mb, "%H", sip_contact_print, &contact);
  	if (err)
  		goto out;
+diff --git a/src/sipsess/reply.c b/src/sipsess/reply.c
+index df73d32..1941119 100644
+--- a/src/sipsess/reply.c
++++ b/src/sipsess/reply.c
+@@ -141,7 +141,16 @@ int sipsess_reply_2xx(struct sipsess *sess, const struct sip_msg *msg,
+ 	if (non_invite && sess->neg_state != SDP_NEG_REMOTE_OFFER)
+ 		desc = NULL;
+ 
+-	sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	/* Use public IP for Contact if available */
++	const struct sa *contact_addr = sip_get_public_addr();
++	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
++		struct sa pub_with_port;
++		sa_cpy(&pub_with_port, contact_addr);
++		sa_set_port(&pub_with_port, sa_port(&msg->dst));
++		sip_contact_set(&contact, sess->cuser, &pub_with_port, msg->tp);
++	} else {
++		sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	}
+ 	err = sip_treplyf(non_invite ? NULL : &sess->st,
+ 			  reply ? &reply->mb : NULL, sess->sip,
+ 			  msg, true, scode, reason,
+@@ -253,7 +262,16 @@ int sipsess_reply_1xx(struct sipsess *sess, const struct sip_msg *msg,
+ 	reply->sess = sess;
+ 	reply->scode = scode;
+ 
+-	sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	/* Use public IP for Contact if available */
++	const struct sa *contact_addr2 = sip_get_public_addr();
++	if (contact_addr2 && sa_isset(contact_addr2, SA_ADDR)) {
++		struct sa pub_with_port2;
++		sa_cpy(&pub_with_port2, contact_addr2);
++		sa_set_port(&pub_with_port2, sa_port(&msg->dst));
++		sip_contact_set(&contact, sess->cuser, &pub_with_port2, msg->tp);
++	} else {
++		sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	}
+ 	if (reliably) {
+ 		sess->rel_seq = sess->rel_seq ? sess->rel_seq+1 : rand_u16();
+ 		reply->rel_seq = sess->rel_seq;

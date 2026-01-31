@@ -20,5 +20,14 @@ endif()
 
 list(APPEND MODULES_DETECTED presence)
 
+# Pubip Module (NAT traversal with public IP) - DISABLED due to API compatibility issues
+# The Public IP functionality is handled by re-sipreg-public-ip.patch in libre
+# if(STATIC)
+#     add_library(pubip OBJECT ${CMAKE_CURRENT_SOURCE_DIR}/pubip.c)
+# else()
+#     add_library(pubip MODULE ${CMAKE_CURRENT_SOURCE_DIR}/pubip.c)
+# endif()
+# list(APPEND MODULES_DETECTED pubip)
+
 set(MODULES_DETECTED ${MODULES_DETECTED} PARENT_SCOPE)
 
