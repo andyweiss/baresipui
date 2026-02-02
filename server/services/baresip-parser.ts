@@ -88,14 +88,17 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       parseContactsFromResponse(data, stateManager);
       return;
     }
-    // 3. Calls
-    if (data.includes('=== Call') || data.includes('call:')) {
-      parseCallsResponse(data, stateManager);
-      return;
-    }
-    // 4. Callstats
+    // 3. Callstats (MUST check BEFORE calls pattern!)
     if (data.includes('Call debug') || data.includes('audio RTP')) {
       parseCallStatResponse(data, stateManager);
+      return;
+    }
+    // 4. Calls - for manual queries only, NO auto-reset
+    if ((data.includes('=== Call') || data.includes('call:') || 
+        data.toLowerCase().includes('no active call') || 
+        data.toLowerCase().includes('no calls')) &&
+        !data.includes('Call debug')) {
+      parseCallsResponse(data, stateManager, false); // false = no auto-reset
       return;
     }
     // 5. Registrations
@@ -172,11 +175,15 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
         const lines = block.split('\n').map(l => l.trim());
         const uriMatch = lines[0].match(/^([^\s-]+) ---/);
         const uri = uriMatch ? `sip:${uriMatch[1]}` : `sip:${lines[0].split(' ')[0]}`;
+        // Preserve only call-related state from existing account
+        const existingAccount = stateManager.getAccount(uri);
         const account: any = {
           uri,
           registered: false,
-          callStatus: 'Idle',
-          autoConnectStatus: 'Off',
+          callStatus: existingAccount?.callStatus || 'Idle',
+          callId: existingAccount?.callId,
+          autoConnectContact: existingAccount?.autoConnectContact,
+          autoConnectStatus: existingAccount?.autoConnectStatus || 'Off',
           lastEvent: Date.now(),
           configured: true
         };
@@ -249,12 +256,15 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
         const displayNameMatch = cleanLine.match(/^\s*\d+\s*-\s*(.+?)\s*</);
         const displayName = displayNameMatch ? displayNameMatch[1].trim() : undefined;
 
-        // Get existing account or create a new one
-        const account = stateManager.getAccount(uri) || {
+        // Get existing account or create new one, preserving call-related state
+        const existingAccount = stateManager.getAccount(uri);
+        const account: any = {
           uri,
           registered: false,
-          callStatus: 'Idle' as const,
-          autoConnectStatus: 'Off',
+          callStatus: existingAccount?.callStatus || 'Idle' as const,
+          callId: existingAccount?.callId,
+          autoConnectContact: existingAccount?.autoConnectContact,
+          autoConnectStatus: existingAccount?.autoConnectStatus || 'Off',
           lastEvent: Date.now(),
           configured: true
         };
@@ -443,8 +453,7 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   }
 }
 
-function parseCallsResponse(data: string, stateManager: StateManager): void {
-  console.log('Parsing calls response to sync call status...');
+function parseCallsResponse(data: string, stateManager: StateManager, autoReset: boolean = false): void {
   const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '').replace(/\\n/g, '\n');
   const lines = cleanData.split('\n');
   
@@ -453,9 +462,10 @@ function parseCallsResponse(data: string, stateManager: StateManager): void {
   // "call: #1 <sip:2061616@sip.srgssr.ch> <sip:2061531@sip.srgssr.ch> [ESTABLISHED] id=abc123"
   // Or older format: "=== Call 1: sip:2061616@sip.srgssr.ch -> sip:2061531@sip.srgssr.ch [ESTABLISHED]"
   const activeCallIds: Set<string> = new Set();
+  let foundAnyCall = false;
   for (const line of lines) {
     if ((line.includes('call:') || line.includes('=== Call')) && line.includes('sip:')) {
-      console.log(`Parsing call line: "${line}"`);
+      foundAnyCall = true;
       // Try new format first: call: #1 <local> <remote> [STATE] id=xxx
       let match = line.match(/<(sip:[^@\s]+@[^\s>]+)>\s*<(sip:[^@\s]+@[^\s>]+)>\s*\[([^\]]+)\](?:.*id[=:]([^\s]+))?/i);
       // Try older format: === Call N: local -> remote [STATE]
@@ -515,12 +525,35 @@ function parseCallsResponse(data: string, stateManager: StateManager): void {
         } else {
           stateManager.addCall(callObj);
         }
-        console.log(`Updated ${localUri} status: callStatus=${callStatus}, callId=${callId}, autoConnectStatus=${updates.autoConnectStatus || 'unchanged'}, direction=${callDirection}`);
       }
     }
   }
-  // Calls werden NICHT mehr automatisch entfernt. Entfernen erfolgt nur noch durch explizite Events (CALL_CLOSED etc.)
-  console.log('Call status sync complete (keine automatischen Removals mehr)');
+  
+  
+  // Auto-Reset only if explicitly enabled (default: disabled)
+  if (autoReset) {
+    const allAccounts = stateManager.getAccounts();
+    const accountsWithCalls = new Set<string>();
+    for (const line of lines) {
+      if ((line.includes('call:') || line.includes('=== Call')) && line.includes('sip:')) {
+        const match = line.match(/<(sip:[^@\s]+@[^\s>]+)>/) || line.match(/sip:([^@\s]+@[^\s>]+)/);
+        if (match) {
+          const uri = match[1].toLowerCase().trim();
+          accountsWithCalls.add(uri);
+        }
+      }
+    }
+    
+    for (const account of allAccounts) {
+      const accountUri = String(account.uri || '').toLowerCase().trim();
+      if (!accountsWithCalls.has(accountUri) && account.callStatus !== 'Idle') {
+        stateManager.updateAccountStatus(accountUri, { 
+          callStatus: 'Idle',
+          callId: undefined 
+        });
+      }
+    }
+  }
 }
 
 function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): void {

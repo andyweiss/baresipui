@@ -57,25 +57,21 @@ export const useSocketIO = () => {
 
     socket.value.on('connect', () => {
       connected.value = true;
-      console.log('✅ Socket.IO: Connected successfully', socket.value?.id);
     });
 
     socket.value.on('disconnect', () => {
       connected.value = false;
-      console.log('❌ Socket.IO: Disconnected');
     });
 
     socket.value.on('init', (data: any) => {
-      console.log('📦 Socket.IO: Received init data', data);
       mergeAndSortAccounts(data.accounts || []);
-      console.log('[DEBUG] Accounts nach init:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
       contacts.value = data.contacts || [];
       calls.value = data.calls || [];
       baresipConnected.value = data.baresipConnected ?? false;
+      sendCommand('uastat');
     });
 
     socket.value.on('baresipStatus', (data: any) => {
-      console.log('🔌 Socket.IO: Baresip status update', data);
       baresipConnected.value = data.connected;
     });
 
@@ -84,34 +80,22 @@ export const useSocketIO = () => {
     });
 
     socket.value.on('message', (data: any) => {
-      console.log('📨 Socket.IO: Received message', data);
-
       if (data.type === 'init') {
         mergeAndSortAccounts(data.accounts || []);
-        console.log('[DEBUG] Accounts nach init (message):', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
         contacts.value = data.contacts || [];
         calls.value = data.calls || [];
         baresipConnected.value = data.baresipConnected ?? false;
+        sendCommand('uastat');
       } else if (data.type === 'accountStatus') {
-        console.log('📊 Socket.IO: Account status update für:', data.data.uri);
-          // Account-Liste stabil aktualisieren und sortieren
           const idx = accounts.value.findIndex(a => a.uri === data.data.uri);
           if (idx >= 0) {
-            // Bestehendes Objekt mit neuen Feldern MERGEN, nie Felder verlieren!
-            for (const key in data.data) {
-              accounts.value[idx][key] = data.data[key];
-            }
-            // Felder, die im Update fehlen, bleiben erhalten
+            accounts.value[idx] = { ...accounts.value[idx], ...data.data };
           } else {
-            // Neuen Account ergänzen
             accounts.value.push(data.data);
           }
-          // Nach jedem Update stabil sortieren
           accounts.value.sort(accountSortFn);
-          console.log('[DEBUG] Accounts nach accountStatus:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
       } else if (data.type === 'accountsUpdate') {
         mergeAndSortAccounts(data.accounts || []);
-        console.log('[DEBUG] Accounts nach accountsUpdate:', accounts.value.map(a => a.uri), 'Länge:', accounts.value.length);
       } else if (data.type === 'log') {
         // ...
         logs.value.push(data.log || data);
