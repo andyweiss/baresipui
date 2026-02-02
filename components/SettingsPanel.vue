@@ -15,7 +15,7 @@
         <div class="p-4 bg-gray-700 rounded-lg">
           <p class="text-white font-medium">UI Info</p>
           <p class="ttext-sm text-gray-400">
-            Version: 0.9.2
+            Version: 0.9.4
           </p>
         </div>
       </div>
