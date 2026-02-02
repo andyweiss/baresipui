@@ -12,13 +12,14 @@ index bd3c4c9..605c996 100644
 +void sip_set_public_addr(const struct sa *addr);
 +const struct sa *sip_get_public_addr(void);
 diff --git a/src/sip/sip.c b/src/sip/sip.c
-index 9e5649c..4007ac8 100644
+index 9e5649c..3cda782 100644
 --- a/src/sip/sip.c
 +++ b/src/sip/sip.c
-@@ -326,3 +326,20 @@ struct sip_conncfg *sip_conncfg_find(struct sip *sip,
+@@ -326,3 +326,21 @@ struct sip_conncfg *sip_conncfg_find(struct sip *sip,
  
  	return NULL;
  }
++
 +
 +/* Public IP storage for NAT traversal */
 +static struct sa global_public_addr;
@@ -36,6 +37,28 @@ index 9e5649c..4007ac8 100644
 +{
 +	return has_global_public_addr ? &global_public_addr : NULL;
 +}
+diff --git a/src/sipevent/subscribe.c b/src/sipevent/subscribe.c
+index 390b5c0..4546001 100644
+--- a/src/sipevent/subscribe.c
++++ b/src/sipevent/subscribe.c
+@@ -304,7 +304,16 @@ static int send_handler(enum sip_transp tp, struct sa *src,
+ 	(void)dst;
+ 	(void)contp;
+ 
+-	sip_contact_set(&contact, sub->cuser, src, tp);
++	/* Use public IP for Contact if available (NAT traversal for SUBSCRIBE) */
++	const struct sa *contact_addr = sip_get_public_addr();
++	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
++		struct sa pub_with_port;
++		sa_cpy(&pub_with_port, contact_addr);
++		sa_set_port(&pub_with_port, sa_port(src));
++		sip_contact_set(&contact, sub->cuser, &pub_with_port, tp);
++	} else {
++		sip_contact_set(&contact, sub->cuser, src, tp);
++	}
+ 
+ 	return mbuf_printf(mb, "%H", sip_contact_print, &contact);
+ }
 diff --git a/src/sipreg/reg.c b/src/sipreg/reg.c
 index ca87884..76d4e8a 100644
 --- a/src/sipreg/reg.c
