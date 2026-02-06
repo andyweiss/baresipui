@@ -104,19 +104,21 @@
             v-for="(log, index) in filteredLogs" 
             :key="`${log.timestamp}-${log.source}-${index}`"
             :data-index="index" 
-            class="px-4 py-1 border-l-2 hover:bg-gray-800 transition-colors"
+            class="px-4 py-2 border-l-2 hover:bg-gray-800 transition-colors"
             :class="logBorderColor(log.level || 'info')"
           >
-            <span class="text-gray-500 mr-3">{{ formatTime(log.timestamp) }}</span>
-            <span 
-              class="font-semibold mr-3 inline-block w-12"
-              :class="logLevelColor(log.level || 'info')"
-            >
-              {{ (log.level || 'info').toUpperCase() }}
-            </span>
-            <span class="text-blue-400 mr-3">{{ log.source || 'unknown' }}</span>
-            <span v-if="log.accountUri" class="text-purple-400 mr-3 text-xs">{{ log.accountUri }}</span>
-            <span class="text-gray-300">{{ log.message || '' }}</span>
+            <div class="flex flex-wrap gap-3 items-baseline">
+              <span class="text-gray-500 whitespace-nowrap text-xs">{{ formatTime(log.timestamp) }}</span>
+              <span 
+                class="font-semibold whitespace-nowrap inline-block min-w-[3rem] text-xs"
+                :class="logLevelColor(log.level || 'info')"
+              >
+                {{ (log.level || 'info').toUpperCase() }}
+              </span>
+              <span class="text-blue-400 whitespace-nowrap text-xs">{{ log.source || 'unknown' }}</span>
+              <span v-if="log.accountUri" class="text-purple-400 whitespace-nowrap text-xs">{{ log.accountUri }}</span>
+              <span class="text-gray-300 flex-1 break-words whitespace-pre-wrap text-xs leading-relaxed">{{ log.message || '' }}</span>
+            </div>
           </div>
           
           <div v-if="filteredLogs.length === 0" class="flex items-center justify-center h-full text-gray-500">
@@ -180,6 +182,11 @@ const handleScroll = () => {
 };
 
 const handleNewLog = (logData: LogEntry) => {
+  // Skip invalid log entries
+  if (!logData || !logData.timestamp || !logData.message || logData.message.length < 2) {
+    return;
+  }
+  
   logs.value.push(logData);
   
   // Limit buffer - aber nur wenn Auto-Scroll AN ist
@@ -201,7 +208,20 @@ const filteredLogs = computed(() => {
   }
 
   if (filterAccount.value) {
-    filtered = filtered.filter(log => (log.accountUri || '') === filterAccount.value);
+    // Extrahiere die Nummer aus der Account URI (z.B. "2061228" aus "sip:2061228@sip.srgssr.ch")
+    const accountMatch = filterAccount.value.match(/(\d+)/);
+    if (accountMatch) {
+      const accountNumber = accountMatch[1];
+      // Suche nach der Nummer in der gesamten Message
+      filtered = filtered.filter(log => 
+        (log.message || '').includes(accountNumber) ||
+        (log.accountUri || '').includes(accountNumber) ||
+        (log.source || '').includes(accountNumber)
+      );
+    } else {
+      // Fallback: exaktes Match wie vorher
+      filtered = filtered.filter(log => (log.accountUri || '') === filterAccount.value);
+    }
   }
 
   if (searchQuery.value) {
@@ -251,6 +271,16 @@ onMounted(async () => {
       accounts.value.push(data);
     }
   });
+
+  // Load accounts from API
+  try {
+    const accountsResponse = await $fetch('/api/accounts');
+    if (accountsResponse && Array.isArray(accountsResponse)) {
+      accounts.value = accountsResponse;
+    }
+  } catch (error) {
+    console.error('Failed to load accounts:', error);
+  }
 
   // Load initial logs
   try {
@@ -322,7 +352,13 @@ watch(
 );
 
 const formatTime = (timestamp: number): string => {
+  if (!timestamp || isNaN(timestamp)) {
+    return '--:--:--,---';
+  }
   const date = new Date(timestamp);
+  if (isNaN(date.getTime())) {
+    return '--:--:--,---';
+  }
   return date.toLocaleTimeString('de-DE', {
     hour: '2-digit',
     minute: '2-digit',

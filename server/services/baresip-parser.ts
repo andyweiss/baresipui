@@ -565,11 +565,15 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   // Add log entry
   stateManager.addLog('event', `${jsonEvent.class}:${jsonEvent.type}`, jsonEvent);
 
-  stateManager.broadcast({
-    type: 'log',
-    timestamp,
-    message: JSON.stringify(jsonEvent)
-  });
+  // Don't broadcast VU_TX_REPORT and similar events as logs
+  // These are handled internally and would clutter the log view
+  if (jsonEvent.type !== 'VU_TX_REPORT' && jsonEvent.type !== 'VU_RX_REPORT') {
+    stateManager.broadcast({
+      type: 'log',
+      timestamp,
+      message: JSON.stringify(jsonEvent)
+    });
+  }
 
   if (jsonEvent.event && jsonEvent.class === 'ua') {
     console.log('DEBUG: Event condition matched - processing UA event');
@@ -863,8 +867,22 @@ function parseCallStatLine(line: string, stateManager: StateManager): void {
 function handleTextLine(line: string, stateManager: StateManager): void {
   const timestamp = Date.now();
 
-  // Filter out audio bitrate statistics (will be handled via dedicated WebSocket later)
-  if (line.match(/\[\d+:\d+:\d+\]\s+audio=\d+\/\d+\s+\(bit\/s\)/)) {
+  // Remove ANSI escape codes (color codes, cursor positioning, etc.)
+  line = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\[\d+G/g, '');
+
+  // Skip empty lines after cleanup
+  if (!line.trim() || line.trim().length < 3) {
+    return;
+  }
+
+  // Skip JSON event messages (they are handled by handleJsonEvent)
+  if (line.trim().startsWith('{') && line.trim().includes('"event":true')) {
+    return;
+  }
+
+  // Filter out audio bitrate statistics - various formats
+  if (line.match(/\[\d+:\d+:\d+\]\s+audio=/i) || 
+      line.match(/audio=\d+\/\d+\s*\(bit\/s\)/i)) {
     return; // Silently ignore audio statistics
   }
 

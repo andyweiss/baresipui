@@ -14,6 +14,7 @@ export class BaresipLogger {
   private stateManager: StateManager;
   private logBuffer: LogEntry[] = [];
   private maxBufferSize = 1000;
+  private pendingLogLine = ''; // Für mehrzeilige Logs
 
   constructor(stateManager: StateManager) {
     this.stateManager = stateManager;
@@ -49,6 +50,12 @@ export class BaresipLogger {
   }
 
   stop(): void {
+    // Process any pending log line before stopping
+    if (this.pendingLogLine && this.logProcess) {
+      this.processLogEntry(this.pendingLogLine, 'stdout');
+      this.pendingLogLine = '';
+    }
+    
     if (this.logProcess) {
       this.logProcess.kill();
       this.logProcess = null;
@@ -56,27 +63,86 @@ export class BaresipLogger {
   }
 
   private processLogData(data: string, stream: 'stdout' | 'stderr'): void {
-    const lines = data.split('\n').filter(line => line.trim());
+    const lines = data.split('\n');
 
     for (const line of lines) {
-      const entry = this.parseLogLine(line, stream);
+      if (!line.trim()) continue;
       
-      // Add to buffer
-      this.logBuffer.push(entry);
-      if (this.logBuffer.length > this.maxBufferSize) {
-        this.logBuffer.shift(); // Remove oldest entry
+      // Skip JSON event messages (they are handled by baresip-parser)
+      if (line.trim().startsWith('{') && line.trim().includes('"event":true')) {
+        continue;
       }
-
-      // Broadcast to clients
-      this.stateManager.broadcast({
-        type: 'log',
-        data: entry
-      });
-
-      // Also log to console for debugging
-      const emoji = this.getLevelEmoji(entry.level);
-      console.log(`${emoji} [${entry.source}] ${entry.message}`);
+      
+      // Check if this is a new log entry (starts with module: or is standalone)
+      // Typical pattern: "module: message" or starts with uppercase word
+      const isNewEntry = /^[a-z_]+:\s+/i.test(line) || 
+                        /^[A-Z]+:\s+/.test(line) ||
+                        (!this.pendingLogLine && line.trim().length > 0);
+      
+      if (isNewEntry && this.pendingLogLine) {
+        // Process the previous pending log
+        this.processLogEntry(this.pendingLogLine, stream);
+        this.pendingLogLine = line;
+      } else if (isNewEntry) {
+        // Start new log
+        this.pendingLogLine = line;
+      } else {
+        // Append to pending log (continuation line)
+        this.pendingLogLine += '\n' + line;
+      }
     }
+    
+    // Process any remaining log after a short delay (in case more lines are coming)
+    // This is handled by checking on next data chunk
+  }
+  
+  private processLogEntry(line: string, stream: 'stdout' | 'stderr'): void {
+    // Remove ANSI escape codes (color codes, cursor positioning, etc.)
+    line = line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\[\d+G/g, '');
+    
+    // Skip empty or very short lines
+    if (!line.trim() || line.trim().length < 3) {
+      return;
+    }
+    
+    // Skip JSON event messages (they are handled by baresip-parser)
+    if (line.trim().startsWith('{') && line.trim().includes('"event":true')) {
+      return;
+    }
+    
+    // Filter out audio bitrate statistics
+    if (line.match(/\[\d+:\d+:\d+\]\s+audio=/i) || 
+        line.match(/audio=\d+\/\d+\s*\(bit\/s\)/i)) {
+      return;
+    }
+    
+    // Debug: Log original line length
+    if (line.length > 200) {
+      console.log(`📏 Long log line (${line.length} chars): ${line.substring(0, 100)}...`);
+    }
+    
+    const entry = this.parseLogLine(line, stream);
+    
+    // Skip entries with empty messages
+    if (!entry.message || entry.message.length < 2) {
+      return;
+    }
+    
+    // Add to buffer
+    this.logBuffer.push(entry);
+    if (this.logBuffer.length > this.maxBufferSize) {
+      this.logBuffer.shift(); // Remove oldest entry
+    }
+
+    // Broadcast to clients
+    this.stateManager.broadcast({
+      type: 'log',
+      data: entry
+    });
+
+    // Also log to console for debugging
+    const emoji = this.getLevelEmoji(entry.level);
+    console.log(`${emoji} [${entry.source}] ${entry.message.substring(0, 100)}${entry.message.length > 100 ? '...' : ''}`);
   }
 
   private parseLogLine(line: string, stream: 'stdout' | 'stderr'): LogEntry {
