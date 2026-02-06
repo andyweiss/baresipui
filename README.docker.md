@@ -39,7 +39,7 @@ docker-compose up -d
 ### 4. Access
 
 - **Dashboard**: http://localhost:3000
-- **Logs**: http://localhost:3000/logs
+- **Logs**: http://localhost:3000/baresip-logs
 - **API**: http://localhost:4000
 - **Metrics**: http://localhost:4000/metrics
 - **Prometheus**: http://localhost:9090

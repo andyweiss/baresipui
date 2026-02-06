@@ -4,7 +4,10 @@
       <div class="bg-gray-800 rounded-lg shadow-lg p-6">
         <div class="flex items-center justify-between mb-6">
           <h2 class="text-2xl font-bold text-white">Baresip Logs</h2>
-          <div class="flex gap-2">
+          <div class="flex gap-2 items-center">
+            <span v-if="!autoScroll && logs.length > 5000" class="text-xs text-yellow-400 mr-2">
+              ⚠️ Buffer paused ({{ logs.length }} logs)
+            </span>
             <button 
               @click="toggleAutoScroll" 
               :class="[
@@ -99,7 +102,8 @@
         >
           <div 
             v-for="(log, index) in filteredLogs" 
-            :key="`${log.timestamp}-${index}`" 
+            :key="`${log.timestamp}-${log.source}-${index}`"
+            :data-index="index" 
             class="px-4 py-1 border-l-2 hover:bg-gray-800 transition-colors"
             :class="logBorderColor(log.level || 'info')"
           >
@@ -125,6 +129,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { io } from 'socket.io-client';
 import type { LogEntry } from '~/server/services/baresip-logger';
 
@@ -136,6 +141,80 @@ const autoScroll = ref(true);
 const logsContainer = ref<HTMLElement>();
 const accounts = ref<any[]>([]);
 const socket = ref<any>(null);
+const logUpdateTrigger = ref(0);
+
+// Scroll-Position Management
+let isScrolling = false;
+let resizeObserver: ResizeObserver | null = null;
+let previousScrollHeight = 0;
+
+const checkIfUserScrolledUp = () => {
+  if (!logsContainer.value || isScrolling) return;
+  
+  const { scrollTop, scrollHeight, clientHeight } = logsContainer.value;
+  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+  
+  // Wenn mehr als 50px vom Ende entfernt, deaktiviere Auto-Scroll
+  if (distanceFromBottom > 50 && autoScroll.value) {
+    autoScroll.value = false;
+  }
+};
+
+const scrollToBottom = () => {
+  if (!logsContainer.value) return;
+  
+  isScrolling = true;
+  requestAnimationFrame(() => {
+    if (logsContainer.value) {
+      logsContainer.value.scrollTop = logsContainer.value.scrollHeight;
+      setTimeout(() => { isScrolling = false; }, 100);
+    }
+  });
+};
+
+// Debounced scroll handler
+let scrollTimeout: NodeJS.Timeout;
+const handleScroll = () => {
+  clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(checkIfUserScrolledUp, 100);
+};
+
+const handleNewLog = (logData: LogEntry) => {
+  logs.value.push(logData);
+  
+  // Limit buffer - aber nur wenn Auto-Scroll AN ist
+  // Wenn User hochscrollt (Auto-Scroll AUS), behalten wir alle Logs
+  if (autoScroll.value && logs.value.length > 5000) {
+    logs.value.shift();
+  }
+  
+  // Trigger Watch
+  logUpdateTrigger.value++;
+};
+
+// Computed: Gefilterte Logs
+const filteredLogs = computed(() => {
+  let filtered = logs.value;
+
+  if (filterLevel.value) {
+    filtered = filtered.filter(log => (log.level || '').toLowerCase() === filterLevel.value.toLowerCase());
+  }
+
+  if (filterAccount.value) {
+    filtered = filtered.filter(log => (log.accountUri || '') === filterAccount.value);
+  }
+
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase();
+    filtered = filtered.filter(log =>
+      (log.message || '').toLowerCase().includes(query) ||
+      (log.source || '').toLowerCase().includes(query) ||
+      (log.accountUri || '').toLowerCase().includes(query)
+    );
+  }
+
+  return filtered;
+});
 
 onMounted(async () => {
   // Connect to Socket.IO for real-time logs
@@ -146,35 +225,13 @@ onMounted(async () => {
 
   // Listen for 'log' event (emitted directly)
   socket.value.on('log', (data: LogEntry) => {
-    console.log('📝 Received log event:', data);
-    logs.value.push(data);
-    
-    // Limit buffer to 1000 entries
-    if (logs.value.length > 1000) {
-      logs.value.shift();
-    }
-
-    // Auto-scroll to bottom
-    if (autoScroll.value) {
-      nextTick(() => scrollToBottom());
-    }
+    handleNewLog(data);
   });
 
   // Also listen for 'message' event (backward compatibility)
   socket.value.on('message', (data: any) => {
-    console.log('📨 Received message event:', data);
     if (data.type === 'log' && data.data) {
-      console.log('✅ Adding log to array:', data.data);
-      logs.value.push(data.data);
-      console.log('📊 Total logs now:', logs.value.length);
-      
-      if (logs.value.length > 1000) {
-        logs.value.shift();
-      }
-
-      if (autoScroll.value) {
-        nextTick(() => scrollToBottom());
-      }
+      handleNewLog(data.data);
     }
   });
 
@@ -200,14 +257,38 @@ onMounted(async () => {
     const response = await $fetch('/api/baresip-logs', {
       query: { limit: 100 }
     });
-    console.log('📥 Initial logs loaded:', response);
     if (response.success && response.logs) {
       logs.value = response.logs;
-      console.log('📊 Set initial logs count:', logs.value.length);
-      nextTick(() => scrollToBottom());
+      if (autoScroll.value) {
+        nextTick(() => scrollToBottom());
+      }
     }
   } catch (error) {
-    console.error('Failed to load logs:', error);
+    // Silent error handling
+  }
+
+  // Add scroll event listener
+  if (logsContainer.value) {
+    logsContainer.value.addEventListener('scroll', handleScroll, { passive: true });
+    
+    // Setup ResizeObserver für automatische Scroll-Anpassung
+    previousScrollHeight = logsContainer.value.scrollHeight;
+    
+    resizeObserver = new ResizeObserver(() => {
+      if (!logsContainer.value || autoScroll.value || isScrolling) return;
+      
+      // Wenn Auto-Scroll AUS: Passe scrollTop an, damit sichtbare Position gleich bleibt
+      const newScrollHeight = logsContainer.value.scrollHeight;
+      const heightDiff = newScrollHeight - previousScrollHeight;
+      
+      if (heightDiff > 0) {
+        logsContainer.value.scrollTop += heightDiff;
+      }
+      
+      previousScrollHeight = newScrollHeight;
+    });
+    
+    resizeObserver.observe(logsContainer.value);
   }
 });
 
@@ -215,30 +296,30 @@ onUnmounted(() => {
   if (socket.value) {
     socket.value.disconnect();
   }
+  
+  // Remove scroll event listener
+  if (logsContainer.value) {
+    logsContainer.value.removeEventListener('scroll', handleScroll);
+  }
+  
+  // Disconnect ResizeObserver
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+  }
+  
+  clearTimeout(scrollTimeout);
 });
 
-const filteredLogs = computed(() => {
-  let filtered = logs.value;
-
-  if (filterLevel.value) {
-    filtered = filtered.filter(log => (log.level || '').toLowerCase() === filterLevel.value.toLowerCase());
+// Watch: Nur für Auto-Scroll (wenn AN)
+watch(
+  () => [filteredLogs.value.length, logUpdateTrigger.value],
+  async () => {
+    if (autoScroll.value) {
+      await nextTick();
+      scrollToBottom();
+    }
   }
-
-  if (filterAccount.value) {
-    filtered = filtered.filter(log => (log.accountUri || '') === filterAccount.value);
-  }
-
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase();
-    filtered = filtered.filter(log =>
-      (log.message || '').toLowerCase().includes(query) ||
-      (log.source || '').toLowerCase().includes(query) ||
-      (log.accountUri || '').toLowerCase().includes(query)
-    );
-  }
-
-  return filtered;
-});
+);
 
 const formatTime = (timestamp: number): string => {
   const date = new Date(timestamp);
@@ -270,16 +351,14 @@ const logBorderColor = (level: string): string => {
   }
 };
 
-const scrollToBottom = () => {
-  if (logsContainer.value) {
-    logsContainer.value.scrollTop = logsContainer.value.scrollHeight;
-  }
-};
-
 const toggleAutoScroll = () => {
   autoScroll.value = !autoScroll.value;
   if (autoScroll.value) {
-    scrollToBottom();
+    // Wenn Auto-Scroll wieder aktiviert wird, trimme Buffer auf 5000
+    if (logs.value.length > 5000) {
+      logs.value = logs.value.slice(-5000);
+    }
+    nextTick(() => scrollToBottom());
   }
 };
 
@@ -288,7 +367,7 @@ const clearLogs = async () => {
     await $fetch('/api/logs/clear', { method: 'POST' });
     logs.value = [];
   } catch (error) {
-    console.error('Failed to clear logs:', error);
+    // Silent error handling
   }
 };
 </script>
