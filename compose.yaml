@@ -1,18 +1,15 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/andyweiss/baresipui:v0.9.6-beta
     container_name: baresip-ui
     ports:
-      - "3300:3000"
-      - "3301:3001"
+      - 3000:3000
+      - 3001:3001
     environment:
       - NUXT_HOST=0.0.0.0
       - NUXT_PORT=3000
       - BARESIP_HOST=baresip
       - BARESIP_PORT=4444
-      - BARESIP_CONTAINER_NAME=baresip
     depends_on:
       - baresip
     restart: unless-stopped
@@ -22,25 +19,27 @@ services:
     networks:
       - baresip-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3300/api/health"]
+      test:
+        - CMD
+        - wget
+        - --spider
+        - -q
+        - http://localhost:3000/api/health
       interval: 30s
       timeout: 10s
       retries: 3
-
   baresip:
-    build:
-      context: ./baresip
-      dockerfile: Dockerfile
+    image: ghcr.io/andyweiss/baresip:v0.9.6-beta
     container_name: baresip
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
       - ./baresip/.asoundrc:/root/.asoundrc
     ports:
-      - "8000:8000/tcp"
-      - "5555:5555/tcp"
-      - "4444:4444/tcp"
-      - "5060:5060/udp"
+      - 8000:8000/tcp
+      - 5555:5555/tcp
+      - 4444:4444/tcp
+      - 5060:5060/udp
     command:
       - baresip
       - -f
@@ -61,12 +60,11 @@ services:
       - SYS_NICE
     networks:
       - baresip-network
-
   prometheus:
     image: prom/prometheus:latest
     container_name: baresip-prometheus
     ports:
-      - "9090:9090"
+      - 9090:9090
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -76,11 +74,8 @@ services:
     restart: unless-stopped
     networks:
       - baresip-network
-
 volumes:
-  prometheus-data:
-
+  prometheus-data: null
 networks:
   baresip-network:
     driver: bridge
-

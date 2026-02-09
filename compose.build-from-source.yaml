@@ -9,6 +9,7 @@ services:
       args:
         BARESIP_HOST: baresip
         BARESIP_PORT: 4444
+        APP_VERSION: dev
     container_name: baresip-ui
     ports:
       - 3000:3000

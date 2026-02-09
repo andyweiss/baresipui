@@ -14,7 +14,9 @@ COPY . .
 
 ENV BARESIP_HOST=${BARESIP_HOST}
 ENV BARESIP_PORT=${BARESIP_PORT}
-ENV NUXT_PUBLIC_APP_VERSION=${APP_VERSION}
+
+# Write version to file that will be read by app.config
+RUN echo "export const APP_VERSION = '${APP_VERSION}';" > /app/public/version.js
 
 RUN npm run build
 
