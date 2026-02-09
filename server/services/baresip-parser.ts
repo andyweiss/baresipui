@@ -33,20 +33,14 @@ export function parseBaresipEvent(data: Buffer, stateManager: StateManager): voi
   try {
     const netstringMessages = parseNetstring(data);
     if (netstringMessages.length > 0) {
-      console.log('Parsed netstring messages:', netstringMessages);
-
       for (const messageStr of netstringMessages) {
         try {
           const jsonMessage = JSON.parse(messageStr);
 
           if (jsonMessage.response !== undefined) {
-            console.log('DEBUG: Handling command response');
             handleCommandResponse(jsonMessage, stateManager);
           } else if (jsonMessage.event) {
-            console.log('DEBUG: Handling JSON event', jsonMessage.type, jsonMessage.class);
             handleJsonEvent(jsonMessage, stateManager);
-          } else {
-            console.log('Unknown JSON message:', jsonMessage);
           }
         } catch (e) {
           handleTextLine(messageStr, stateManager);
@@ -65,15 +59,7 @@ export function parseBaresipEvent(data: Buffer, stateManager: StateManager): voi
 }
 
 function handleCommandResponse(response: BaresipCommandResponse, stateManager: StateManager): void {
-  console.log('=== Command Response ===');
   const timestamp = Date.now();
-
-  if (response && response.data !== undefined) {
-    console.log('[BARESIP RAW RESPONSE]', response.data);
-  } else {
-    console.log('[BARESIP RAW RESPONSE] <undefined>');
-  }
-  console.log(`Command Response: ${JSON.stringify(response)}`);
 
   //  Dispatch-Logic for different response types
   if (typeof response.data === 'string') {
@@ -364,59 +350,94 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   const callIdMatch = data.match(/id=([a-f0-9]+)/);
   const callId = callIdMatch ? callIdMatch[1] : null;
 
-  // Extract codec from "local formats" section (find all codecs, mark active)
+  // Extract codecs from both local and remote formats
   const localFormatsSection = data.split('local formats:')[1]?.split('remote formats:')[0] || '';
+  const remoteFormatsSection = data.split('remote formats:')[1]?.split('local attributes:')[0] || '';
+  
   let activeCodec: any = null;
-  let codecs: any[] = [];
+  let localCodecs: any[] = [];
+  let remoteCodecs: any[] = [];
+  
+  // Parse local formats
   if (localFormatsSection) {
-    // Zeilenweise durchsuchen
     const lines = localFormatsSection.split('\n');
     for (const line of lines) {
-      // Beispiel: "     96 opus/48000/2 (stereo=1;sprop-stereo=1;maxaveragebitrate=128000) *"
-      const match = line.match(/\s*(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s*\(([^)]*)\)\s*(\*)?/);
+      const match = line.match(/\s*(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s*(?:\(([^)]*)\))?/);
       if (match) {
-        const payloadType = match[1];
-        const codecName = match[2];
-        const sampleRate = match[3];
-        const channels = match[4];
-        const params = match[5];
-        const isActive = !!match[6];
-        const paramObj: Record<string, string> = {};
-        params.split(';').forEach(p => {
-          const [k, v] = p.split('=');
-          if (k && v) paramObj[k.trim()] = v.trim();
-        });
         const codecInfo = {
-          payloadType,
-          codec: codecName,
-          sampleRate: Number(sampleRate),
-          channels: Number(channels),
-          params: paramObj,
-          isActive
+          payloadType: match[1],
+          codec: match[2],
+          sampleRate: Number(match[3]),
+          channels: Number(match[4]),
+          params: {}
         };
-        codecs.push(codecInfo);
-        if (isActive) activeCodec = codecInfo;
+        if (match[5]) {
+          match[5].split(';').forEach(p => {
+            const [k, v] = p.split('=');
+            if (k && v) codecInfo.params[k.trim()] = v.trim();
+          });
+        }
+        localCodecs.push(codecInfo);
       }
     }
-    if (activeCodec) {
-      console.log('📊 Aktiver Codec:', activeCodec);
-    }
-    if (codecs.length > 0) {
-      console.log('📊 Alle Codecs:', codecs);
+  }
+  
+  // Parse remote formats
+  if (remoteFormatsSection) {
+    const lines = remoteFormatsSection.split('\n');
+    for (const line of lines) {
+      const match = line.match(/\s*(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s*(?:\(([^)]*)\))?/);
+      if (match) {
+        const codecInfo = {
+          payloadType: match[1],
+          codec: match[2],
+          sampleRate: Number(match[3]),
+          channels: Number(match[4]),
+          params: {}
+        };
+        if (match[5]) {
+          match[5].split(';').forEach(p => {
+            const [k, v] = p.split('=');
+            if (k && v) codecInfo.params[k.trim()] = v.trim();
+          });
+        }
+        remoteCodecs.push(codecInfo);
+      }
     }
   }
+  
+  console.log('📊 Local codecs:', localCodecs.length, localCodecs.map(c => c.codec).join(','));
+  console.log('📊 Remote codecs:', remoteCodecs.length, remoteCodecs.map(c => c.codec).join(','));
+  
+  // Find first codec that exists in both local and remote (in same order)
+  for (const localCodec of localCodecs) {
+    const remoteMatch = remoteCodecs.find(rc => 
+      rc.codec === localCodec.codec && 
+      rc.sampleRate === localCodec.sampleRate && 
+      rc.channels === localCodec.channels
+    );
+    if (remoteMatch) {
+      activeCodec = localCodec;
+      console.log('📊 Active codec (in both local and remote):', activeCodec);
+      break;
+    }
+  }
+  
+  // Fallback: use first local codec if no common one found
+  if (!activeCodec && localCodecs.length > 0) {
+    activeCodec = localCodecs[0];
+    console.log('📊 No common codec found, using first local codec:', activeCodec);
+  }
 
-  // Extract RTCP_STATS line (example: RTCP_STATS: packets_rx=123 packets_tx=456 lost_rx=7 lost_tx=2 jitter_rx=12.3 jitter_tx=10.1 rtt=45.6)
+  // Extract RTCP_STATS line
   const statsMatch = data.match(/RTCP_STATS:\s*([^\n]+)/);
   let stats: any = {};
   if (statsMatch) {
     const statsStr = statsMatch[1];
-    // Parse key=value pairs
     const pairs = statsStr.split(/\s+/);
     for (const pair of pairs) {
       const [key, value] = pair.split('=');
       if (key && value !== undefined) {
-        // Convert to number if possible
         stats[key] = isNaN(Number(value)) ? value : Number(value);
       }
     }
@@ -424,11 +445,16 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   }
 
   // Try to find the call and update it
-  if (callId || activeCodec || codecs.length > 0 || Object.keys(stats).length > 0) {
+  if (callId || activeCodec || Object.keys(stats).length > 0) {
     const calls = stateManager.getCalls();
     let updates: any = {};
     if (activeCodec) updates.audioCodec = activeCodec;
-    if (codecs.length > 0) updates.audioCodecs = codecs;
+    // Store both local and remote codecs for potential RX/TX differentiation
+    if (localCodecs.length > 0 || remoteCodecs.length > 0) {
+      updates.audioCodecs = localCodecs; // Store as reference
+      updates.rxAudioCodec = remoteCodecs.length > 0 ? remoteCodecs[0] : undefined;
+      updates.txAudioCodec = localCodecs.length > 0 ? localCodecs[0] : undefined;
+    }
     if (Object.keys(stats).length > 0) {
       // Map stats to UI fields
       updates.audioRxStats = {
@@ -635,8 +661,9 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
 
   if (jsonEvent.event && (jsonEvent.class === 'call' || jsonEvent.class === 'ua')) {
     if (jsonEvent.type === 'CALL_ESTABLISHED' || jsonEvent.type === 'CALL_CONNECT') {
-      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
-      const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri;
+      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
+      const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri || jsonEvent.contacturi;
+      const peerName = jsonEvent.peerdisplayname || jsonEvent.peername;
       
       if (uri && jsonEvent.id) {
         const updates: any = {
@@ -649,13 +676,11 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           callId: jsonEvent.id,
           localUri: uri,
           remoteUri: peerUri || 'unknown',
-          peerName: jsonEvent.peername || peerUri?.split('@')[0] || 'Unknown',
+          peerName: peerName || peerUri?.split('@')[0] || 'Unknown',
           state: 'Established',
           direction: jsonEvent.direction || 'unknown',
           startTime: jsonEvent.param?.includes('incoming') ? Date.now() - 1000 : Date.now(),
           answerTime: Date.now(),
-          // Add mock statistics for testing
-          audioCodec: 'PCMU/8000',
           audioRxStats: {
             packets: 0,
             packetsLost: 0,
@@ -678,38 +703,50 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         stateManager.updateAccountStatus(uri, updates);
         console.log(`[CALL_ESTABLISHED] Account: ${uri}, Call ID: ${jsonEvent.id}, Peer: ${peerUri}`);
       }
-    } else if (jsonEvent.type === 'CALL_RINGING' || jsonEvent.type === 'CALL_INCOMING' || jsonEvent.type === 'CALL_OUTGOING') {
-      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
-      const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri;
+    } else if (jsonEvent.type === 'CALL_RINGING' || jsonEvent.type === 'CALL_INCOMING' || jsonEvent.type === 'CALL_OUTGOING' || jsonEvent.type === 'CALL_RTPESTAB') {
+      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
+      const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri || jsonEvent.contacturi;
+      const peerName = jsonEvent.peerdisplayname || jsonEvent.peername;
       
       if (uri && jsonEvent.id) {
         const updates: any = { 
-          callStatus: 'Ringing',
+          callStatus: jsonEvent.type === 'CALL_RTPESTAB' ? 'In Call' : 'Ringing',
           callId: jsonEvent.id
         };
         
-        // Add call to tracking in Ringing state
-        stateManager.addCall({
-          callId: jsonEvent.id,
-          localUri: uri,
-          remoteUri: peerUri || 'unknown',
-          peerName: jsonEvent.peername || peerUri?.split('@')[0] || 'Unknown',
-          state: 'Ringing',
-          direction: jsonEvent.type === 'CALL_INCOMING' ? 'incoming' : 'outgoing',
-          startTime: Date.now()
-        });
+        // Check if call already exists and update it
+        const existingCall = stateManager.getCall(jsonEvent.id);
+        
+        if (existingCall) {
+          // Update existing call with new data
+          stateManager.updateCall(jsonEvent.id, {
+            remoteUri: peerUri || existingCall.remoteUri,
+            peerName: peerName || peerUri?.split('@')[0] || existingCall.peerName,
+            state: jsonEvent.type === 'CALL_RTPESTAB' ? 'Established' : 'Ringing'
+          });
+        } else {
+          // Create new call
+          stateManager.addCall({
+            callId: jsonEvent.id,
+            localUri: uri,
+            remoteUri: peerUri || 'unknown',
+            peerName: peerName || peerUri?.split('@')[0] || 'Unknown',
+            state: jsonEvent.type === 'CALL_RTPESTAB' ? 'Established' : 'Ringing',
+            direction: jsonEvent.direction || (jsonEvent.type === 'CALL_INCOMING' ? 'incoming' : 'outgoing'),
+            startTime: Date.now()
+          });
+        }
         
         // Check if this is an auto-connect call
         const account = stateManager.getAccount(uri);
         if (account && account.autoConnectContact) {
-          updates.autoConnectStatus = 'Connecting';
+          updates.autoConnectStatus = jsonEvent.type === 'CALL_RTPESTAB' ? 'Connected' : 'Connecting';
         }
         
         stateManager.updateAccountStatus(uri, updates);
-        console.log(`[CALL_RINGING] Account: ${uri}, Call ID: ${jsonEvent.id}, Direction: ${jsonEvent.type}, Peer: ${peerUri}`);
       }
     } else if (jsonEvent.type === 'CALL_CLOSED' || jsonEvent.type === 'CALL_END' || jsonEvent.type === 'CALL_TERMINATE') {
-      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri || jsonEvent.peer_uri;
+      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
       
       if (uri) {
         // Remove call from tracking
@@ -734,7 +771,6 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           autoConnectStatus: 'Off',
           callId: undefined
         });
-        console.log(`[CALL_CLOSED] Account: ${uri}, Call ID: ${jsonEvent.id}`);
         
         // Immediately reconnect if auto-connect is configured
         checkAutoConnectForAccount(uri, stateManager);

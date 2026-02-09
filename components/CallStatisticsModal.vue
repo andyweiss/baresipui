@@ -23,7 +23,7 @@
       <div class="space-y-3">
         <div>
           <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Remote URI</p>
-          <p class="text-sm font-medium text-white font-mono">{{ call && call.remoteUri ? formatUri(call.remoteUri) : '' }}</p>
+          <p class="text-sm font-medium text-white font-mono">{{ getRemotePartyDisplayName(call) }}</p>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
@@ -178,6 +178,16 @@ const formattedDuration = computed(() => {
 const formatUri = (uri: string) => {
   const match = uri.match(/^sip:([^@]+@[^>]+)/);
   return match ? match[1] : uri;
+};
+
+const getRemotePartyDisplayName = (call: CallInfo | undefined): string => {
+  if (!call) return '';
+  let displayValue = call.remoteUri || call.peerName;
+  if (!displayValue) return 'Unknown';
+  displayValue = displayValue.replace(/^sip:/, '');
+  const userMatch = displayValue.match(/^([^@]+)@/);
+  if (userMatch) return userMatch[1];
+  return displayValue;
 };
 
 const formatTime = (timestamp: number) => {

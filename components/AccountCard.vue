@@ -19,13 +19,15 @@
       <div class="relative">
         <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Call Status</p>
         <div class="flex items-center gap-2">
-          <p class="text-sm font-medium" :class="callStatusColor">{{ account.callStatus || 'Idle' }}</p>
+          <div>
+            <p class="text-sm font-medium" :class="callStatusColor">{{ account.callStatus || 'Idle' }}</p>
+          </div>
         </div>
       </div>
       
       <div class="relative">
-        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Auto-Connect</p>
-        <p class="text-sm font-medium" :class="autoConnectColor">
+        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Connected To</p>
+        <p class="text-sm font-medium" :class="autoConnectDisplayColor">
           {{ getAutoConnectDisplayText() }}
         </p>
       </div>
@@ -163,7 +165,6 @@ const activeCall = computed(() => {
     call.localUri && String(call.localUri).toLowerCase().trim() === accountUri &&
     (call.state === 'Established' || call.state === 'Ringing')
   );
-  console.log('[AccountCard] Account:', accountUri, 'Calls:', props.calls, 'ActiveCall:', byUri);
   return byUri;
 });
 
@@ -178,12 +179,6 @@ const hasActiveCall = computed(() => {
 const handleContactChange = async (event: Event) => {
   const target = event.target as HTMLSelectElement;
   const contactUri = target.value;
-  console.log('[AccountCard] Contact change:', {
-    account: props.account.uri,
-    oldValue: props.account.autoConnectContact,
-    newValue: contactUri,
-    isEmpty: contactUri === ''
-  });
   
   try {
     // Send to backend
@@ -224,6 +219,27 @@ const getContactDisplayName = (contact: any) => {
   }
   const match = contact.contact.match(/sip:([^@]+)@/);
   return match ? match[1] : contact.contact;
+};
+
+const getRemotePartyDisplayName = (call: CallInfo): string => {
+  if (!call) return '';
+  
+  // Extract username from remoteUri or peerName
+  let displayValue = call.remoteUri || call.peerName;
+  
+  if (!displayValue) return 'Unknown';
+  
+  // Remove sip: prefix if present
+  displayValue = displayValue.replace(/^sip:/, '');
+  
+  // Extract only the username part (before @)
+  const userMatch = displayValue.match(/^([^@]+)@/);
+  if (userMatch) {
+    return userMatch[1];
+  }
+  
+  // If no @ found, return as-is
+  return displayValue;
 };
 
 const getContactByUri = (uri: string) => {
@@ -286,25 +302,66 @@ const callStatusColor = computed(() => {
   return 'text-gray-400';
 });
 
-const autoConnectColor = computed(() => {
-  if (!localAutoConnectContact.value) return 'text-gray-300';
-  const contact = getContactByUri(localAutoConnectContact.value);
-  if (!contact) return 'text-gray-300';
-  // green if active call
-  if (activeCall.value) return 'text-green-400';
-  // blue if online
-  const presence = contact.presence || 'unknown';
-  if (presence === 'online') return 'text-blue-400';
-  if (presence === 'busy') return 'text-green-400';
-  return 'text-gray-400'; // offline or unknown
-});
+const getRightStatusText = () => {
+  // If auto-connect is active and we have an active call → "Connected"
+  if (localAutoConnectContact.value && activeCall.value) {
+    return 'Connected';
+  }
+  // If no auto-connect but we have an active call → show remote party number
+  if (!localAutoConnectContact.value && activeCall.value) {
+    return getRemotePartyDisplayName(activeCall.value);
+  }
+  // If auto-connect is active but no call → show contact info
+  if (localAutoConnectContact.value) {
+    const contact = getContactByUri(localAutoConnectContact.value);
+    if (!contact) return 'Off';
+    const displayName = getContactDisplayName(contact);
+    const presence = contact.presence || 'unknown';
+    if (presence === 'busy') return `${displayName} (busy)`;
+    if (presence === 'online') return `${displayName} (online)`;
+    return displayName;
+  }
+  // No auto-connect, no active call
+  return 'Off';
+};
 
 const getAutoConnectDisplayText = () => {
-  if (!localAutoConnectContact.value) return 'Off';
+  if (!localAutoConnectContact.value) {
+    // Show remote number if in active call without auto-connect
+    if (activeCall.value) {
+      return getRemotePartyDisplayName(activeCall.value);
+    }
+    return ''; // Empty instead of "Off"
+  }
   const contact = getContactByUri(localAutoConnectContact.value);
-  if (!contact) return 'Off';
+  if (!contact) return '';
   return getContactDisplayName(contact);
 };
+
+const autoConnectDisplayColor = computed(() => {
+  // Orange during ringing phase
+  if (props.account.callStatus === 'Ringing') {
+    return 'text-orange-400';
+  }
+  
+  // Green when showing remote number (no auto-connect + active call)
+  if (!localAutoConnectContact.value && activeCall.value && props.account.callStatus === 'In Call') {
+    return 'text-green-400';
+  }
+  
+  // When auto-connect is active, use contact presence colors
+  if (localAutoConnectContact.value) {
+    const contact = getContactByUri(localAutoConnectContact.value);
+    if (contact) {
+      if (contact.presence === 'busy') return 'text-green-400'; // Connected
+      if (contact.presence === 'online') return 'text-blue-400'; // Online
+      return 'text-gray-400'; // Offline
+    }
+  }
+  
+  // Gray for all other states
+  return 'text-gray-400';
+});
 
 const showConnectionLine = computed(() => {
   // Show line when account is In Call AND the configured contact is busy
