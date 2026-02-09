@@ -153,24 +153,24 @@ watch(activeTab, (newTab) => {
 });
 
 const handleAssignContact = async (accountUri: string, contactUri: string) => {
-  // AutoConnect-Zuweisung an Backend senden
+  // Send AutoConnect assignment to backend
   try {
     await fetch('/api/autoconnect/assign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ account: accountUri, contact: contactUri })
     });
-    // Nach erfolgreicher Zuweisung: UI wird durch Socket-Event aktualisiert
+    // After successful assignment: UI will be updated by socket event
   } catch (err: any) {
-    alert('Fehler bei AutoConnect-Zuweisung: ' + (err?.message || err));
+    alert('Error assigning AutoConnect: ' + (err?.message || err));
   }
 };
 
 const handleCall = async (accountUri: string) => {
-  const input = prompt('Zielnummer oder SIP-Adresse wählen:', '');
+  const input = prompt('Enter target number or SIP address:', '');
   if (!input) return;
   let target = input.trim();
-  // Wenn keine SIP-URI, dann Domain aus Account extrahieren
+  // If not a SIP URI, extract domain from account
   if (!target.startsWith('sip:')) {
     const match = accountUri.match(/^sip:[^@]+@(.+)$/);
     const domain = match ? match[1] : '';
@@ -181,7 +181,7 @@ const handleCall = async (accountUri: string) => {
   try {
     await sendCommand('dial', { accountUri, target });
   } catch (err: any) {
-    alert('Fehler beim Wählen: ' + (err?.message || err));
+    alert('Error dialing: ' + (err?.message || err));
   }
 };
 
@@ -189,7 +189,7 @@ const handleHangup = async (accountUri: string) => {
   try {
     await sendCommand('hangup', { accountUri });
   } catch (err: any) {
-    alert('Fehler beim Auflegen: ' + (err?.message || err));
+    alert('Error hanging up: ' + (err?.message || err));
   }
 };
 

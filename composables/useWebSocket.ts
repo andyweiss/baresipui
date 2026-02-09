@@ -7,13 +7,8 @@ export const useWebSocket = () => {
   const contacts = ref<any[]>([]);
   const logs = ref<any[]>([]);
 
-  // Lade Accounts sofort beim ersten Aufruf
-  console.log('🏁 FRONTEND DEBUG: useWebSocket composable called');
-
   const loadAccountsFromAPI = async () => {
     try {
-      console.log('🔄 FRONTEND DEBUG: Loading accounts from REST API as fallback...');
-      
       const response1 = await fetch('/api/accounts');
       const accountsData = await response1.json();
       
@@ -22,17 +17,13 @@ export const useWebSocket = () => {
       
       accounts.value = accountsData || [];
       contacts.value = contactsData || [];
-      
-      console.log('✅ FRONTEND DEBUG: Loaded from API - Accounts:', accounts.value.length, 'Contacts:', contacts.value.length);
-      console.log('📊 FRONTEND DEBUG: Accounts data:', accounts.value);
     } catch (error) {
-      console.error('❌ FRONTEND DEBUG: Failed to load accounts from API:', error);
+      console.error('Failed to load accounts from API:', error);
     }
   };
   
-  // Immediate load für Client-side
+  // Immediate load for client-side
   if (typeof window !== 'undefined') {
-    console.log('🔄 FRONTEND DEBUG: Client-side detected, loading accounts immediately...');
     setTimeout(() => {
       loadAccountsFromAPI();
     }, 100);
@@ -42,46 +33,33 @@ export const useWebSocket = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/_ws`;
-
-    console.log('🔌 FRONTEND DEBUG: Connecting to WebSocket:', wsUrl);
-    console.log('🔌 FRONTEND DEBUG: Current location:', window.location.href);
-    console.log('🔌 FRONTEND DEBUG: Protocol:', protocol, 'Host:', host);
     
     try {
       ws.value = new WebSocket(wsUrl);
-      console.log('🔌 FRONTEND DEBUG: WebSocket object created successfully');
     } catch (error) {
-      console.error('❌ FRONTEND DEBUG: Failed to create WebSocket:', error);
+      console.error('Failed to create WebSocket:', error);
       return;
     }
 
     ws.value.onopen = () => {
       connected.value = true;
-      console.log('✅ FRONTEND DEBUG: WebSocket connected successfully');
+      console.log('WebSocket connected');
     };
 
     ws.value.onmessage = (event) => {
       try {
-        console.log('📨 FRONTEND DEBUG: Raw message received:', event.data);
         const data = JSON.parse(event.data);
-        console.log('📦 FRONTEND DEBUG: Parsed message:', data);
 
         if (data.type === 'init') {
-          console.log('🔄 FRONTEND DEBUG: Init message - accounts:', data.accounts?.length || 0, 'contacts:', data.contacts?.length || 0);
           accounts.value = data.accounts || [];
           contacts.value = data.contacts || [];
-          console.log('✅ FRONTEND DEBUG: Accounts set to:', accounts.value);
         } else if (data.type === 'accountStatus') {
-          console.log('📊 FRONTEND DEBUG: Account status update for:', data.data.uri);
           const index = accounts.value.findIndex(a => a.uri === data.data.uri);
           if (index >= 0) {
-            console.log('🔄 FRONTEND DEBUG: Updating existing account at index', index);
             accounts.value[index] = data.data;
           } else {
-            console.log('➕ FRONTEND DEBUG: Adding new account');
             accounts.value.push(data.data);
           }
-          console.log('📊 FRONTEND DEBUG: Total accounts now:', accounts.value.length);
         } else if (data.type === 'log') {
           logs.value.push(data);
           if (logs.value.length > 1000) {
@@ -101,27 +79,20 @@ export const useWebSocket = () => {
           contacts.value = data.contacts || [];
         }
       } catch (err) {
-        console.error('❌ FRONTEND DEBUG: Error parsing WebSocket message:', err);
-        console.error('📨 FRONTEND DEBUG: Original message was:', event.data);
+        console.error('Error parsing WebSocket message:', err);
       }
     };
 
     ws.value.onclose = (event) => {
       connected.value = false;
-      console.log('🔌 FRONTEND DEBUG: WebSocket closed - Code:', event.code, 'Reason:', event.reason);
+      console.log('WebSocket closed - Code:', event.code);
       setTimeout(() => {
-        console.log('🔄 FRONTEND DEBUG: Attempting to reconnect...');
         connect();
       }, 3000);
     };
 
     ws.value.onerror = (error) => {
-      console.error('❌ FRONTEND DEBUG: WebSocket error:', error);
-      console.error('❌ FRONTEND DEBUG: WebSocket error details:', {
-        type: error.type,
-        target: error.target?.readyState,
-        url: wsUrl
-      });
+      console.error('WebSocket error:', error);
       connected.value = false;
     };
   };
@@ -155,25 +126,15 @@ export const useWebSocket = () => {
   };
 
   onMounted(() => {
-    console.log('🚀 FRONTEND DEBUG: Component mounted, starting initialization...');
     connect();
-    
-    // Lade Accounts sofort über REST API
     loadAccountsFromAPI();
     
-    // Als zusätzlicher Fallback nach 2 Sekunden
+    // Fallback after 2 seconds if no accounts loaded
     setTimeout(() => {
       if (accounts.value.length === 0) {
-        console.log('⚠️ FRONTEND DEBUG: Still no accounts, trying REST API again...');
         loadAccountsFromAPI();
       }
     }, 2000);
-  });
-
-  onUnmounted(() => {
-    if (ws.value) {
-      ws.value.close();
-    }
   });
 
   onUnmounted(() => {

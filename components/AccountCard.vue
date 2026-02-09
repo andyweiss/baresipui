@@ -59,19 +59,16 @@
         </label>
         <div class="relative">
           <select
-            :value="account.autoConnectContact || ''"
+            v-model="localAutoConnectContact"
             @change="handleContactChange"
-            @input="handleContactChange"
             class="w-full px-3 py-1.5 bg-gray-700 rounded text-sm text-white 
                    focus:outline-none appearance-none cursor-pointer transition-colors hover:bg-gray-650"
           >
-            <option value="" class="bg-gray-800">Auto-Connect OFF</option>
+            <option value="">Auto-Connect OFF</option>
             <option 
               v-for="contact in contacts" 
               :key="contact.contact" 
               :value="contact.contact"
-              class="bg-gray-800"
-              @click="console.log('Option clicked:', contact.contact)"
             >
               {{ getContactDisplayName(contact) }}
             </option>
@@ -132,7 +129,7 @@
 
 <script setup lang="ts">
 
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { CallInfo } from '~/types';
 
 const props = defineProps({
@@ -144,6 +141,14 @@ const props = defineProps({
 const emit = defineEmits(['call', 'hangup', 'assignContact']);
 
 const showCallStats = ref(false);
+
+// Local state for the select to prevent jumping back
+const localAutoConnectContact = ref(props.account.autoConnectContact || '');
+
+// Watch for external changes (from backend)
+watch(() => props.account.autoConnectContact, (newValue) => {
+  localAutoConnectContact.value = newValue || '';
+}, { immediate: true });
 
 const activeCall = computed(() => {
   if (!props.account?.uri) return undefined;
@@ -170,11 +175,42 @@ const hasActiveCall = computed(() => {
 
 
 
-const handleContactChange = (event: Event) => {
+const handleContactChange = async (event: Event) => {
   const target = event.target as HTMLSelectElement;
   const contactUri = target.value;
-    emit('assignContact', props.account.uri, contactUri);
-  };
+  console.log('[AccountCard] Contact change:', {
+    account: props.account.uri,
+    oldValue: props.account.autoConnectContact,
+    newValue: contactUri,
+    isEmpty: contactUri === ''
+  });
+  
+  try {
+    // Send to backend
+    const response = await fetch('/api/autoconnect/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        account: props.account.uri, 
+        contact: contactUri === '' ? null : contactUri 
+      })
+    });
+    
+    if (response.ok) {
+      // Update local state after successful backend response
+      localAutoConnectContact.value = contactUri;
+      emit('assignContact', props.account.uri, contactUri);
+    } else {
+      // Revert on error
+      localAutoConnectContact.value = props.account.autoConnectContact || '';
+      console.error('Failed to update autoconnect:', response.statusText);
+    }
+  } catch (error) {
+    // Revert on error
+    localAutoConnectContact.value = props.account.autoConnectContact || '';
+    console.error('Error updating autoconnect:', error);
+  }
+};
 
 const accountName = computed(() => {
   const match = props.account.uri?.match(/^sip:([^@]+)/);
@@ -251,8 +287,8 @@ const callStatusColor = computed(() => {
 });
 
 const autoConnectColor = computed(() => {
-  if (!props.account.autoConnectContact) return 'text-gray-300';
-  const contact = getContactByUri(props.account.autoConnectContact);
+  if (!localAutoConnectContact.value) return 'text-gray-300';
+  const contact = getContactByUri(localAutoConnectContact.value);
   if (!contact) return 'text-gray-300';
   // green if active call
   if (activeCall.value) return 'text-green-400';
@@ -264,8 +300,8 @@ const autoConnectColor = computed(() => {
 });
 
 const getAutoConnectDisplayText = () => {
-  if (!props.account.autoConnectContact) return 'Off';
-  const contact = getContactByUri(props.account.autoConnectContact);
+  if (!localAutoConnectContact.value) return 'Off';
+  const contact = getContactByUri(localAutoConnectContact.value);
   if (!contact) return 'Off';
   return getContactDisplayName(contact);
 };
@@ -273,9 +309,9 @@ const getAutoConnectDisplayText = () => {
 const showConnectionLine = computed(() => {
   // Show line when account is In Call AND the configured contact is busy
   if (props.account.callStatus !== 'In Call') return false;
-  if (!props.account.autoConnectContact) return false;
+  if (!localAutoConnectContact.value) return false;
   
-  const contact = getContactByUri(props.account.autoConnectContact);
+  const contact = getContactByUri(localAutoConnectContact.value);
   if (!contact) return false;
   
   return contact.presence === 'busy';

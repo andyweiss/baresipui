@@ -29,16 +29,43 @@ static void print_rtcp_stats_line(const struct call *call, const struct stream *
 		info("RTCP_STATS: no rtcp stats for call %s, stream %s\n", call_id(call), sdp_media_name(stream_sdpmedia(s)));
 		return;
 	}
+	
+	/* Debug: Print all available RTCP fields to understand structure */
+	info("RTCP_STATS_DEBUG: call_id=%s media=%s\n", call_id(call), sdp_media_name(stream_sdpmedia(s)));
+	info("RTCP_STATS_DEBUG: rx.sent=%u rx.lost=%d rx.jit=%u\n", rtcp->rx.sent, rtcp->rx.lost, rtcp->rx.jit);
+	info("RTCP_STATS_DEBUG: tx.sent=%u tx.lost=%d tx.jit=%u\n", rtcp->tx.sent, rtcp->tx.lost, rtcp->tx.jit);
+	info("RTCP_STATS_DEBUG: rtt=%u\n", rtcp->rtt);
+	
+	/* Get RTP metrics for packets/bytes even if RTCP not available yet */
+	uint32_t rx_packets = stream_metric_get_rx_n_packets(s);
+	uint32_t tx_packets = stream_metric_get_tx_n_packets(s);
+	uint32_t rx_bytes = stream_metric_get_rx_n_bytes(s);
+	uint32_t tx_bytes = stream_metric_get_tx_n_bytes(s);
+	uint32_t rx_errors = stream_metric_get_rx_n_err(s);
+	uint32_t tx_errors = stream_metric_get_tx_n_err(s);
+	
+    info("RTCP_STATS_DEBUG: RTP metrics: rx_packets=%u tx_packets=%u rx_bytes=%u tx_bytes=%u rx_errors=%u tx_errors=%u\n",
+         rx_packets, tx_packets, rx_bytes, tx_bytes, rx_errors, tx_errors);
+	
+	/* Note: stream_jbuf_stats() returns ENOSYS (38) - not supported in this build */
+	/* Using RTCP jitter and RTP metrics instead */
+	
 	info("RTCP_STATS: "
 		 "call_id=%s;"
 		 "media=%s;"
-		 "packets_rx=%u;"
-		 "packets_tx=%u;"
-		 "lost_rx=%d;"
-		 "lost_tx=%d;"
-		 "jitter_rx=%.1f;"
-		 "jitter_tx=%.1f;"
-		 "rtt=%.1f;"
+		 "rtcp_packets_rx=%u;"
+		 "rtcp_packets_tx=%u;"
+		 "rtcp_lost_rx=%d;"
+		 "rtcp_lost_tx=%d;"
+		 "rtcp_jitter_rx=%.1f;"
+		 "rtcp_jitter_tx=%.1f;"
+		 "rtcp_rtt=%.1f;"
+		 "rtp_rx_packets=%u;"
+		 "rtp_tx_packets=%u;"
+		 "rtp_rx_bytes=%u;"
+		 "rtp_tx_bytes=%u;"
+		 "rtp_rx_errors=%u;"
+		 "rtp_tx_errors=%u;"
 		 "\n",
 		 call_id(call),
 		 sdp_media_name(stream_sdpmedia(s)),
@@ -48,26 +75,42 @@ static void print_rtcp_stats_line(const struct call *call, const struct stream *
 		 rtcp->tx.lost,
 		 1.0 * rtcp->rx.jit/1000,
 		 1.0 * rtcp->tx.jit/1000,
-		 1.0 * rtcp->rtt/1000);
+		 1.0 * rtcp->rtt/1000,
+		 rx_packets, tx_packets, rx_bytes, tx_bytes,
+		 rx_errors, tx_errors);
 }
 
 static void tmr_handler(void *arg)
 	
 {
-		info("RTCP_STATS: TEST DEBUG LINE\n");
 	struct rtcpstats_call *rc = arg;
 	const struct stream *s;
 	struct le *le;
 
 	info("RTCP_STATS: tmr_handler called for call %s\n", call_id(rc->call));
+	
 	int stream_count = 0;
 	for (le = call_streaml(rc->call)->head; le; le = le->next) stream_count++;
 	info("RTCP_STATS: call %s has %d streams\n", call_id(rc->call), stream_count);
+	
 	/* Print stats for all streams in this call */
 	for (le = call_streaml(rc->call)->head; le; le = le->next) {
 		s = le->data;
+		
+		/* Additional debug: Check stream type and RTP socket */
+		info("RTCP_STATS: Processing stream type=%s, sdp_name=%s\n",
+		     (stream_type(s) == 0) ? "audio" : "video",
+		     sdp_media_name(stream_sdpmedia(s)));
+		
+		/* Check if stream is ready */
+		if (!stream_is_ready(s)) {
+			info("RTCP_STATS: Stream %s not ready yet\n", sdp_media_name(stream_sdpmedia(s)));
+			continue;
+		}
+		
 		print_rtcp_stats_line(rc->call, s);
 	}
+	
 	/* Re-arm timer for next interval */
 	tmr_start(&rc->tmr, 2000, tmr_handler, rc);
 }
@@ -98,10 +141,10 @@ static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 		rc->call = call;
 		list_append(&calll, &rc->le, rc);
 		
-		/* Initialize and start timer - first trigger after 2 seconds */
+		/* Initialize and start timer - first trigger after 5 seconds to allow RTCP to establish */
 		tmr_init(&rc->tmr);
-		tmr_start(&rc->tmr, 2000, tmr_handler, rc);
-		info("rtcpstats_periodic: started for call %s, timer=%p\n", call_id(call), &rc->tmr);
+		tmr_start(&rc->tmr, 5000, tmr_handler, rc);
+		info("rtcpstats_periodic: started for call %s, timer=%p, first trigger in 5s\n", call_id(call), &rc->tmr);
 		break;
 
 	case BEVENT_CALL_CLOSED:

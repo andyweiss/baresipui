@@ -90,10 +90,10 @@ async function fetchBaresipInfo() {
       const result = await props.sendCommand('sysinfo');
       baresipInfo.value = result ?? {};
     } catch (err) {
-      baresipInfo.value = { version: 'Fehler', uptime: 'Fehler', started: 'Fehler' };
+      baresipInfo.value = { version: 'Error', uptime: 'Error', started: 'Error' };
     }
   } else {
-    baresipInfo.value = { version: 'nicht verfügbar', uptime: 'nicht verfügbar', started: 'nicht verfügbar' };
+    baresipInfo.value = { version: 'unavailable', uptime: 'unavailable', started: 'unavailable' };
   }
 }
 
@@ -106,10 +106,10 @@ async function sendTestCommand() {
     try {
       await props.sendCommand('reginfo');
     } catch (err) {
-      alert('Fehler beim Senden des Kommandos: ' + (err?.message || err));
+      alert('Error sending command: ' + (err?.message || err));
     }
   } else {
-    alert('sendCommand nicht verfügbar!');
+    alert('sendCommand not available!');
   }
 }
 </script>
