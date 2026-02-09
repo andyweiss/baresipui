@@ -14,8 +14,8 @@
         </div>
         <div class="p-4 bg-gray-700 rounded-lg">
           <p class="text-white font-medium">UI Info</p>
-          <p class="ttext-sm text-gray-400">
-            Version: 0.9.5-beta
+          <p class="text-sm text-gray-400">
+            Version: {{ uiVersion }}
           </p>
         </div>
       </div>
@@ -79,10 +79,15 @@
 
 <script setup lang="ts">
 
-import { defineProps, ref, onMounted, onActivated, defineExpose } from 'vue';
+import { defineProps, ref, onMounted, onActivated, defineExpose, computed } from 'vue';
 const props = defineProps<{ reloadConfig: () => void, sendCommand?: (cmd: string) => Promise<any> }>();
+const appConfig = useAppConfig();
 
 const baresipInfo = ref<{ version?: string; uptime?: string; started?: string }>({});
+
+const uiVersion = computed(() => {
+  return appConfig.version || 'unknown';
+});
 
 async function fetchBaresipInfo() {
   if (props.sendCommand) {
