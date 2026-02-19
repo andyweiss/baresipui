@@ -1,0 +1,28 @@
+diff --git a/src/call.c b/src/call.c
+index e7c9f63..combined 100644
+--- a/src/call.c
++++ b/src/call.c
+@@ -889,8 +889,10 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
+	if (err)
+		goto out;
+
+-	/* PATCHED: Set laddr initially - will be overwritten in sipsess_desc_handler for consistency */
+-	sdp_session_set_laddr(call->sdp, &prm->laddr);
++	/* PATCHED: Force laddr to ensure o= and c= use same IP */
++	/* This overwrites whatever was set during sdp_session_alloc */
++	/* Both o= and c= will now use prm->laddr */
++	sdp_session_set_laddr(call->sdp, &prm->laddr);
+
+	/* Check for incoming SDP Offer */
+	if (msg && mbuf_get_left(msg->mb))
+		call->got_offer = true;
+@@ -2539,7 +2541,10 @@ static int sipsess_desc_handler(struct mbuf **descp, const struct sa *src,
+	MAGIC_CHECK(call);
+	call->af     = sa_af(src);
+-	if (!call->acc->mnat)
++	/* PATCHED: ALWAYS set laddr to src to ensure o= and c= use same IP */
++	if (!call->acc->mnat) {
+		sdp_session_set_laddr(call->sdp, src);
++	}
+
+	if (list_isempty(&call->streaml)) {

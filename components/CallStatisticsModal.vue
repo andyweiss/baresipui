@@ -65,13 +65,33 @@
           <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Audio RX (Incoming)</p>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span class="text-gray-500">Packets:</span>
+              <span class="text-gray-500">RTP Packets:</span>
               <span class="text-white ml-1">{{ call.audioRxStats.packets }}</span>
             </div>
             <div>
-              <span class="text-gray-500">Lost:</span>
+              <span class="text-gray-500">Packet Loss:</span>
               <span :class="call.audioRxStats.packetsLost > 0 ? 'text-red-400' : 'text-green-400'" class="ml-1">
                 {{ call.audioRxStats.packetsLost }} ({{ packetLossPercent(call.audioRxStats) }}%)
+              </span>
+            </div>
+            <div>
+              <span class="text-gray-500">Bitrate:</span>
+              <span class="text-white ml-1">{{ call.audioRxStats.bitrate_kbps ?? 0 }} kbit/s</span>
+            </div>
+            <div>
+              <span class="text-gray-500">Jitter:</span>
+              <span :class="jitterColor(call.audioRxStats.jitter)" class="ml-1">{{ call.audioRxStats.jitter?.toFixed(1) ?? '0.0' }} ms</span>
+            </div>
+            <div>
+              <span class="text-gray-500">RX Errors:</span>
+              <span :class="call.audioRxStats.rtp_rx_errors > 0 ? 'text-orange-400' : 'text-green-400'" class="ml-1">
+                {{ call.audioRxStats.rtp_rx_errors ?? 0 }}
+              </span>
+            </div>
+            <div>
+              <span class="text-gray-500">Dropout:</span>
+              <span :class="call.audioRxStats.dropout ? 'text-red-400' : 'text-green-400'" class="ml-1">
+                {{ call.audioRxStats.dropout ? '⚠ YES' : '✓ No' }} <span v-if="call.audioRxStats.dropout_total" class="text-gray-500">({{ call.audioRxStats.dropout_total }})</span>
               </span>
             </div>
           </div>
@@ -82,13 +102,27 @@
           <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Audio TX (Outgoing)</p>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span class="text-gray-500">Packets:</span>
+              <span class="text-gray-500">RTP Packets:</span>
               <span class="text-white ml-1">{{ call.audioTxStats.packets }}</span>
             </div>
             <div>
-              <span class="text-gray-500">Lost:</span>
+              <span class="text-gray-500">Packet Loss:</span>
               <span :class="call.audioTxStats.packetsLost > 0 ? 'text-red-400' : 'text-green-400'" class="ml-1">
                 {{ call.audioTxStats.packetsLost }} ({{ packetLossPercent(call.audioTxStats) }}%)
+              </span>
+            </div>
+            <div>
+              <span class="text-gray-500">Bitrate:</span>
+              <span class="text-white ml-1">{{ call.audioTxStats.bitrate_kbps ?? 0 }} kbit/s</span>
+            </div>
+            <div>
+              <span class="text-gray-500">Jitter:</span>
+              <span :class="jitterColor(call.audioTxStats.jitter)" class="ml-1">{{ call.audioTxStats.jitter?.toFixed(1) ?? '0.0' }} ms</span>
+            </div>
+            <div v-if="call.audioTxStats.rtp_tx_errors !== undefined">
+              <span class="text-gray-500">TX Errors:</span>
+              <span :class="call.audioTxStats.rtp_tx_errors > 0 ? 'text-orange-400' : 'text-green-400'" class="ml-1">
+                {{ call.audioTxStats.rtp_tx_errors ?? 0 }}
               </span>
             </div>
           </div>

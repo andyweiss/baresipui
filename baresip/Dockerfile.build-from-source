@@ -80,20 +80,17 @@ WORKDIR /root/baresip
 # Remove standard presence module and replace with our custom version
 RUN rm -rf modules/presence
 
-# Copy custom modules (presence, notifier, publisher, subscriber)
-COPY modules/ modules/presence/
+# Copy custom presence module files (presence.c, presence.h, notifier.c, etc)
+COPY modules/presence.c modules/presence/
+COPY modules/presence.h modules/presence/
+COPY modules/notifier.c modules/presence/
+COPY modules/pubip.c modules/presence/
+COPY modules/publisher.c modules/presence/
+COPY modules/subscriber.c modules/presence/
+COPY modules/CMakeLists.txt modules/presence/
 
-# Copy rtcpstats_periodic module
-COPY rtcpstats_periodic.c modules/rtcpstats_periodic/module.c
-RUN echo 'project(rtcpstats_periodic)\n\
-list(APPEND MODULES_DETECTED ${PROJECT_NAME})\n\
-set(MODULES_DETECTED ${MODULES_DETECTED} PARENT_SCOPE)\n\
-set(SRCS module.c)\n\
-if(STATIC)\n\
-  add_library(${PROJECT_NAME} OBJECT ${SRCS})\n\
-else()\n\
-  add_library(${PROJECT_NAME} MODULE ${SRCS})\n\
-endif()' > modules/rtcpstats_periodic/CMakeLists.txt
+# Copy rtcpstats_cmd module with proper baresip structure
+COPY modules/rtcpstats_cmd/ modules/rtcpstats_cmd/
 
 # Apply any additional patches
 COPY patches/baresip-*.patch ./
@@ -102,14 +99,18 @@ RUN for p in baresip-*.patch; do \
     [ -f "$p" ] && patch -p1 < "$p"; \
 done
 
-# Build baresip
-RUN cmake -B build \
+# Build baresip (rtcpstats_cmd is now in modules/ directory)
+RUN echo "=== Checking modules directory ===" && \
+    ls -la modules/rtcpstats_cmd/ && \
+    echo "=== CMake configuration ===" && \
+    cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_FLAGS="-g -Wno-error=implicit-function-declaration -Wno-error=int-conversion" \
     -DCMAKE_CXX_FLAGS="-g" \
     -DCMAKE_C_COMPILER=clang-19 \
     -DCMAKE_CXX_COMPILER=clang++-19 \
-    -DCMAKE_INSTALL_PREFIX=/usr && \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DMODULE_selftest=OFF && \
     cmake --build build -j$(nproc) && \
     cmake --install build --prefix dist && \
     cp -a dist/* /usr/

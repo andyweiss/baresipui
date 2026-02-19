@@ -158,7 +158,7 @@ module                  presence.so
 # Compatibility modules
 module                  ebuacip.so
 module                  uuid.so
-module_app              rtcpstats_periodic.so
+module_app              rtcpstats_cmd.so
 
 # Media NAT modules
 module                  stun.so
@@ -211,7 +211,7 @@ evdev_device            /dev/input/event0
 
 # Opus codec parameters
 opus_bitrate            128000 # 6000-510000
-opus_stereo            yes
+opus_stereo            no
 #opus_sprop_stereo      yes
 #opus_cbr               no
 #opus_inbandfec         no

@@ -21,32 +21,9 @@ export class BaresipLogger {
   }
 
   start(containerName: string = 'baresip'): void {
-    console.log(`📝 Starting baresip log streaming from container: ${containerName}`);
-
-    // Stream Docker container logs
-    this.logProcess = spawn('docker', ['logs', '-f', '--tail', '100', containerName]);
-
-    if (this.logProcess.stdout) {
-      this.logProcess.stdout.on('data', (data: Buffer) => {
-        this.processLogData(data.toString(), 'stdout');
-      });
-    }
-
-    if (this.logProcess.stderr) {
-      this.logProcess.stderr.on('data', (data: Buffer) => {
-        this.processLogData(data.toString(), 'stderr');
-      });
-    }
-
-    this.logProcess.on('error', (error) => {
-      console.error('❌ Log process error:', error);
-    });
-
-    this.logProcess.on('exit', (code) => {
-      console.log(`📝 Log process exited with code ${code}`);
-      // Auto-restart after 5 seconds
-      setTimeout(() => this.start(containerName), 5000);
-    });
+    console.log(`📝 Starting baresip logger (RTC stats via TCP socket)`);
+    // RTC stats are now delivered via getrtcpstats command (TCP socket)
+    // This logger remains for general log collection if needed
   }
 
   stop(): void {
@@ -64,6 +41,15 @@ export class BaresipLogger {
 
   private processLogData(data: string, stream: 'stdout' | 'stderr'): void {
     const lines = data.split('\n');
+    
+    // Count how many rtcpstats lines we have
+    const rtcpCount = lines.filter(l => l.includes('rtcpstats_periodic: call_id')).length;
+    if (rtcpCount > 0) {
+      this.stateManager.broadcast({
+        type: 'debug',
+        data: {message: `📥 Got ${rtcpCount} rtcpstats lines in this block`}
+      });
+    }
 
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -114,6 +100,12 @@ export class BaresipLogger {
     if (line.match(/\[\d+:\d+:\d+\]\s+audio=/i) || 
         line.match(/audio=\d+\/\d+\s*\(bit\/s\)/i)) {
       return;
+    }
+    
+    // Handle rtcpstats_periodic data directly
+    if (line.includes('rtcpstats_periodic:') && line.includes('call_id=')) {
+      this.parseRtcpStatsLine(line);
+      return; // Don't log this as a regular entry
     }
     
     // Debug: Log original line length
@@ -227,6 +219,103 @@ export class BaresipLogger {
       return filtered.slice(-limit);
     }
     return filtered;
+  }
+
+  private parseRtcpStatsLine(line: string): void {
+    // Parse: rtcpstats_periodic: call_id=xxx rx_packets=123 tx_packets=456 rx_bitrate_kbps=0 tx_bitrate_kbps=1 rx_dropout=false rx_dropout_total=0
+    console.log('📊 Processing rtcpstats_periodic line from logger:', line.substring(0, 80));
+    
+    // Extract call_id
+    const callIdMatch = line.match(/call_id=([a-f0-9]+)/);
+    if (!callIdMatch) {
+      console.log('⚠️ No call_id found in rtcpstats line');
+      return;
+    }
+    
+    const callId = callIdMatch[1];
+    
+    // Extract all metrics
+    const metrics: any = { call_id: callId };
+    
+    const patterns = [
+      { key: 'rx_packets', regex: /rx_packets=(\d+)/ },
+      { key: 'tx_packets', regex: /tx_packets=(\d+)/ },
+      { key: 'rx_bitrate_kbps', regex: /rx_bitrate_kbps=(\d+)/ },
+      { key: 'tx_bitrate_kbps', regex: /tx_bitrate_kbps=(\d+)/ },
+      { key: 'rx_dropout', regex: /rx_dropout=(true|false)/ },
+      { key: 'rx_dropout_total', regex: /rx_dropout_total=(\d+)/ }
+    ];
+    
+    for (const { key, regex } of patterns) {
+      const match = line.match(regex);
+      if (match) {
+        if (key === 'rx_dropout') {
+          metrics[key] = match[1] === 'true';
+        } else {
+          metrics[key] = parseInt(match[1], 10);
+        }
+      }
+    }
+    
+    console.log('✅ Parsed RTCP stats:', metrics);
+    
+    // Update call in StateManager with these metrics
+    const call = this.stateManager.getCall(callId);
+    if (!call) {
+      console.log('⚠️ Call not found:', callId);
+      return;
+    }
+    
+    // Update audio RX stats
+    if (!call.audioRxStats) {
+      call.audioRxStats = {
+        packets: 0,
+        lost: 0,
+        bitrate_kbps: 0,
+        dropout: false,
+        dropout_total: 0,
+        rtp_rx_errors: 0,
+        jitter: 0
+      };
+    }
+    
+    if (metrics.rx_packets !== undefined) {
+      call.audioRxStats.packets = metrics.rx_packets;
+    }
+    if (metrics.rx_bitrate_kbps !== undefined) {
+      call.audioRxStats.bitrate_kbps = metrics.rx_bitrate_kbps;
+    }
+    if (metrics.rx_dropout !== undefined) {
+      call.audioRxStats.dropout = metrics.rx_dropout;
+    }
+    if (metrics.rx_dropout_total !== undefined) {
+      call.audioRxStats.dropout_total = metrics.rx_dropout_total;
+    }
+    
+    // Update audio TX stats
+    if (!call.audioTxStats) {
+      call.audioTxStats = {
+        packets: 0,
+        lost: 0,
+        bitrate_kbps: 0,
+        jitter: 0
+      };
+    }
+    
+    if (metrics.tx_packets !== undefined) {
+      call.audioTxStats.packets = metrics.tx_packets;
+    }
+    if (metrics.tx_bitrate_kbps !== undefined) {
+      call.audioTxStats.bitrate_kbps = metrics.tx_bitrate_kbps;
+    }
+    
+    // Broadcast the updated call
+    this.stateManager.broadcast({
+      type: 'callUpdated',
+      data: call
+    });
+    
+    console.log('📢 Broadcasted updated call:', callId);
   }
 
   clearLogs(): void {

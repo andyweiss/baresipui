@@ -1,0 +1,35 @@
+diff --git a/src/call.c b/src/call.c
+index e7c9f63..combined 100644
+--- a/src/call.c
++++ b/src/call.c
+@@ -889,6 +889,20 @@ int call_alloc(struct call **callp, const struct config *cfg, struct list *lst,
+	if (err)
+		goto out;
+
++	/* Use public IP for SDP if available (NAT traversal) */
++	const struct sa *public_addr = sip_get_public_addr();
++	if (public_addr && sa_isset(public_addr, SA_ADDR)) {
++		struct sa pub_with_port;
++		sa_cpy(&pub_with_port, public_addr);
++		sa_set_port(&pub_with_port, sa_port(&prm->laddr));
++		/* Update both connection address (c=) and owner address (o=) */
++		sdp_session_set_laddr(call->sdp, &pub_with_port);
++		/* Update SDP origin/owner with public IP for proper NAT traversal */
++		struct pl username;
++		if (0 == sdp_session_get_origin(call->sdp, &username, NULL, NULL, NULL, NULL)) {
++			sdp_session_set_origin(call->sdp, &username, NULL, NULL, AF_INET, &pub_with_port);
++		}
++	}
++
+	/* Check for incoming SDP Offer */
+	if (msg && mbuf_get_left(msg->mb))
+		call->got_offer = true;
+@@ -2539,6 +2548,8 @@ static int sipsess_desc_handler(struct mbuf **descp, const struct sa *src,
+	MAGIC_CHECK(call);
+	call->af     = sa_af(src);
+	if (!call->acc->mnat)
++		/* PATCHED: Keep existing laddr (public IP) instead of overwriting with local src */
++		if (!sa_isset(sdp_session_laddr(call->sdp), SA_ADDR))
+		sdp_session_set_laddr(call->sdp, src);
+
+	if (list_isempty(&call->streaml)) {

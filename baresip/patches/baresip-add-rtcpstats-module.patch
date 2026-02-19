@@ -4,7 +4,7 @@
    presence
    pulse
    rtcpsummary
-+  rtcpstats_periodic
++  rtcpstats_cmd
    sdl
    selfview
    snapshot

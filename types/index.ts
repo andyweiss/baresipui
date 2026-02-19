@@ -53,12 +53,22 @@ export interface CallInfo {
     packets: number;
     packetsLost: number;
     jitter: number; // in ms
-    bitrate: number; // in bit/s
+    rtt?: number; // in ms
+    bitrate: number; // in bit/s (deprecated, use bitrate_kbps)
+    bitrate_kbps?: number; // in kbit/s
+    dropout?: boolean;
+    dropout_total?: number;
+    rtp_rx_errors?: number;
+    rtcp_packets?: number;
   };
   audioTxStats?: {
     packets: number;
     packetsLost: number;
-    bitrate: number; // in bit/s
+    jitter?: number; // in ms
+    bitrate: number; // in bit/s (deprecated, use bitrate_kbps)
+    bitrate_kbps?: number; // in kbit/s
+    rtp_tx_errors?: number;
+    rtcp_packets?: number;
   };
   videoRxStats?: {
     packets: number;

@@ -1,7 +1,7 @@
 import net from 'node:net';
 import { createNetstring } from '../utils/netstring';
 import { stateManager } from './state-manager';
-import { parseBaresipEvent } from './baresip-parser';
+import { parseBaresipEvent, parseGetRtcpStatsResponse_exported } from './baresip-parser';
 import { getAutoConnectConfigManager } from './autoconnect-config';
 
 export class BaresipConnection {
@@ -44,6 +44,59 @@ export class BaresipConnection {
       }
       // Broadcast the updated calls list
       stateManager.broadcast({ type: 'callsUpdate', calls: stateManager.getCalls() });
+    }
+
+    // Parser for 'getrtcpstats' response (JSON array)
+    private parseGetRtcpStatsResponse(data: string): void {
+      try {
+        const cleanData = data.trim().replace(/[\[\]]/g, '').trim();
+        if (!cleanData) return;
+        
+        // Split multiple JSON objects
+        const jsonObjects = cleanData.split('},').map((obj, idx, arr) => {
+          if (idx === arr.length - 1) return obj + '}';
+          return obj + '}';
+        }).filter(obj => obj.trim().startsWith('{'));
+        
+        for (const jsonStr of jsonObjects) {
+          try {
+            const stats = JSON.parse(jsonStr);
+            const callId = stats.call_id;
+            if (!callId) continue;
+            
+            const call = stateManager.getCall(callId);
+            if (!call) continue;
+            
+            // Update RX stats
+            if (!call.audioRxStats) {
+              call.audioRxStats = { packets: 0, lost: 0, bitrate_kbps: 0, dropout: false, dropout_total: 0, rtp_rx_errors: 0, jitter: 0 };
+            }
+            call.audioRxStats.packets = stats.rtp_rx_packets ?? 0;
+            call.audioRxStats.lost = stats.rtcp_lost_rx ?? 0;
+            call.audioRxStats.bitrate_kbps = stats.rx_bitrate_kbps ?? 0;
+            call.audioRxStats.dropout = stats.rx_dropout ?? false;
+            call.audioRxStats.dropout_total = stats.rx_dropout_total ?? 0;
+            call.audioRxStats.rtp_rx_errors = stats.rtp_rx_errors ?? 0;
+            call.audioRxStats.jitter = stats.rtcp_jitter_rx_ms ?? 0;
+            
+            // Update TX stats
+            if (!call.audioTxStats) {
+              call.audioTxStats = { packets: 0, lost: 0, bitrate_kbps: 0, jitter: 0 };
+            }
+            call.audioTxStats.packets = stats.rtp_tx_packets ?? 0;
+            call.audioTxStats.lost = stats.rtcp_lost_tx ?? 0;
+            call.audioTxStats.bitrate_kbps = stats.tx_bitrate_kbps ?? 0;
+            call.audioTxStats.jitter = stats.rtcp_jitter_tx_ms ?? 0;
+            
+            stateManager.broadcast({ type: 'callUpdated', data: call });
+            console.debug('[parseGetRtcpStatsResponse] Updated call:', callId);
+          } catch (e) {
+            // Skip JSON parse errors
+          }
+        }
+      } catch (error) {
+        console.debug('[parseGetRtcpStatsResponse] Error:', error);
+      }
     }
 
     // Parser for 'callstat' response
@@ -269,7 +322,7 @@ export class BaresipConnection {
     // poll every 2 seconds if there are active calls
     this.callStatsPollingInterval = setInterval(() => {
       if (this.isConnected() && stateManager.getCalls().length > 0) {
-        this.sendCommand('callstat');
+        this.sendCommand('getrtcpstats');
       }
     }, this.CALL_STATS_POLL_INTERVAL);
   }
