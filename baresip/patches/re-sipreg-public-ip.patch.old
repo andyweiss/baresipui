@@ -107,8 +107,8 @@ index ca87884..76d4e8a 100644
   */
  const struct sa *sipreg_laddr(const struct sipreg *reg)
  {
--	return reg ? &reg->laddr : NULL;
-+	return reg ? (reg->has_public_addr ? &reg->public_addr : &reg->laddr) : NULL;
+ 	return reg ? &reg->laddr : NULL;
++	/* Keep local IP for SDP - Public IP is only used in Contact headers */
  }
  
  

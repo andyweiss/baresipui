@@ -1,0 +1,156 @@
+--- a/include/re_sip.h  
++++ b/include/re_sip.h	2026-02-20 09:55:38.782870903 +0100
+@@ -458,3 +458,8 @@
+ 		       const struct sip_uas_auth *auth);
+ int sip_uas_auth_check(struct sip_uas_auth *auth, const struct sip_msg *msg,
+ 		       sip_uas_auth_h *authh, void *arg);
++
++
++/* Public IP for NAT traversal (learned from Via received parameter) */
++void sip_set_public_addr(const struct sa *addr);
++const struct sa *sip_get_public_addr(void);
+--- a/src/sip/sip.c  
++++ b/src/sip/sip.c	2026-02-20 09:55:38.782870903 +0100
+@@ -326,3 +326,21 @@
+ 
+ 	return NULL;
+ }
++
++
++/* Public IP storage for NAT traversal */
++static struct sa global_public_addr;
++static bool has_global_public_addr = false;
++
++void sip_set_public_addr(const struct sa *addr)
++{
++	if (addr && sa_isset(addr, SA_ADDR)) {
++		sa_cpy(&global_public_addr, addr);
++		has_global_public_addr = true;
++	}
++}
++
++const struct sa *sip_get_public_addr(void)
++{
++	return has_global_public_addr ? &global_public_addr : NULL;
++}
+--- a/src/sipevent/subscribe.c  
++++ b/src/sipevent/subscribe.c	2026-02-20 09:55:38.786871061 +0100
+@@ -304,7 +304,16 @@
+ 	(void)dst;
+ 	(void)contp;
+ 
+-	sip_contact_set(&contact, sub->cuser, src, tp);
++	/* Use public IP for Contact if available (NAT traversal for SUBSCRIBE) */
++	const struct sa *contact_addr = sip_get_public_addr();
++	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
++		struct sa pub_with_port;
++		sa_cpy(&pub_with_port, contact_addr);
++		sa_set_port(&pub_with_port, sa_port(src));
++		sip_contact_set(&contact, sub->cuser, &pub_with_port, tp);
++	} else {
++		sip_contact_set(&contact, sub->cuser, src, tp);
++	}
+ 
+ 	return mbuf_printf(mb, "%H", sip_contact_print, &contact);
+ }
+--- a/src/sipreg/reg.c  
++++ b/src/sipreg/reg.c	2026-02-20 09:55:38.786871061 +0100
+@@ -51,6 +51,8 @@
+ 	char *params;
+ 	int regid;
+ 	uint16_t srcport;
++	struct sa public_addr;
++	bool has_public_addr;
+ };
+ 
+ 
+@@ -225,6 +227,16 @@
+ 
+ 	case 401:
+ 	case 407:
++		/* Extract public IP from Via received parameter */
++		{
++			struct pl received;
++			if (0 == msg_param_decode(&msg->via.params, "received", &received)) {
++				if (0 == sa_set(&reg->public_addr, &received, sa_port(&reg->laddr))) {
++					reg->has_public_addr = true;
++					sip_set_public_addr(&reg->public_addr);
++				}
++			}
++		}
+ 		if (reg->ls.failc > 1 && last_scode == msg->scode) {
+ 			reg->failc++;
+ 			goto out;
+@@ -307,9 +319,13 @@
+ 	if (reg->srcport && tp != SIP_TRANSP_UDP)
+ 		sa_set_port(src, reg->srcport);
+ 
++	/* Keep local address in reg->laddr for SDP */
+ 	reg->laddr = *src;
++	
++	/* But use public IP for Contact header (NAT traversal) */
++	const struct sa *contact_addr = reg->has_public_addr ? &reg->public_addr : &reg->laddr;
+ 	err = mbuf_printf(mb, "Contact: <sip:%s@%J%s%s%s>;expires=%u%s%s",
+-			  reg->cuser, &reg->laddr, sip_transp_param(reg->tp),
++			  reg->cuser, contact_addr, sip_transp_param(reg->tp),
+ 			  reg->cparams ? ";" : "",
+ 			  reg->cparams ? reg->cparams : "",
+ 			  reg->expires,
+--- a/src/sipsess/connect.c  
++++ b/src/sipsess/connect.c	2026-02-20 09:55:38.786871061 +0100
+@@ -38,7 +38,16 @@
+ 			return err;
+ 	}
+ 
+-	sip_contact_set(&contact, sess->cuser, src, tp);
++	/* Use public IP for Contact if available */
++	const struct sa *contact_addr = sip_get_public_addr();
++	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
++		struct sa pub_with_port;
++		sa_cpy(&pub_with_port, contact_addr);
++		sa_set_port(&pub_with_port, sa_port(src));
++		sip_contact_set(&contact, sess->cuser, &pub_with_port, tp);
++	} else {
++		sip_contact_set(&contact, sess->cuser, src, tp);
++	}
+ 	err = mbuf_printf(mb, "%H", sip_contact_print, &contact);
+ 	if (err)
+ 		goto out;
+--- a/src/sipsess/reply.c  
++++ b/src/sipsess/reply.c	2026-02-20 09:55:38.786871061 +0100
+@@ -141,7 +141,16 @@
+ 	if (non_invite && sess->neg_state != SDP_NEG_REMOTE_OFFER)
+ 		desc = NULL;
+ 
+-	sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	/* Use public IP for Contact if available */
++	const struct sa *contact_addr = sip_get_public_addr();
++	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
++		struct sa pub_with_port;
++		sa_cpy(&pub_with_port, contact_addr);
++		sa_set_port(&pub_with_port, sa_port(&msg->dst));
++		sip_contact_set(&contact, sess->cuser, &pub_with_port, msg->tp);
++	} else {
++		sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	}
+ 	err = sip_treplyf(non_invite ? NULL : &sess->st,
+ 			  reply ? &reply->mb : NULL, sess->sip,
+ 			  msg, true, scode, reason,
+@@ -253,7 +262,16 @@
+ 	reply->sess = sess;
+ 	reply->scode = scode;
+ 
+-	sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	/* Use public IP for Contact if available */
++	const struct sa *contact_addr2 = sip_get_public_addr();
++	if (contact_addr2 && sa_isset(contact_addr2, SA_ADDR)) {
++		struct sa pub_with_port2;
++		sa_cpy(&pub_with_port2, contact_addr2);
++		sa_set_port(&pub_with_port2, sa_port(&msg->dst));
++		sip_contact_set(&contact, sess->cuser, &pub_with_port2, msg->tp);
++	} else {
++		sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
++	}
+ 	if (reliably) {
+ 		sess->rel_seq = sess->rel_seq ? sess->rel_seq+1 : rand_u16();
+ 		reply->rel_seq = sess->rel_seq;
