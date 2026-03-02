@@ -1,5 +1,6 @@
 import { stateManager } from '../../services/state-manager';
 import { getAutoConnectConfigManager } from '../../services/autoconnect-config';
+import { checkAutoConnectForAccount } from '../../services/baresip-parser';
 
 async function parseRequestBody(event: any) {
   try {
@@ -69,6 +70,12 @@ export default defineEventHandler(async (event) => {
   });
 
   console.log(`Contact ${contact || 'none'} assigned to account ${account}`);
+
+  // Trigger auto-connect check immediately if a contact was assigned
+  if (contact) {
+    console.log(`Triggering auto-connect check for newly assigned account ${account}`);
+    checkAutoConnectForAccount(account, stateManager);
+  }
 
   return {
     success: true,

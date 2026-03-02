@@ -228,6 +228,10 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
             type: 'accountStatus',
             data: account
           });
+          // Trigger auto-connect check if account is registered and idle
+          if (account.registered && account.callStatus === 'Idle') {
+            checkAutoConnectForAccount(uri, stateManager);
+          }
         }
       }
     }
@@ -298,6 +302,10 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
             type: 'accountStatus',
             data: account
           });
+          // Trigger auto-connect check if account is registered and idle
+          if (account.registered && account.callStatus === 'Idle') {
+            checkAutoConnectForAccount(uri, stateManager);
+          }
         }
 
         console.log(`Updated account ${uri}: registered=${account.registered}, error=${account.registrationError}`);
@@ -334,10 +342,19 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
           source: 'api'
         };
 
+        // Check if presence status changed to online
+        const previousPresence = stateManager.getContactPresence(contact);
+        
         stateManager.setContactConfig(contact, contactConfig);
         stateManager.setContactPresence(contact, presenceStatus);
         
         console.log(`Loaded contact from API: ${name} <${contact}> [${presenceStatus}]`);
+        
+        // Trigger auto-connect if contact changed from busy/offline to online
+        if (presenceStatus === 'online' && previousPresence !== 'online') {
+          console.log(`Contact ${contact} changed from ${previousPresence} to online - checking auto-connect`);
+          checkAutoConnectForContact(contact, stateManager);
+        }
         
         // removed 
       } else {
@@ -663,6 +680,8 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
           callStatus: 'Idle',
           callId: undefined 
         });
+        // Trigger auto-connect check when account becomes idle
+        checkAutoConnectForAccount(accountUri, stateManager);
       }
     }
   }
@@ -1102,8 +1121,8 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     console.log('DEBUG: PRESENCE_EVENT detected:', line);
     const parts = line.split(':');
     if (parts.length >= 3) {
-      const contact = parts[1];
-      const status = parts[2].toLowerCase();
+      const contact = parts[1].replace('sip:', '').trim();
+      const status = parts[2].toLowerCase().trim();
       
       let mappedStatus = 'unknown';
       if (status === 'online' || status === 'open') {
@@ -1125,6 +1144,12 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         contact,
         status: mappedStatus
       });
+
+      // Trigger auto-connect check for all accounts configured for this contact
+      // when contact status changes to online
+      if (mappedStatus === 'online') {
+        checkAutoConnectForContact(contact, stateManager);
+      }
     }
   }
 
@@ -1142,6 +1167,8 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         registered: true,
         registrationError: undefined
       });
+      // Trigger auto-connect check when account registers
+      checkAutoConnectForAccount(uri, stateManager);
     }
   } else if (line.includes('unregistering')) {
     const match = line.match(/<([^>]+)>/);
@@ -1206,11 +1233,13 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     if (match) {
       const uri = match[1];
       stateManager.updateAccountStatus(uri, { callStatus: 'Idle' });
+      // Trigger auto-connect check when call terminates
+      checkAutoConnectForAccount(uri, stateManager);
     }
   } else if (line.includes('presence:') && line.includes('open')) {
     const match = line.match(/sip:([^@]+@[^\s]+)/);
     if (match) {
-      const contact = match[1];
+      const contact = match[1].toLowerCase().trim();
       stateManager.setContactPresence(contact, 'online');
 
       stateManager.broadcast({
@@ -1220,6 +1249,9 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         status: 'online'
       });
 
+      // Trigger auto-connect check for all accounts configured for this contact
+      checkAutoConnectForContact(contact, stateManager);
+
       const config = stateManager.getContactConfig(contact);
       if (config?.enabled) {
         attemptAutoConnect(contact, stateManager);
@@ -1228,7 +1260,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
   } else if (line.includes('presence:') && (line.includes('closed') || line.includes('offline'))) {
     const match = line.match(/sip:([^@]+@[^\s]+)/);
     if (match) {
-      const contact = match[1];
+      const contact = match[1].toLowerCase().trim();
       stateManager.setContactPresence(contact, 'offline');
 
       stateManager.broadcast({
@@ -1249,8 +1281,8 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         
         if (presenceEvent.contact && presenceEvent.status) {
           // Extract contact without sip: prefix
-          const contact = presenceEvent.contact.replace('sip:', '');
-          const status = presenceEvent.status;
+          const contact = presenceEvent.contact.replace('sip:', '').toLowerCase().trim();
+          const status = presenceEvent.status.toLowerCase().trim();
           
           console.log(`Enhanced presence JSON detected: ${contact} -> ${status}`);
           stateManager.setContactPresence(contact, status);
@@ -1262,9 +1294,10 @@ function handleTextLine(line: string, stateManager: StateManager): void {
             status
           });
 
-          const config = stateManager.getContactConfig(contact);
-          if (config?.enabled && status === 'online') {
-            attemptAutoConnect(contact, stateManager);
+          // Trigger auto-connect check for all accounts configured for this contact
+          // when contact status changes to online
+          if (status === 'online') {
+            checkAutoConnectForContact(contact, stateManager);
           }
         }
       } catch (e) {
@@ -1415,3 +1448,28 @@ function checkAutoConnectForAccount(accountUri: string, stateManager: StateManag
     console.log(`  -> Not connecting: contact is not online (${contactPresence})`);
   }
 }
+
+/**
+ * Check auto-connect for all accounts that have the specified contact configured
+ * @param contact The contact URI to check
+ * @param stateManager The state manager instance
+ */
+function checkAutoConnectForContact(contact: string, stateManager: StateManager): void {
+  console.log(`checkAutoConnectForContact called for contact ${contact}`);
+  const accounts = stateManager.getAccounts();
+  // Normalize contact URI (remove sip: prefix for comparison)
+  const normalizedContact = contact.replace('sip:', '').toLowerCase().trim();
+  
+  for (const account of accounts) {
+    if (account.autoConnectContact) {
+      const normalizedAccountContact = account.autoConnectContact.replace('sip:', '').toLowerCase().trim();
+      if (normalizedAccountContact === normalizedContact) {
+        console.log(`  -> Found account ${account.uri} configured for this contact`);
+        checkAutoConnectForAccount(account.uri, stateManager);
+      }
+    }
+  }
+}
+
+// Export helper functions for use in other modules
+export { checkAutoConnectForAccount, checkAutoConnectForContact };
