@@ -86,6 +86,11 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       parseContactsFromResponse(data, stateManager);
       return;
     }
+    // 2b. Presence timestamps (from presence_ts command)
+    if (data.includes('Presence status with timestamps:')) {
+      parsePresenceTimestamps(data, stateManager);
+      return;
+    }
     // 3. Callstats (MUST check BEFORE calls pattern!)
     if (data.includes('Call debug') || data.includes('audio RTP')) {
       parseCallStatResponse(data, stateManager);
@@ -324,14 +329,13 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
       console.log(`Parsing contact line: "${cleanLine}"`);
 
       // Match format: [spaces] STATUS name <sip:...>
-      // STATUS can be: Unknown, Online, Busy, Offline, etc.
+      // We ONLY extract name and contact URI, ignore status (comes from presence_ts)
       const matchWithStatus = cleanLine.match(/(?:>\s*)?(?:\s*)(Unknown|Online|Busy|Offline|Away)?\s*(.+?)\s*<(sip:[^@]+@[^>]+)>/i);
       if (matchWithStatus) {
-        const presenceStatus = matchWithStatus[1] ? matchWithStatus[1].toLowerCase() : 'unknown';
         const name = matchWithStatus[2].trim();
         const contact = matchWithStatus[3];
         
-        console.log(`Found contact: name="${name}", contact="${contact}", presence="${presenceStatus}"`);
+        console.log(`Found contact: name="${name}", contact="${contact}"`);
 
         // Get existing config or create new one
         const existingConfig = stateManager.getContactConfig(contact);
@@ -342,21 +346,10 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
           source: 'api'
         };
 
-        // Check if presence status changed to online
-        const previousPresence = stateManager.getContactPresence(contact);
-        
+        // Update contact config (name, etc.) - NO STATUS UPDATE
         stateManager.setContactConfig(contact, contactConfig);
-        stateManager.setContactPresence(contact, presenceStatus);
         
-        console.log(`Loaded contact from API: ${name} <${contact}> [${presenceStatus}]`);
-        
-        // Trigger auto-connect if contact changed from busy/offline to online
-        if (presenceStatus === 'online' && previousPresence !== 'online') {
-          console.log(`Contact ${contact} changed from ${previousPresence} to online - checking auto-connect`);
-          checkAutoConnectForContact(contact, stateManager);
-        }
-        
-        // removed 
+        console.log(`Loaded contact from API: ${name} <${contact}>`);
       } else {
         console.log(`No match for line: "${cleanLine}"`);
       }
@@ -365,6 +358,69 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
 
   if (stateManager.getContactsSize() > 0) {
     console.log(`Broadcasting ${stateManager.getContactsSize()} contacts`);
+    stateManager.broadcast({
+      type: 'contactsUpdate',
+      contacts: stateManager.getContacts()
+    });
+  }
+}
+
+function parsePresenceTimestamps(data: string, stateManager: StateManager): void {
+  console.log('📅 Parsing presence timestamps from baresip...');
+  const lines = data.split('\n');
+
+  let parsedCount = 0;
+  for (const line of lines) {
+    // Match format: sip:uri|status|timestamp
+    const match = line.match(/(sip:[^@]+@[^|]+)\|(\w+)\|(\d+)/);
+    if (match) {
+      const contact = match[1];
+      const status = match[2].toLowerCase();
+      const timestamp = parseInt(match[3], 10);
+      
+      // Get previous status for auto-connect detection
+      const previousPresence = stateManager.getContactPresence(contact);
+      
+      if (timestamp > 0) {
+        // NOTIFY was received - check if too old
+        const lastSeenMs = timestamp * 1000;
+        const age = Math.floor((Date.now() - lastSeenMs) / 1000);
+        
+        const PRESENCE_TIMEOUT_SEC = 300; // 5 minutes
+        let effectiveStatus = status;
+        
+        if (age > PRESENCE_TIMEOUT_SEC) {
+          // No NOTIFY for > 30s → contact lost connectivity
+          effectiveStatus = 'unknown';
+          console.log(`📅 ${contact}: Last NOTIFY ${age}s ago → unknown (connectivity lost)`);
+        } else {
+          // Fresh NOTIFY
+          console.log(`📅 ${contact}: status=${status}, last NOTIFY ${age}s ago`);
+        }
+        
+        // Update status
+        stateManager.setContactPresence(contact, effectiveStatus, false);
+        stateManager.setContactLastSeen(contact, lastSeenMs);
+        
+        parsedCount++;
+        
+        // Trigger auto-connect if contact changed to online
+        if (effectiveStatus === 'online' && previousPresence !== 'online') {
+          console.log(`Contact ${contact} changed to online - checking auto-connect`);
+          checkAutoConnectForContact(contact, stateManager);
+        }
+      } else {
+        // No NOTIFY received yet (timestamp=0)
+        console.log(`📅 ${contact}: No NOTIFY received yet → unknown`);
+        stateManager.setContactPresence(contact, 'unknown', false);
+      }
+    }
+  }
+  
+  if (parsedCount > 0) {
+    console.log(`📅 Updated presence for ${parsedCount} contacts`);
+    
+    // Broadcast updated contacts
     stateManager.broadcast({
       type: 'contactsUpdate',
       contacts: stateManager.getContacts()
@@ -1136,7 +1192,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
       }
       
       console.log(`PRESENCE_EVENT parsed: ${contact} -> ${mappedStatus}`);
-      stateManager.setContactPresence(contact, mappedStatus);
+      stateManager.setContactPresence(contact, mappedStatus, true);
 
       stateManager.broadcast({
         type: 'presence',
@@ -1240,7 +1296,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     const match = line.match(/sip:([^@]+@[^\s]+)/);
     if (match) {
       const contact = match[1].toLowerCase().trim();
-      stateManager.setContactPresence(contact, 'online');
+      stateManager.setContactPresence(contact, 'online', true);
 
       stateManager.broadcast({
         type: 'presence',
@@ -1261,7 +1317,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     const match = line.match(/sip:([^@]+@[^\s]+)/);
     if (match) {
       const contact = match[1].toLowerCase().trim();
-      stateManager.setContactPresence(contact, 'offline');
+      stateManager.setContactPresence(contact, 'offline', true);
 
       stateManager.broadcast({
         type: 'presence',
@@ -1285,7 +1341,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
           const status = presenceEvent.status.toLowerCase().trim();
           
           console.log(`Enhanced presence JSON detected: ${contact} -> ${status}`);
-          stateManager.setContactPresence(contact, status);
+          stateManager.setContactPresence(contact, status, true);
 
           stateManager.broadcast({
             type: 'presence',
@@ -1324,7 +1380,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
       }
       
       console.log(`Enhanced presence detected: ${contact} -> ${status}`);
-      stateManager.setContactPresence(contact, status);
+      stateManager.setContactPresence(contact, status, true);
 
       stateManager.broadcast({
         type: 'presence',

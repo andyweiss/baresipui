@@ -113,6 +113,16 @@ export const useSocketIO = () => {
           contact.status = data.status;
         }
       } else if (data.type === 'contactsUpdate') {
+        console.log('📡 Socket.IO: Received contactsUpdate', { count: (data.contacts || []).length });
+        // Log first 3 contacts for debugging
+        if (data.contacts && data.contacts.length > 0) {
+          const sample = data.contacts.slice(0, 3).map((c: any) => ({
+            contact: c.contact,
+            presence: c.presence,
+            lastSeen: c.lastSeen ? `${Math.floor((Date.now() - c.lastSeen) / 1000)}s ago` : 'never'
+          }));
+          console.log('  Sample contacts:', sample);
+        }
         contacts.value = data.contacts || [];
       } else if (data.type === 'callAdded' || data.type === 'callUpdated') {
         const callIndex = calls.value.findIndex(c => c.callId === data.data.callId);

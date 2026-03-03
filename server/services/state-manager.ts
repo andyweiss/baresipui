@@ -11,6 +11,7 @@ export class StateManager {
   private accounts = new Map<string, Account>();
   private autoConnectConfig = new Map<string, ContactConfig>();
   private contactPresence = new Map<string, string>();
+  private contactLastSeen = new Map<string, number>(); // Track last seen timestamp
   private activeCalls = new Map<string, CallInfo>(); // Track all active calls
   private audioMeters = new Map<string, AudioMeter>(); // Track audio levels per account
   private wsClients = new Set<any>();
@@ -20,6 +21,23 @@ export class StateManager {
   private maxLogs = 1000; // Maximum number of logs to keep
   private baresipConnected = false; // Track Baresip TCP connection status
   private baresipInfo: { version?: string; uptime?: string; started?: string } = {};
+  // contacts API: loads contact names only
+  // presence_ts: ONLY source for presence status (checks timestamp age)
+
+  constructor() {
+    // Timeout mechanism disabled - presence_ts handles it
+  }
+
+  // Presence timeout check is now handled by presence_ts command
+  // This method is kept for potential future use but is not called
+  private checkPresenceTimeouts(): void {
+    // Disabled - presence_ts command handles timeout checking every 5 seconds
+    // by comparing baresip timestamps against current time
+  }
+
+  destroy(): void {
+    // No intervals to clear - timeout handling moved to presence_ts
+  }
 
   setBaresipInfo(info: { version?: string; uptime?: string; started?: string }) {
     this.baresipInfo = { ...this.baresipInfo, ...info };
@@ -89,7 +107,8 @@ export class StateManager {
       enabled: config.enabled,
       status: config.status || 'Off',
       presence: this.contactPresence.get(contact) || 'unknown',
-      assignedAccount: config.assignedAccount
+      assignedAccount: config.assignedAccount,
+      lastSeen: this.contactLastSeen.get(contact)
     }));
   }
 
@@ -124,8 +143,18 @@ export class StateManager {
     return this.contactPresence.get(contact) || 'unknown';
   }
 
-  setContactPresence(contact: string, presence: string): void {
+  setContactPresence(contact: string, presence: string, updateLastSeen: boolean = false): void {
     this.contactPresence.set(contact, presence);
+    
+    // Update lastSeen timestamp only if requested
+    if (updateLastSeen && presence !== 'unknown') {
+      this.contactLastSeen.set(contact, Date.now());
+    }
+  }
+
+  // Set lastSeen timestamp directly (from presence_ts command)
+  setContactLastSeen(contact: string, timestamp: number): void {
+    this.contactLastSeen.set(contact, timestamp);
   }
 
 

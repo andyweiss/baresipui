@@ -51,6 +51,7 @@ services:
       - 8000:8000/tcp
       - 5555:5555/tcp
       - 4444:4444/tcp
+      - 10000-10500:10000-10500/udp
     command:
       - baresip
       - -f

@@ -37,12 +37,7 @@
               >
                 Reload Config
               </button>
-              <button
-                @click="sendTestCommand"
-                class="px-4 py-2 bg-yellow-600 text-white rounded text-sm font-medium hover:bg-yellow-700 transition-colors"
-              >
-                Test
-              </button>
+              
             </div>
           </div>
         </div>
@@ -54,9 +49,22 @@
           <div class="p-4 bg-gray-700 rounded-lg">
             <h4 class="text-white font-medium mb-2">Add New Account</h4>
             <p class="text-sm text-gray-400 mb-4">Create a new SIP account</p>
-            <button class="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 transition-colors">
-              Add Account
-            </button>
+            <div class="text-sm text-gray-500">
+              This feature is available in a future update, please edit config files manually for now
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Concatct Management Section -->
+      <div class="border-b border-gray-700 pb-6">
+        <h3 class="text-lg font-semibold text-white mb-4">Contact Management</h3>
+        <div class="space-y-4">
+          <div class="p-4 bg-gray-700 rounded-lg">
+            <h4 class="text-white font-medium mb-2">Add New Contact</h4>
+            <p class="text-sm text-gray-400 mb-4">Create a new contact</p>
+            <div class="text-sm text-gray-500">
+              This feature is available in a future update, please edit config files manually for now
+            </div>
           </div>
         </div>
       </div>
@@ -68,7 +76,7 @@
             <h4 class="text-white font-medium mb-2">Default Audio Codecs</h4>
             <p class="text-sm text-gray-400 mb-4">Configure default audio codec preferences</p>
             <div class="text-sm text-gray-500">
-              Coming soon...
+              This feature is available in a future update, please edit config files manually for now
             </div>
           </div>
         </div>
@@ -106,15 +114,5 @@ onMounted(fetchBaresipInfo);
 onActivated(fetchBaresipInfo);
 defineExpose({ fetchBaresipInfo });
 
-async function sendTestCommand() {
-  if (props.sendCommand) {
-    try {
-      await props.sendCommand('reginfo');
-    } catch (err) {
-      alert('Error sending command: ' + (err?.message || err));
-    }
-  } else {
-    alert('sendCommand not available!');
-  }
-}
+
 </script>

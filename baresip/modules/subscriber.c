@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2010 Alfred E. Heggestad
  */
+#include <time.h>
 #include <re.h>
 #include <baresip.h>
 #include "presence.h"
@@ -32,6 +33,7 @@ struct presence {
 	struct contact *contact;
 	struct ua *ua;
 	bool shutdown;
+	time_t last_notify_time;  /* Timestamp of last received NOTIFY */
 };
 
 static struct list presencel;
@@ -77,6 +79,18 @@ static uint32_t wait_fail(unsigned failc)
 	case 2:  return 300;
 	case 3:  return 3600;
 	default: return 86400;
+	}
+}
+
+
+static const char *presence_status_str(enum presence_status st)
+{
+	switch (st) {
+	case PRESENCE_OPEN:    return "online";
+	case PRESENCE_CLOSED:  return "offline";
+	case PRESENCE_BUSY:    return "busy";
+	case PRESENCE_UNKNOWN: return "unknown";
+	default:               return "unknown";
 	}
 }
 
@@ -150,6 +164,10 @@ done:
 
 	contact_set_presence(pres->contact, status);
 
+	/* Update our internal status and timestamp */
+	pres->status = status;
+	pres->last_notify_time = time(NULL);
+
 	if (pres->shutdown)
 		mem_deref(pres);
 }
@@ -183,6 +201,7 @@ static void close_handler(int err, const struct sip_msg *msg,
 
 	tmr_start(&pres->tmr, wait * 1000, tmr_handler, pres);
 
+	pres->status = PRESENCE_UNKNOWN;
 	contact_set_presence(pres->contact, PRESENCE_UNKNOWN);
 }
 
@@ -270,6 +289,7 @@ static int presence_alloc(struct contact *contact)
 
 	pres->status  = PRESENCE_UNKNOWN;
 	pres->contact = mem_ref(contact);
+	pres->last_notify_time = 0;  /* Initialize to 0 (no NOTIFY received yet) */
 
 	tmr_init(&pres->tmr);
 	tmr_start(&pres->tmr, 1000, tmr_handler, pres);
@@ -318,6 +338,37 @@ static void contact_handler(struct contact *contact,
 }
 
 
+/* Command handler: output all contacts with presence status and timestamps */
+static int cmd_presence_ts(struct re_printf *pf, void *arg)
+{
+	struct le *le;
+	int err = 0;
+
+	(void)arg;
+
+	err |= re_hprintf(pf, "Presence status with timestamps:\n");
+
+	for (le = presencel.head; le; le = le->next) {
+		struct presence *pres = le->data;
+		const char *uri = contact_uri(pres->contact);
+		/* Use pres->status which is updated synchronously with last_notify_time in notify_handler() */
+		const char *status_str = presence_status_str(pres->status);
+
+		err |= re_hprintf(pf, "  %s|%s|%ld\n", 
+		                  uri, 
+		                  status_str, 
+		                  (long)pres->last_notify_time);
+	}
+
+	return err;
+}
+
+
+static const struct cmd cmdv[] = {
+	{"presence_ts", 0, 0, "Show presence status with timestamps", cmd_presence_ts},
+};
+
+
 int subscriber_init(void)
 {
 	struct contacts *contacts = baresip_contacts();
@@ -343,12 +394,16 @@ int subscriber_init(void)
 
 	contacts_enable_presence(contacts, true);
 
+	/* Register command to output presence with timestamps */
+	err |= cmd_register(baresip_commands(), cmdv, RE_ARRAY_SIZE(cmdv));
+
 	return err;
 }
 
 
 void subscriber_close(void)
 {
+	cmd_unregister(baresip_commands(), cmdv);
 	contact_set_update_handler(baresip_contacts(), NULL, NULL);
 	list_flush(&presencel);
 }
@@ -380,4 +435,30 @@ void subscriber_close_all(void)
 		else
 			mem_deref(pres);
 	}
+}
+
+
+/* Get presence subscriber by contact URI */
+static struct presence *get_presence_by_contact(const char *uri)
+{
+	struct le *le;
+
+	for (le = presencel.head; le; le = le->next) {
+		struct presence *pres = le->data;
+		const char *contact_uri_str = contact_uri(pres->contact);
+		
+		if (0 == str_casecmp(contact_uri_str, uri)) {
+			return pres;
+		}
+	}
+	
+	return NULL;
+}
+
+
+/* Get last NOTIFY timestamp for a contact (not currently used, but kept for potential future use) */
+static time_t subscriber_get_last_notify_time(const char *uri)
+{
+	struct presence *pres = get_presence_by_contact(uri);
+	return pres ? pres->last_notify_time : 0;
 }

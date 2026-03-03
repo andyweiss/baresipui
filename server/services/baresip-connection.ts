@@ -260,6 +260,7 @@ export class BaresipConnection {
     this.contactsPollingInterval = setInterval(() => {
       if (this.isConnected()) {
         this.sendCommand('contacts');
+        this.sendCommand('presence_ts');  // Get presence timestamps from baresip
         //this.sendCommand('uastat'); // user agent statistics
       //this.sendCommand('listcalls');
       //this.sendCommand('callstat');  // Query active calls on startup

@@ -20,6 +20,7 @@ export interface Contact {
   status: string;
   presence: string;
   assignedAccount?: string;
+  lastSeen?: number;
 }
 
 export interface ContactConfig {
