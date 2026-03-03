@@ -1,7 +1,7 @@
 import net from 'node:net';
 import { createNetstring } from '../utils/netstring';
 import { stateManager } from './state-manager';
-import { parseBaresipEvent, parseGetRtcpStatsResponse_exported } from './baresip-parser';
+import { parseBaresipEvent } from './baresip-parser';
 import { getAutoConnectConfigManager } from './autoconnect-config';
 
 export class BaresipConnection {

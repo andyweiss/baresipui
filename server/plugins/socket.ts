@@ -18,7 +18,8 @@ export default defineNitroPlugin((nitroApp: NitroApp) => {
           methods: ['GET', 'POST']
         },
         path: '/socket.io/',
-        transports: ['websocket', 'polling']
+        transports: ['polling'],
+        allowUpgrades: false
       });
 
       io.on('connection', (socket) => {

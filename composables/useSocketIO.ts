@@ -52,7 +52,8 @@ export const useSocketIO = () => {
     // Connect to Socket.IO on same port as Nuxt (3000)
     socket.value = io({
       path: '/socket.io/',
-      transports: ['polling', 'websocket']
+      transports: ['polling'],
+      upgrade: false
     });
 
     socket.value.on('connect', () => {

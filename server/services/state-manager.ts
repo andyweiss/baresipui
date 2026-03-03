@@ -12,6 +12,7 @@ export class StateManager {
   private autoConnectConfig = new Map<string, ContactConfig>();
   private contactPresence = new Map<string, string>();
   private contactLastSeen = new Map<string, number>(); // Track last seen timestamp
+  private contactPresenceOverride = new Map<string, number>(); // Timestamp when presence was manually overridden
   private activeCalls = new Map<string, CallInfo>(); // Track all active calls
   private audioMeters = new Map<string, AudioMeter>(); // Track audio levels per account
   private wsClients = new Set<any>();
@@ -150,6 +151,36 @@ export class StateManager {
     if (updateLastSeen && presence !== 'unknown') {
       this.contactLastSeen.set(contact, Date.now());
     }
+  }
+
+  // Manually override presence (e.g. due to call failure)
+  setContactPresenceOverride(contact: string, presence: string): void {
+    const now = Date.now();
+    this.contactPresence.set(contact, presence);
+    this.contactPresenceOverride.set(contact, now);
+  }
+
+  // Check if presence was manually overridden 
+  // Override blocks old NOTIFYs (before the error), but new NOTIFYs are always accepted
+  hasContactPresenceOverride(contact: string, baresipTimestamp: number): boolean {
+    const overrideTime = this.contactPresenceOverride.get(contact);
+    if (!overrideTime) return false;
+    
+    // If baresip has NO timestamp, override stays active
+    if (!baresipTimestamp || baresipTimestamp === 0) {
+      return true;
+    }
+    
+    const baresipMs = baresipTimestamp * 1000;
+    
+    // If baresip has NOTIFY AFTER the override was set → new presence info → clear override
+    if (baresipMs > overrideTime) {
+      this.contactPresenceOverride.delete(contact);
+      return false;
+    }
+    
+    // NOTIFY is older than override → block it, keep offline status
+    return true;
   }
 
   // Set lastSeen timestamp directly (from presence_ts command)

@@ -378,6 +378,12 @@ function parsePresenceTimestamps(data: string, stateManager: StateManager): void
       const status = match[2].toLowerCase();
       const timestamp = parseInt(match[3], 10);
       
+      // Check if contact has manual override that's newer than baresip data
+      if (stateManager.hasContactPresenceOverride(contact, timestamp)) {
+        console.log(`📌 ${contact}: Skipping update - manual override active (baresip timestamp: ${timestamp})`);
+        continue; // Don't overwrite manual status
+      }
+      
       // Get previous status for auto-connect detection
       const previousPresence = stateManager.getContactPresence(contact);
       
@@ -632,10 +638,6 @@ function parseGetRtcpStatsResponse(data: string, stateManager: StateManager): vo
   } catch (error) {
     console.debug('[parseGetRtcpStatsResponse] Error:', error);
   }
-}
-
-export function parseGetRtcpStatsResponse_exported(data: string, stateManager: StateManager): void {
-  parseGetRtcpStatsResponse(data, stateManager);
 }
 
 function parseCallsResponse(data: string, stateManager: StateManager, autoReset: boolean = false): void {
@@ -910,6 +912,11 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
       
       if (uri) {
+        // Check if this was an auto-connect call
+        const account = stateManager.getAccount(uri);
+        const wasAutoConnectCall = account && account.autoConnectContact;
+        const autoConnectContact = account?.autoConnectContact;
+        
         // Remove call from tracking
         if (jsonEvent.id) {
           const call = stateManager.getCall(jsonEvent.id);
@@ -944,6 +951,56 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           callId: undefined
         });
         
+        // Update contact presence based on call end reason for auto-connect calls
+        let skipReconnect = false;
+        
+        if (wasAutoConnectCall && autoConnectContact) {
+          const reason = (jsonEvent.param || '').toLowerCase();
+          
+          // Reasons that indicate the contact is definitely offline
+          const offlineReasons = [
+            'rtp stream error',      // RTP timeout - contact disconnected
+            'connection timed out',  // Network timeout
+            '408 request timeout',   // SIP timeout
+            'request timeout',       // SIP timeout (without code)
+            '503 service unavailable', // Service down
+            'service unavailable',   // Service down (without code)
+            '480 temporarily unavailable', // Temporarily not available
+            'temporarily unavailable' // Temporarily not available (without code)
+          ];
+          
+          // Reasons that indicate registration problems with our account
+          const registrationReasons = [
+            'not registered',
+            '403 forbidden',
+            'forbidden',
+            '401 unauthorized',
+            'unauthorized'
+          ];
+          
+          // Check if call ended due to offline-indicating reason
+          const isOfflineReason = offlineReasons.some(r => reason.includes(r));
+          const isRegistrationError = registrationReasons.some(r => reason.includes(r));
+          
+          if (isOfflineReason || isRegistrationError) {
+            if (isOfflineReason) {
+              console.log(`🔴 Auto-connect call ended with offline reason: "${jsonEvent.param}" - setting ${autoConnectContact} to offline, skip reconnect`);
+            } else {
+              console.log(`🔴 Auto-connect call failed - registration error: "${jsonEvent.param}" - setting ${autoConnectContact} to offline, skip reconnect`);
+            }
+            
+            // Use override to prevent presence_ts from overwriting with old status
+            stateManager.setContactPresenceOverride(autoConnectContact, 'offline');
+            skipReconnect = true; // Don't reconnect immediately
+            
+            // Broadcast contact update
+            stateManager.broadcast({
+              type: 'contactsUpdate',
+              contacts: stateManager.getContacts()
+            });
+          }
+        }
+        
         // Reset to "Idle" after 30 seconds
         setTimeout(() => {
           const account = stateManager.getAccount(uri);
@@ -953,8 +1010,10 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           }
         }, 30000);
         
-        // Immediately reconnect if auto-connect is configured
-        checkAutoConnectForAccount(uri, stateManager);
+        // Reconnect if auto-connect is configured (unless skipReconnect is set)
+        if (!skipReconnect) {
+          checkAutoConnectForAccount(uri, stateManager);
+        }
       }
     }
   }
@@ -965,8 +1024,6 @@ function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
   // NEW JSON Format: RTCP_STATS: {...full JSON...}
   // SHORT Format: rtcpstats_periodic: call_id=xxx rx_packets=123 tx_packets=456 rx_bitrate_kbps=0 tx_bitrate_kbps=1 rx_dropout=false rx_dropout_total=0
   // OLD Format: "RTCP_STATS: call_id=xxx;media=audio;packets_rx=123;..."
-  
-  console.log('🔍 parseRtcpSummaryLine called with:', line.substring(0, 100));
   
   if (!line.includes('RTCP') && !line.includes('rtcpstats')) return;
   
@@ -1445,7 +1502,10 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
   const accounts = stateManager.getAccounts();
   
   for (const account of accounts) {
-    if (account.autoConnectContact === contact && account.registered && account.callStatus === 'Idle') {
+    // Check if account has active call or is ringing (don't check callStatus === 'Idle')
+    const hasActiveCall = account.callId || account.callStatus === 'In Call' || account.callStatus === 'Ringing';
+    
+    if (account.autoConnectContact === contact && account.registered && !hasActiveCall) {
       // Check if contact is online (not busy - we want only one call per contact)
       const contactPresence = stateManager.getContactPresence(contact);
       if (contactPresence === 'online') {
@@ -1455,8 +1515,10 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
         autoConnectQueue.push(() => {
           // Double-check status before executing (might have changed while in queue)
           const currentAccount = stateManager.getAccount(account.uri);
-          if (!currentAccount || currentAccount.callStatus !== 'Idle') {
-            console.log(`Skipping auto-connect for ${account.uri} - no longer idle`);
+          const currentlyBusy = currentAccount && (currentAccount.callId || currentAccount.callStatus === 'In Call' || currentAccount.callStatus === 'Ringing');
+          
+          if (!currentAccount || currentlyBusy) {
+            console.log(`Skipping auto-connect for ${account.uri} - account busy or not found`);
             return;
           }
           
@@ -1508,8 +1570,11 @@ function checkAutoConnectForAccount(accountUri: string, stateManager: StateManag
     console.log(`  -> Account not registered`);
     return;
   }
-  if (account.callStatus !== 'Idle') {
-    console.log(`  -> Account not idle (status: ${account.callStatus})`);
+  
+  // Check if account has an active call (callId is set) or is ringing
+  // Don't check callStatus === 'Idle' because it shows end reason for 30s after call
+  if (account.callId || account.callStatus === 'In Call' || account.callStatus === 'Ringing') {
+    console.log(`  -> Account busy (status: ${account.callStatus}, callId: ${account.callId})`);
     return;
   }
 
