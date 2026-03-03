@@ -296,10 +296,11 @@ const hangupButtonClass = computed(() => {
 
 const callStatusColor = computed(() => {
   const status = props.account.callStatus || 'Idle';
-  if (status === 'In Call') return 'text-green-400'; // In Call = green
-  if (status === 'Idle') return props.account.registered ? 'text-blue-400' : 'text-gray-400'; // Idle: blue if registered, else gray
+  if (status === 'In Call') return 'text-green-400';
+  if (status === 'Idle') return props.account.registered ? 'text-blue-400' : 'text-gray-400';
   if (status === 'Ringing') return 'text-orange-400';
-  return 'text-gray-400';
+  // All other statuses (errors/call end reasons) = red
+  return 'text-red-400';
 });
 
 const getRightStatusText = () => {

@@ -164,7 +164,7 @@ export class StateManager {
     const current = this.accounts.get(normUri) || {
       uri: normUri,
       registered: false,
-      callStatus: 'Idle' as const,
+      callStatus: 'Idle',
       autoConnectStatus: 'Off',
       lastEvent: Date.now(),
       configured: true

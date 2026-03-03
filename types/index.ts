@@ -1,7 +1,7 @@
 export interface Account {
   uri: string;
   registered: boolean;
-  callStatus: 'Idle' | 'Ringing' | 'In Call';
+  callStatus: string; // 'Idle', 'Ringing', 'In Call', or SIP end reason like "404 Not Found"
   autoConnectStatus: string;
   lastEvent: number;
   configured: boolean;

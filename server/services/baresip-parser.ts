@@ -386,7 +386,7 @@ function parsePresenceTimestamps(data: string, stateManager: StateManager): void
         const lastSeenMs = timestamp * 1000;
         const age = Math.floor((Date.now() - lastSeenMs) / 1000);
         
-        const PRESENCE_TIMEOUT_SEC = 300; // 5 minutes
+        const PRESENCE_TIMEOUT_SEC = 600; // 10 minutes
         let effectiveStatus = status;
         
         if (age > PRESENCE_TIMEOUT_SEC) {
@@ -927,11 +927,31 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           }
         }
         
+        // Use call end reason from param (e.g. "404 Not Found", "486 Busy Here")
+        // Extract only the text part, remove SIP code
+        let callStatus = jsonEvent.param || 'Ended';
+        
+        // Remove SIP status code (e.g. "404 " from "404 Not Found")
+        callStatus = callStatus.replace(/^\d{3}\s+/, '');
+        // If nothing left after removing code, use original or "Ended"
+        if (!callStatus.trim()) {
+          callStatus = jsonEvent.param || 'Ended';
+        }
+        
         stateManager.updateAccountStatus(uri, { 
-          callStatus: 'Idle',
+          callStatus: callStatus,
           autoConnectStatus: 'Off',
           callId: undefined
         });
+        
+        // Reset to "Idle" after 30 seconds
+        setTimeout(() => {
+          const account = stateManager.getAccount(uri);
+          // Only reset if still showing this status and no new call
+          if (account && account.callStatus === callStatus && !account.callId) {
+            stateManager.updateAccountStatus(uri, { callStatus: 'Idle' });
+          }
+        }, 30000);
         
         // Immediately reconnect if auto-connect is configured
         checkAutoConnectForAccount(uri, stateManager);
