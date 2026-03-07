@@ -5,12 +5,9 @@ import type { NitroApp } from 'nitropack';
 let io: SocketIOServer | null = null;
 
 export default defineNitroPlugin((nitroApp: NitroApp) => {
-  console.log('🔌 Socket.IO Plugin: Initializing...');
-
   nitroApp.hooks.hook('request', async (event) => {
     // Initialize Socket.IO server on first request
     if (!io && event.node.req.socket?.server) {
-      console.log('🚀 Socket.IO Plugin: Creating Socket.IO server...');
       
       io = new SocketIOServer(event.node.req.socket.server, {
         cors: {
@@ -18,41 +15,34 @@ export default defineNitroPlugin((nitroApp: NitroApp) => {
           methods: ['GET', 'POST']
         },
         path: '/socket.io/',
-        transports: ['polling'],
-        allowUpgrades: false
+        transports: ['websocket', 'polling'],
+        allowUpgrades: true
       });
 
       io.on('connection', (socket) => {
-        console.log('✅ Socket.IO: Client connected:', socket.id);
-        
         // Send initial data
         const initData = stateManager.getInitData();
-        
         socket.emit('message', initData);
-        console.log('📤 Sent init data to client:', socket.id);
 
         // Store socket for broadcasting
         stateManager.addSocketClient(socket);
 
-        socket.on('disconnect', (reason) => {
-          console.log('❌ Socket.IO: Client disconnected:', socket.id, 'Reason:', reason);
+        socket.on('disconnect', () => {
           stateManager.removeSocketClient(socket);
         });
 
         socket.on('error', (error) => {
-          console.error('❌ Socket.IO: Socket error:', socket.id, error);
+          console.error('Socket.IO: Socket error:', socket.id, error);
         });
 
-        socket.on('command', async (data) => {
-          console.log('📨 Received command from client:', data);
+        socket.on('command', async () => {
+          // Commands handled via HTTP API
         });
       });
 
       io.engine.on('connection_error', (err) => {
-        console.error('❌ Socket.IO Engine: Connection error:', err);
+        console.error('Socket.IO Engine: Connection error:', err);
       });
-
-      console.log('✅ Socket.IO server initialized');
     }
   });
 });

@@ -2,7 +2,6 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { io, Socket } from 'socket.io-client';
 
 export const useSocketIO = () => {
-    // Robuste Sortierfunktion: numerisch nach SIP-Nummer, sonst lexikografisch
     function extractNumber(uri: string): number | null {
       if (!uri) return null;
       const match = uri.replace(/^sip:/, '').match(/(\d+)/);
@@ -26,7 +25,6 @@ export const useSocketIO = () => {
       return (a.uri || '').localeCompare(b.uri || '');
     }
 
-    // Accounts ergänzen/aktualisieren und sortieren
     function mergeAndSortAccounts(incoming: any[]) {
       for (const acc of incoming) {
         const idx = accounts.value.findIndex(a => a.uri === acc.uri);
@@ -39,21 +37,17 @@ export const useSocketIO = () => {
       accounts.value.sort(accountSortFn);
     }
   const socket = ref<Socket | null>(null);
-  const connected = ref(false); // Socket.IO connection to UI server
-  const baresipConnected = ref(false); // TCP connection to Baresip
+  const connected = ref(false);             // Socket.IO connection to UI server
+  const baresipConnected = ref(false);      // TCP connection to Baresip
   const accounts = ref<any[]>([]);
   const contacts = ref<any[]>([]);
   const calls = ref<any[]>([]);
   const logs = ref<any[]>([]);
 
   const connect = () => {
-    console.log('🔌 Socket.IO: Connecting...');
-    
-    // Connect to Socket.IO on same port as Nuxt (3000)
     socket.value = io({
       path: '/socket.io/',
-      transports: ['polling'],
-      upgrade: false
+      transports: ['websocket', 'polling']
     });
 
     socket.value.on('connect', () => {
@@ -114,16 +108,6 @@ export const useSocketIO = () => {
           contact.status = data.status;
         }
       } else if (data.type === 'contactsUpdate') {
-        console.log('📡 Socket.IO: Received contactsUpdate', { count: (data.contacts || []).length });
-        // Log first 3 contacts for debugging
-        if (data.contacts && data.contacts.length > 0) {
-          const sample = data.contacts.slice(0, 3).map((c: any) => ({
-            contact: c.contact,
-            presence: c.presence,
-            lastSeen: c.lastSeen ? `${Math.floor((Date.now() - c.lastSeen) / 1000)}s ago` : 'never'
-          }));
-          console.log('  Sample contacts:', sample);
-        }
         contacts.value = data.contacts || [];
       } else if (data.type === 'callAdded' || data.type === 'callUpdated') {
         const callIndex = calls.value.findIndex(c => c.callId === data.data.callId);
@@ -144,7 +128,7 @@ export const useSocketIO = () => {
     });
 
     socket.value.on('error', (error: any) => {
-      console.error('❌ Socket.IO: Error', error);
+      console.error('Socket.IO Error:', error);
     });
   };
 
@@ -177,7 +161,6 @@ export const useSocketIO = () => {
   };
 
   onMounted(() => {
-    console.log('🚀 Socket.IO: Component mounted, connecting...');
     connect();
   });
 

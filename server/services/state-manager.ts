@@ -79,7 +79,6 @@ export class StateManager {
       }
       return (a.uri || '').localeCompare(b.uri || '');
     });
-    console.log(`StateManager.getAccounts() called - returning ${accounts.length} accounts:`, accounts.map(a => a.uri));
     return accounts;
   }
 
@@ -202,9 +201,6 @@ export class StateManager {
     };
     const updated = { ...current, ...updates, lastEvent: Date.now() };
     this.accounts.set(normUri, updated);
-    console.log(`Account updated: ${normUri}`, updated);
-    console.log(`Total accounts in state: ${this.accounts.size}`);
-    console.log(`WebSocket clients connected: ${this.wsClients.size}`);
     this.broadcast({
       type: 'accountStatus',
       data: updated
@@ -246,8 +242,6 @@ export class StateManager {
   broadcast(data: any): void {
     const message = JSON.stringify(data);
     
-    console.log(`📢 Broadcasting to ${this.wsClients.size} WS clients and ${this.socketClients.size} Socket.IO clients:`, data.type);
-    
     // Broadcast to WebSocket clients
     this.wsClients.forEach(client => {
       try {
@@ -280,7 +274,6 @@ export class StateManager {
 
   getInitData() {
     const accounts = this.getAccounts();
-    console.log(`DEBUG: getInitData - returning ${accounts.length} accounts:`, accounts);
     return {
       type: 'init',
       accounts: accounts,
