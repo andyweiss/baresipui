@@ -3,6 +3,7 @@ import { createNetstring } from '../utils/netstring';
 import { stateManager } from './state-manager';
 import { parseBaresipEvent } from './baresip-parser';
 import { getAutoConnectConfigManager } from './autoconnect-config';
+import { getBaresipLogger } from '../utils/logger';
 
 export class BaresipConnection {
     // Parser for 'contacts' response
@@ -207,6 +208,14 @@ export class BaresipConnection {
       this.reconnectAttempts = 0;
       stateManager.setBaresipConnected(true);
 
+      // Log successful connection
+      try {
+        const logger = getBaresipLogger();
+        logger.addLog('info', 'tcp-socket', `Connected to baresip at ${this.host}:${this.port}`);
+      } catch (e) {
+        // Logger might not be ready yet
+      }
+
       this.sendCommand('contacts');
       this.sendCommand('listcalls');
       this.sendCommand('callstat');  // Query active calls on startup
@@ -236,11 +245,28 @@ export class BaresipConnection {
 
     this.client.on('error', (err) => {
       console.error('Baresip connection error:', err.message);
+      
+      // Log TCP error
+      try {
+        const logger = getBaresipLogger();
+        logger.addLog('error', 'tcp-socket', `Connection error: ${err.message}`);
+      } catch (e) {
+        // Logger might not be available
+      }
     });
 
     this.client.on('close', () => {
       console.log('Baresip connection closed');
       stateManager.setBaresipConnected(false);
+      
+      // Log TCP disconnect
+      try {
+        const logger = getBaresipLogger();
+        logger.addLog('warn', 'tcp-socket', 'Disconnected from baresip');
+      } catch (e) {
+        // Logger might not be available
+      }
+      
       this.stopContactsPolling();
       this.stopCallStatsPolling();
       this.scheduleReconnect();
@@ -381,6 +407,16 @@ export class BaresipConnection {
       
       this.client.write(netstring);
       console.log(`Sent JSON command: ${jsonString} (as netstring: ${netstring})`);
+      
+      // Log important commands
+      if (!['contacts', 'presence_ts', 'getrtcpstats'].includes(command)) {
+        try {
+          const logger = getBaresipLogger();
+          logger.addLog('debug', 'tcp-socket', `Sent command: ${command}${params ? ' ' + params : ''}`);
+        } catch (e) {
+          // Logger might not be available
+        }
+      }
     } else {
       console.log(`Cannot send command - client not connected: ${command}`);
     }

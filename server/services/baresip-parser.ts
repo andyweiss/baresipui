@@ -67,12 +67,11 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
     
     // Check if this is getrtcpstats JSON response
     if (data.includes('call_id') && data.startsWith('[')) {
-      console.log('📊 Detected getrtcpstats JSON response');
       try {
         parseGetRtcpStatsResponse(data, stateManager);
         return;
       } catch (e) {
-        console.log('📊 Error parsing getrtcpstats:', e);
+        // Silently ignore parse errors
       }
     }
     
@@ -245,7 +244,6 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
     
     
 function parseRegistrationInfo(data: string, stateManager: StateManager): void {
-  console.log('Parsing registration info...');
   const lines = data.split('\n');
 
   for (const line of lines) {
@@ -320,7 +318,6 @@ function parseRegistrationInfo(data: string, stateManager: StateManager): void {
 }
 
 function parseContactsFromResponse(data: string, stateManager: StateManager): void {
-  console.log('Parsing contacts from response...');
   const lines = data.split('\n');
 
   for (const line of lines) {
@@ -366,7 +363,6 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
 }
 
 function parsePresenceTimestamps(data: string, stateManager: StateManager): void {
-  console.log('📅 Parsing presence timestamps from baresip...');
   const lines = data.split('\n');
 
   let parsedCount = 0;
@@ -380,7 +376,6 @@ function parsePresenceTimestamps(data: string, stateManager: StateManager): void
       
       // Check if contact has manual override that's newer than baresip data
       if (stateManager.hasContactPresenceOverride(contact, timestamp)) {
-        console.log(`📌 ${contact}: Skipping update - manual override active (baresip timestamp: ${timestamp})`);
         continue; // Don't overwrite manual status
       }
       
@@ -398,10 +393,6 @@ function parsePresenceTimestamps(data: string, stateManager: StateManager): void
         if (age > PRESENCE_TIMEOUT_SEC) {
           // No NOTIFY for > 30s → contact lost connectivity
           effectiveStatus = 'unknown';
-          console.log(`📅 ${contact}: Last NOTIFY ${age}s ago → unknown (connectivity lost)`);
-        } else {
-          // Fresh NOTIFY
-          console.log(`📅 ${contact}: status=${status}, last NOTIFY ${age}s ago`);
         }
         
         // Update status
@@ -412,20 +403,16 @@ function parsePresenceTimestamps(data: string, stateManager: StateManager): void
         
         // Trigger auto-connect if contact changed to online
         if (effectiveStatus === 'online' && previousPresence !== 'online') {
-          console.log(`Contact ${contact} changed to online - checking auto-connect`);
           checkAutoConnectForContact(contact, stateManager);
         }
       } else {
         // No NOTIFY received yet (timestamp=0)
-        console.log(`📅 ${contact}: No NOTIFY received yet → unknown`);
         stateManager.setContactPresence(contact, 'unknown', false);
       }
     }
   }
   
   if (parsedCount > 0) {
-    console.log(`📅 Updated presence for ${parsedCount} contacts`);
-    
     // Broadcast updated contacts
     stateManager.broadcast({
       type: 'contactsUpdate',
@@ -517,7 +504,6 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   // Fallback: use first local codec if no common one found
   if (!activeCodec && localCodecs.length > 0) {
     activeCodec = localCodecs[0];
-    console.log('📊 No common codec found, using first local codec:', activeCodec);
   }
 
   // Extract RTCP_STATS line (JSON format) - but parseRtcpSummaryLine handles this now
@@ -631,9 +617,8 @@ function parseGetRtcpStatsResponse(data: string, stateManager: StateManager): vo
       call.audioTxStats.lost = stats.rtcp_lost_tx ?? 0;
       call.audioTxStats.bitrate_kbps = stats.tx_bitrate_kbps ?? 0;
       call.audioTxStats.jitter = stats.rtcp_jitter_tx_ms ?? 0;
-      
+
       stateManager.broadcast({ type: 'callUpdated', data: call });
-      console.log(`📊 Updated call ${callId} with RTCP stats`);
     }
   } catch (error) {
     console.debug('[parseGetRtcpStatsResponse] Error:', error);
@@ -748,29 +733,15 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
 function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): void {
   const timestamp = Date.now();
 
-  console.log(`JSON Event: ${JSON.stringify(jsonEvent)}`);
-  console.log(`DEBUG: Event check - event: ${jsonEvent.event}, class: ${jsonEvent.class}, type: ${jsonEvent.type}`);
-
-  // Add log entry
-  stateManager.addLog('event', `${jsonEvent.class}:${jsonEvent.type}`, jsonEvent);
-
-  // Don't broadcast VU_TX_REPORT and similar events as logs
-  // These are handled internally and would clutter the log view
+  // Add log entry (skip VU_TX_REPORT and VU_RX_REPORT to avoid clutter)
   if (jsonEvent.type !== 'VU_TX_REPORT' && jsonEvent.type !== 'VU_RX_REPORT') {
-    stateManager.broadcast({
-      type: 'log',
-      timestamp,
-      message: JSON.stringify(jsonEvent)
-    });
+    stateManager.addLog('event', `${jsonEvent.class}:${jsonEvent.type}`, jsonEvent);
   }
 
   if (jsonEvent.event && jsonEvent.class === 'ua') {
-    console.log('DEBUG: Event condition matched - processing UA event');
     if (jsonEvent.type === 'REGISTER_OK') {
       const uri = jsonEvent.accountaor;
-      console.log(`DEBUG: Processing REGISTER_OK for URI: ${uri}`);
       if (uri) {
-        console.log(`DEBUG: Calling updateAccountStatus for ${uri}`);
         stateManager.updateAccountStatus(uri, {
           registered: true,
           registrationError: undefined
@@ -1198,6 +1169,57 @@ function parseCallStatLine(line: string, stateManager: StateManager): void {
   }
 }
 
+/**
+ * Creates a LogEntry object from a text line
+ */
+function createLogEntryFromLine(line: string, timestamp: number): any {
+  let level: 'debug' | 'info' | 'warn' | 'error' = 'info';
+  let source = 'baresip';
+  let message = line;
+  let accountUri: string | undefined;
+
+  // Pattern: "module: message"
+  const moduleMatch = line.match(/^([a-z_]+):\s+(.+)$/i);
+  if (moduleMatch) {
+    source = moduleMatch[1];
+    message = moduleMatch[2];
+  }
+
+  // Pattern: "DEBUG: message" or "INFO: message"
+  const levelMatch = line.match(/^(DEBUG|INFO|WARN|ERROR|WARNING):\s+(.+)$/i);
+  if (levelMatch) {
+    const levelStr = levelMatch[1].toLowerCase();
+    level = levelStr === 'warning' ? 'warn' : levelStr as 'debug' | 'info' | 'warn' | 'error';
+    message = levelMatch[2];
+  }
+
+  // Pattern: "<account@domain> message"
+  const accountMatch = message.match(/<([^>]+@[^>]+)>/);
+  if (accountMatch) {
+    accountUri = accountMatch[1];
+  }
+
+  // Detect error patterns
+  if (message.toLowerCase().includes('error') || 
+      message.toLowerCase().includes('failed') ||
+      message.toLowerCase().includes('cannot')) {
+    level = 'error';
+  } else if (message.toLowerCase().includes('warning') || 
+             message.toLowerCase().includes('warn')) {
+    level = 'warn';
+  } else if (message.toLowerCase().includes('debug')) {
+    level = 'debug';
+  }
+
+  return {
+    timestamp,
+    level,
+    source,
+    message: message.trim(),
+    accountUri
+  };
+}
+
 function handleTextLine(line: string, stateManager: StateManager): void {
   const timestamp = Date.now();
 
@@ -1228,8 +1250,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
 
   // Parse getrtcpstats JSON response (JSON array or objects with call_id field)
   if (line.includes('call_id') && (line.includes('[') || line.includes('{') || line.includes('rtp_rx_packets'))) {
-    // This is likely a getrtcpstats JSON response line
-    console.log('📊 getrtcpstats line detected:', line.substring(0, 100));
     parseGetRtcpStatsResponse(line, stateManager);
     return;
   }
@@ -1244,14 +1264,8 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     return; // Don't broadcast as log
   }
 
-  // DEBUG: Check if enhanced_presence messages arrive here
-  if (line.indexOf('enhanced_presence:') !== -1) {
-    console.log('DEBUG: Enhanced presence line detected:', line);
-  }
-  
   // Handle PRESENCE_EVENT messages from enhanced_presence module
   if (line.indexOf('PRESENCE_EVENT:') !== -1) {
-    console.log('DEBUG: PRESENCE_EVENT detected:', line);
     const parts = line.split(':');
     if (parts.length >= 3) {
       const contact = parts[1].replace('sip:', '').trim();
@@ -1268,7 +1282,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         mappedStatus = 'away';
       }
       
-      console.log(`PRESENCE_EVENT parsed: ${contact} -> ${mappedStatus}`);
       stateManager.setContactPresence(contact, mappedStatus, true);
 
       stateManager.broadcast({
@@ -1286,10 +1299,12 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     }
   }
 
+  // Create a proper LogEntry object and broadcast it
+  const logEntry = createLogEntryFromLine(line, timestamp);
+  
   stateManager.broadcast({
     type: 'log',
-    timestamp,
-    message: line
+    data: logEntry
   });
 
   if (line.includes('registered successfully')) {
@@ -1596,7 +1611,6 @@ function checkAutoConnectForAccount(accountUri: string, stateManager: StateManag
  * @param stateManager The state manager instance
  */
 function checkAutoConnectForContact(contact: string, stateManager: StateManager): void {
-  console.log(`checkAutoConnectForContact called for contact ${contact}`);
   const accounts = stateManager.getAccounts();
   // Normalize contact URI (remove sip: prefix for comparison)
   const normalizedContact = contact.replace('sip:', '').toLowerCase().trim();

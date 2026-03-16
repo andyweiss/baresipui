@@ -1,10 +1,8 @@
 <template>
-  <div class="min-h-screen bg-gray-900">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div class="bg-gray-800 rounded-lg shadow-lg p-6">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-2xl font-bold text-white">Baresip Logs</h2>
-          <div class="flex gap-2 items-center">
+  <div class="min-h-screen bg-gray-900 px-4 pt-4 pb-0">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-2xl font-bold text-white">Baresip Logs</h2>
+      <div class="flex gap-2 items-center">
             <span v-if="!autoScroll && logs.length > 5000" class="text-xs text-yellow-400 mr-2">
               ⚠️ Buffer paused ({{ logs.length }} logs)
             </span>
@@ -28,7 +26,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div>
             <label class="block text-xs text-gray-400 uppercase tracking-wide mb-1">
               Log Level
@@ -44,6 +42,29 @@
                 <option value="info" class="bg-gray-800">Info</option>
                 <option value="warn" class="bg-gray-800">Warnings</option>
                 <option value="error" class="bg-gray-800">Errors</option>
+              </select>
+              <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                  <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 uppercase tracking-wide mb-1">
+              Source
+            </label>
+            <div class="relative">
+              <select
+                v-model="filterSource"
+                class="w-full px-3 py-1.5 bg-gray-700 rounded text-sm text-white 
+                       focus:outline-none appearance-none cursor-pointer transition-colors hover:bg-gray-600"
+              >
+                <option value="" class="bg-gray-800">All Sources</option>
+                <option value="baresip" class="bg-gray-800">📦 Baresip</option>
+                <option value="tcp-socket" class="bg-gray-800">🔌 TCP Socket</option>
+                <option value="system" class="bg-gray-800">⚙️ System</option>
               </select>
               <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
                 <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
@@ -98,25 +119,30 @@
         <div 
           ref="logsContainer" 
           class="bg-gray-900 rounded border border-gray-700 overflow-y-auto font-mono text-xs"
-          style="height: calc(100vh - 400px); min-height: 400px;"
+          style="height: calc(100vh - 180px); min-height: 500px;"
         >
           <div 
             v-for="(log, index) in filteredLogs" 
             :key="`${log.timestamp}-${log.source}-${index}`"
             :data-index="index" 
-            class="px-4 py-2 border-l-2 hover:bg-gray-800 transition-colors"
+            class="px-4 py-2 border-l-4 hover:bg-gray-800 transition-colors"
             :class="logBorderColor(log.level || 'info')"
           >
-            <div class="flex flex-wrap gap-3 items-baseline">
-              <span class="text-gray-500 whitespace-nowrap text-xs">{{ formatTime(log.timestamp) }}</span>
+            <div class="flex flex-wrap gap-2 items-baseline">
+              <span class="text-gray-500 whitespace-nowrap text-xs font-mono">{{ formatTime(log.timestamp) }}</span>
               <span 
-                class="font-semibold whitespace-nowrap inline-block min-w-[3rem] text-xs"
+                class="font-bold whitespace-nowrap inline-block min-w-[3.5rem] text-xs px-1.5 py-0.5 rounded"
                 :class="logLevelColor(log.level || 'info')"
               >
                 {{ (log.level || 'info').toUpperCase() }}
               </span>
-              <span class="text-blue-400 whitespace-nowrap text-xs">{{ log.source || 'unknown' }}</span>
-              <span v-if="log.accountUri" class="text-purple-400 whitespace-nowrap text-xs">{{ log.accountUri }}</span>
+              <span 
+                class="whitespace-nowrap text-xs font-medium px-2 py-0.5 rounded"
+                :class="getSourceStyle(log.source).class"
+              >
+                {{ getSourceStyle(log.source).icon }} {{ log.source || 'unknown' }}
+              </span>
+              <span v-if="log.accountUri" class="text-purple-400 whitespace-nowrap text-xs bg-purple-900/30 px-2 py-0.5 rounded">{{ log.accountUri }}</span>
               <span class="text-gray-300 flex-1 break-words whitespace-pre-wrap text-xs leading-relaxed">{{ log.message || '' }}</span>
             </div>
           </div>
@@ -125,8 +151,6 @@
             No logs to display
           </div>
         </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -137,6 +161,7 @@ import type { LogEntry } from '~/server/services/baresip-logger';
 
 const logs = ref<LogEntry[]>([]);
 const filterLevel = ref('');
+const filterSource = ref('');
 const filterAccount = ref('');
 const searchQuery = ref('');
 const autoScroll = ref(true);
@@ -150,18 +175,6 @@ let isScrolling = false;
 let resizeObserver: ResizeObserver | null = null;
 let previousScrollHeight = 0;
 
-const checkIfUserScrolledUp = () => {
-  if (!logsContainer.value || isScrolling) return;
-  
-  const { scrollTop, scrollHeight, clientHeight } = logsContainer.value;
-  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-  
-  // Wenn mehr als 50px vom Ende entfernt, deaktiviere Auto-Scroll
-  if (distanceFromBottom > 50 && autoScroll.value) {
-    autoScroll.value = false;
-  }
-};
-
 const scrollToBottom = () => {
   if (!logsContainer.value) return;
   
@@ -174,11 +187,17 @@ const scrollToBottom = () => {
   });
 };
 
-// Debounced scroll handler
-let scrollTimeout: NodeJS.Timeout;
 const handleScroll = () => {
-  clearTimeout(scrollTimeout);
-  scrollTimeout = setTimeout(checkIfUserScrolledUp, 100);
+  if (!logsContainer.value || isScrolling) return;
+  
+  // Sofort prüfen ob User hochgescrollt hat
+  const { scrollTop, scrollHeight, clientHeight } = logsContainer.value;
+  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+  
+  // Wenn mehr als 20px vom Ende entfernt, deaktiviere Auto-Scroll sofort
+  if (distanceFromBottom > 20 && autoScroll.value) {
+    autoScroll.value = false;
+  }
 };
 
 const handleNewLog = (logData: LogEntry) => {
@@ -205,6 +224,10 @@ const filteredLogs = computed(() => {
 
   if (filterLevel.value) {
     filtered = filtered.filter(log => (log.level || '').toLowerCase() === filterLevel.value.toLowerCase());
+  }
+
+  if (filterSource.value) {
+    filtered = filtered.filter(log => (log.source || '').toLowerCase().includes(filterSource.value.toLowerCase()));
   }
 
   if (filterAccount.value) {
@@ -237,22 +260,29 @@ const filteredLogs = computed(() => {
 });
 
 onMounted(async () => {
+  console.log('🔌 Initializing Socket.IO connection...');
+  
   // Connect to Socket.IO for real-time logs
   socket.value = io({
     path: '/socket.io/',
-    transports: ['polling', 'websocket']
+    transports: ['websocket', 'polling']
+  });
+
+  socket.value.on('connect', () => {
+    console.log('✅ Socket.IO connected:', socket.value.id);
+  });
+
+  socket.value.on('connect_error', (error: any) => {
+    console.error('❌ Socket.IO connection error:', error);
+  });
+
+  socket.value.on('disconnect', (reason: string) => {
+    console.warn('⚠️ Socket.IO disconnected:', reason);
   });
 
   // Listen for 'log' event (emitted directly)
   socket.value.on('log', (data: LogEntry) => {
     handleNewLog(data);
-  });
-
-  // Also listen for 'message' event (backward compatibility)
-  socket.value.on('message', (data: any) => {
-    if (data.type === 'log' && data.data) {
-      handleNewLog(data.data);
-    }
   });
 
   socket.value.on('logsCleared', () => {
@@ -336,15 +366,13 @@ onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect();
   }
-  
-  clearTimeout(scrollTimeout);
 });
 
 // Watch: Nur für Auto-Scroll (wenn AN)
 watch(
   () => [filteredLogs.value.length, logUpdateTrigger.value],
   async () => {
-    if (autoScroll.value) {
+    if (autoScroll.value && !isScrolling) {
       await nextTick();
       scrollToBottom();
     }
@@ -369,11 +397,11 @@ const formatTime = (timestamp: number): string => {
 
 const logLevelColor = (level: string): string => {
   switch (level) {
-    case 'debug': return 'text-blue-400';
-    case 'info': return 'text-green-400';
-    case 'warn': return 'text-yellow-400';
-    case 'error': return 'text-red-400';
-    default: return 'text-gray-400';
+    case 'debug': return 'bg-blue-600/80 text-blue-100';
+    case 'info': return 'bg-green-600/80 text-green-100';
+    case 'warn': return 'bg-yellow-600/80 text-yellow-100';
+    case 'error': return 'bg-red-600/80 text-red-100';
+    default: return 'bg-gray-600/80 text-gray-100';
   }
 };
 
@@ -385,6 +413,28 @@ const logBorderColor = (level: string): string => {
     case 'error': return 'border-red-500';
     default: return 'border-gray-600';
   }
+};
+
+const getSourceStyle = (source: string): { icon: string; class: string } => {
+  if (!source) return { icon: '❓', class: 'bg-gray-700 text-gray-300' };
+  
+  // Baresip Container Logs
+  if (source === 'baresip' || source.startsWith('baresip')) {
+    return { icon: '📦', class: 'bg-blue-900/50 text-blue-300' };
+  }
+  
+  // TCP Socket Events
+  if (source === 'tcp-socket' || source.includes('socket')) {
+    return { icon: '🔌', class: 'bg-purple-900/50 text-purple-300' };
+  }
+  
+  // System/Internal Logs
+  if (source === 'system' || source === 'internal') {
+    return { icon: '⚙️', class: 'bg-orange-900/50 text-orange-300' };
+  }
+  
+  // Default für andere Sources (z.B. spezifische Module)
+  return { icon: '📝', class: 'bg-gray-700 text-gray-300' };
 };
 
 const toggleAutoScroll = () => {

@@ -15,21 +15,54 @@ export class BaresipLogger {
   private logBuffer: LogEntry[] = [];
   private maxBufferSize = 1000;
   private pendingLogLine = ''; // Für mehrzeilige Logs
+  private flushTimer: NodeJS.Timeout | null = null; // Timer zum Flushen von pending logs
 
   constructor(stateManager: StateManager) {
     this.stateManager = stateManager;
   }
 
   start(containerName: string = 'baresip'): void {
-    console.log(`📝 Starting baresip logger (RTC stats via TCP socket)`);
-    // RTC stats are now delivered via getrtcpstats command (TCP socket)
-    // This logger remains for general log collection if needed
+    try {
+      this.logProcess = spawn('docker', ['logs', '-f', '--tail', '100', containerName], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      this.logProcess.stdout?.on('data', (data: Buffer) => {
+        this.processLogData(data.toString(), 'stdout');
+      });
+
+      this.logProcess.stderr?.on('data', (data: Buffer) => {
+        this.processLogData(data.toString(), 'stderr');
+      });
+
+      this.logProcess.on('error', (err) => {
+        console.error('❌ Docker logs process error:', err.message);
+        this.addLog('error', 'system', `Failed to read container logs: ${err.message}`);
+      });
+
+      this.logProcess.on('close', (code) => {
+        if (code !== 0 && code !== null) {
+          this.addLog('warn', 'system', `Container logs stream closed with code ${code}`);
+        }
+      });
+
+      this.addLog('info', 'system', `Started monitoring container logs: ${containerName}`);
+    } catch (err: any) {
+      console.error('❌ Failed to start docker logs:', err.message);
+      this.addLog('error', 'system', `Failed to start container logger: ${err.message}`);
+    }
   }
 
   stop(): void {
+    // Cancel flush timer
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    
     // Process any pending log line before stopping
     if (this.pendingLogLine && this.logProcess) {
-      this.processLogEntry(this.pendingLogLine, 'stdout');
+      this.processLogEntry(this.pendingLogLine.trim(), 'stdout');
       this.pendingLogLine = '';
     }
     
@@ -42,44 +75,98 @@ export class BaresipLogger {
   private processLogData(data: string, stream: 'stdout' | 'stderr'): void {
     const lines = data.split('\n');
     
-    // Count how many rtcpstats lines we have
-    const rtcpCount = lines.filter(l => l.includes('rtcpstats_periodic: call_id')).length;
-    if (rtcpCount > 0) {
-      this.stateManager.broadcast({
-        type: 'debug',
-        data: {message: `📥 Got ${rtcpCount} rtcpstats lines in this block`}
-      });
+    // Cancel any pending flush timer
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
     }
 
     for (const line of lines) {
-      if (!line.trim()) continue;
+      if (!line.trim()) {
+        // Empty line might indicate end of a multi-line log
+        if (this.pendingLogLine) {
+          this.pendingLogLine += '\n';
+        }
+        continue;
+      }
       
       // Skip JSON event messages (they are handled by baresip-parser)
       if (line.trim().startsWith('{') && line.trim().includes('"event":true')) {
         continue;
       }
       
-      // Check if this is a new log entry (starts with module: or is standalone)
-      // Typical pattern: "module: message" or starts with uppercase word
-      const isNewEntry = /^[a-z_]+:\s+/i.test(line) || 
-                        /^[A-Z]+:\s+/.test(line) ||
-                        (!this.pendingLogLine && line.trim().length > 0);
+      // Check if this is a new log entry start
+      // Baresip modules typically start with: "module: message" (e.g., "uag: ", "call: ", "reg: ")
+      // Or timestamp patterns like "15:47:35.456#" or "[timestamp]"
+      // SIP headers (Contact:, Max-Forwards:, etc.) are NOT new entries
+      const isNewEntry = this.isNewLogEntry(line);
       
       if (isNewEntry && this.pendingLogLine) {
-        // Process the previous pending log
-        this.processLogEntry(this.pendingLogLine, stream);
+        // Process the previous pending log before starting new one
+        this.processLogEntry(this.pendingLogLine.trim(), stream);
         this.pendingLogLine = line;
       } else if (isNewEntry) {
         // Start new log
         this.pendingLogLine = line;
       } else {
         // Append to pending log (continuation line)
-        this.pendingLogLine += '\n' + line;
+        if (this.pendingLogLine) {
+          this.pendingLogLine += '\n' + line;
+        } else {
+          // If no pending line, this might be orphaned - start new
+          this.pendingLogLine = line;
+        }
       }
     }
     
-    // Process any remaining log after a short delay (in case more lines are coming)
-    // This is handled by checking on next data chunk
+    // Set timer to flush pending log after 100ms of inactivity
+    this.flushTimer = setTimeout(() => {
+      if (this.pendingLogLine) {
+        this.processLogEntry(this.pendingLogLine.trim(), stream);
+        this.pendingLogLine = '';
+      }
+    }, 100);
+  }
+  
+  private isNewLogEntry(line: string): boolean {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    
+    // Baresip module patterns: lowercase_word:
+    if (/^[a-z_]+:\s+/i.test(trimmed)) {
+      // But exclude common SIP headers that also match this pattern
+      const sipHeaders = ['contact:', 'from:', 'to:', 'via:', 'call-id:', 'cseq:', 'content-length:', 
+                          'content-type:', 'authorization:', 'user-agent:', 'max-forwards:', 'allow:',
+                          'expires:', 'route:', 'record-route:', 'supported:', 'require:'];
+      const lowerLine = trimmed.toLowerCase();
+      const isSipHeader = sipHeaders.some(header => lowerLine.startsWith(header));
+      if (!isSipHeader) {
+        return true; // It's a baresip module log
+      }
+    }
+    
+    // Log level patterns: DEBUG:, INFO:, WARN:, ERROR:
+    if (/^(DEBUG|INFO|WARN|ERROR|WARNING):\s+/i.test(trimmed)) {
+      return true;
+    }
+    
+    // Timestamp patterns: "15:47:35.456#" or "[HH:MM:SS]"
+    if (/^\d{1,2}:\d{2}:\d{2}[.#]/.test(trimmed) || /^\[\d{2}:\d{2}:\d{2}\]/.test(trimmed)) {
+      return true;
+    }
+    
+    // UDP/TCP protocol lines
+    if (/^(UDP|TCP)\s+\d+\.\d+\.\d+\.\d+/.test(trimmed)) {
+      return true;
+    }
+    
+    // SIP request/response lines
+    if (/^(REGISTER|INVITE|BYE|ACK|CANCEL|OPTIONS|NOTIFY|INFO|MESSAGE|UPDATE|SUBSCRIBE|REFER)\s+sip:/.test(trimmed) ||
+        /^SIP\/2\.0\s+\d{3}/.test(trimmed)) {
+      return true;
+    }
+    
+    return false;
   }
   
   private processLogEntry(line: string, stream: 'stdout' | 'stderr'): void {
@@ -102,15 +189,9 @@ export class BaresipLogger {
       return;
     }
     
-    // Handle rtcpstats_periodic data directly
+    // Skip rtcpstats_periodic (handled via TCP socket)
     if (line.includes('rtcpstats_periodic:') && line.includes('call_id=')) {
-      this.parseRtcpStatsLine(line);
-      return; // Don't log this as a regular entry
-    }
-    
-    // Debug: Log original line length
-    if (line.length > 200) {
-      console.log(`📏 Long log line (${line.length} chars): ${line.substring(0, 100)}...`);
+      return;
     }
     
     const entry = this.parseLogLine(line, stream);
@@ -131,10 +212,6 @@ export class BaresipLogger {
       type: 'log',
       data: entry
     });
-
-    // Also log to console for debugging
-    const emoji = this.getLevelEmoji(entry.level);
-    console.log(`${emoji} [${entry.source}] ${entry.message.substring(0, 100)}${entry.message.length > 100 ? '...' : ''}`);
   }
 
   private parseLogLine(line: string, stream: 'stdout' | 'stderr'): LogEntry {
@@ -221,108 +298,36 @@ export class BaresipLogger {
     return filtered;
   }
 
-  private parseRtcpStatsLine(line: string): void {
-    // Parse: rtcpstats_periodic: call_id=xxx rx_packets=123 tx_packets=456 rx_bitrate_kbps=0 tx_bitrate_kbps=1 rx_dropout=false rx_dropout_total=0
-    console.log('📊 Processing rtcpstats_periodic line from logger:', line.substring(0, 80));
-    
-    // Extract call_id
-    const callIdMatch = line.match(/call_id=([a-f0-9]+)/);
-    if (!callIdMatch) {
-      console.log('⚠️ No call_id found in rtcpstats line');
-      return;
-    }
-    
-    const callId = callIdMatch[1];
-    
-    // Extract all metrics
-    const metrics: any = { call_id: callId };
-    
-    const patterns = [
-      { key: 'rx_packets', regex: /rx_packets=(\d+)/ },
-      { key: 'tx_packets', regex: /tx_packets=(\d+)/ },
-      { key: 'rx_bitrate_kbps', regex: /rx_bitrate_kbps=(\d+)/ },
-      { key: 'tx_bitrate_kbps', regex: /tx_bitrate_kbps=(\d+)/ },
-      { key: 'rx_dropout', regex: /rx_dropout=(true|false)/ },
-      { key: 'rx_dropout_total', regex: /rx_dropout_total=(\d+)/ }
-    ];
-    
-    for (const { key, regex } of patterns) {
-      const match = line.match(regex);
-      if (match) {
-        if (key === 'rx_dropout') {
-          metrics[key] = match[1] === 'true';
-        } else {
-          metrics[key] = parseInt(match[1], 10);
-        }
-      }
-    }
-    
-    console.log('✅ Parsed RTCP stats:', metrics);
-    
-    // Update call in StateManager with these metrics
-    const call = this.stateManager.getCall(callId);
-    if (!call) {
-      console.log('⚠️ Call not found:', callId);
-      return;
-    }
-    
-    // Update audio RX stats
-    if (!call.audioRxStats) {
-      call.audioRxStats = {
-        packets: 0,
-        lost: 0,
-        bitrate_kbps: 0,
-        dropout: false,
-        dropout_total: 0,
-        rtp_rx_errors: 0,
-        jitter: 0
-      };
-    }
-    
-    if (metrics.rx_packets !== undefined) {
-      call.audioRxStats.packets = metrics.rx_packets;
-    }
-    if (metrics.rx_bitrate_kbps !== undefined) {
-      call.audioRxStats.bitrate_kbps = metrics.rx_bitrate_kbps;
-    }
-    if (metrics.rx_dropout !== undefined) {
-      call.audioRxStats.dropout = metrics.rx_dropout;
-    }
-    if (metrics.rx_dropout_total !== undefined) {
-      call.audioRxStats.dropout_total = metrics.rx_dropout_total;
-    }
-    
-    // Update audio TX stats
-    if (!call.audioTxStats) {
-      call.audioTxStats = {
-        packets: 0,
-        lost: 0,
-        bitrate_kbps: 0,
-        jitter: 0
-      };
-    }
-    
-    if (metrics.tx_packets !== undefined) {
-      call.audioTxStats.packets = metrics.tx_packets;
-    }
-    if (metrics.tx_bitrate_kbps !== undefined) {
-      call.audioTxStats.bitrate_kbps = metrics.tx_bitrate_kbps;
-    }
-    
-    // Broadcast the updated call
-    this.stateManager.broadcast({
-      type: 'callUpdated',
-      data: call
-    });
-    
-    console.log('📢 Broadcasted updated call:', callId);
-  }
-
   clearLogs(): void {
     this.logBuffer = [];
     this.stateManager.broadcast({
       type: 'logsCleared',
       data: {}
+    });
+  }
+
+  /**
+   * Manually add a log entry (for internal debug messages, TCP events, etc.)
+   */
+  addLog(level: LogEntry['level'], source: string, message: string, accountUri?: string): void {
+    const entry: LogEntry = {
+      timestamp: Date.now(),
+      level,
+      source,
+      message,
+      accountUri
+    };
+
+    // Add to buffer
+    this.logBuffer.push(entry);
+    if (this.logBuffer.length > this.maxBufferSize) {
+      this.logBuffer.shift();
+    }
+
+    // Broadcast to clients
+    this.stateManager.broadcast({
+      type: 'log',
+      data: entry
     });
   }
 }

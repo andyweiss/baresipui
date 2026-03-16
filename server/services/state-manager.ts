@@ -260,7 +260,9 @@ export class StateManager {
         if (client.connected) {
           // Emit with specific event type for better handling
           if (data.type) {
-            client.emit(data.type, data.data || data);
+            // For 'log' events, send the log entry directly (from data.data)
+            const payload = data.type === 'log' ? (data.data || data) : (data.data || data);
+            client.emit(data.type, payload);
           }
           // Also emit as 'message' for backward compatibility
           client.emit('message', data);
