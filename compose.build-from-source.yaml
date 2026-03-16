@@ -13,10 +13,7 @@ services:
     container_name: baresip-ui
     ports:
       - 3000:3000
-      - 3001:3001
     environment:
-      - NUXT_HOST=0.0.0.0
-      - NUXT_PORT=3000
       - BARESIP_HOST=baresip
       - BARESIP_PORT=4444
     depends_on:
@@ -33,7 +30,7 @@ services:
         - wget
         - --spider
         - -q
-        - http://localhost:3000/api/health
+        - http://127.0.0.1:3000/api/health
       interval: 30s
       timeout: 10s
       retries: 3
@@ -48,9 +45,8 @@ services:
       - ./baresip/config:/config
       - ./baresip/.asoundrc:/root/.asoundrc
     ports:
-      - 8000:8000/tcp
-      - 5555:5555/tcp
       - 4444:4444/tcp
+      - 5060:5060/udp
       - 10000-10500:10000-10500/udp
     command:
       - baresip
