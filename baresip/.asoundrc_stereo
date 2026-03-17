@@ -1,0 +1,413 @@
+# Single shared dmix/dsnoop for ALL channels - no conflicts
+pcm.ravenna_shared_out {
+    type dmix
+    ipc_key 0x999999
+    slave {
+        pcm "hw:CARD=RAVENNA"
+        channels 64
+        rate 48000
+        format S16_LE
+        period_time 2500
+        buffer_time 10000
+        periods 4
+    }
+}
+
+pcm.ravenna_shared_in {
+    type dsnoop
+    ipc_key 0x888888
+    slave {
+        pcm "hw:CARD=RAVENNA"
+        channels 64
+        rate 48000
+        format S16_LE
+        period_time 2500
+        buffer_time 10000
+        periods 4
+    }
+}
+
+# Route specific channel pairs from the shared devices
+pcm.in1_2 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.0  1.0
+        1.1  1.0
+    }
+}
+
+pcm.out1_2 {
+    type route
+    slave {
+        pcm "ravenna_shared_out" 
+        channels 64
+    }
+    ttable {
+        0.0  1.0
+        1.1  1.0
+    }
+}
+
+pcm.in3_4 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.2  1.0
+        1.3  1.0
+    }
+}
+
+pcm.out3_4 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.2  1.0
+        1.3  1.0
+    }
+}
+
+pcm.in5_6 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.4  1.0
+        1.5  1.0
+    }
+}
+
+pcm.out5_6 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.4  1.0
+        1.5  1.0
+    }
+}
+
+pcm.in7_8 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.6  1.0
+        1.7  1.0
+    }
+}
+
+pcm.out7_8 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.6  1.0
+        1.7  1.0
+    }
+}
+
+pcm.in9_10 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.8  1.0
+        1.9  1.0
+    }
+}
+
+pcm.out9_10 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.8  1.0
+        1.9  1.0
+    }
+}
+
+pcm.in11_12 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.10  1.0
+        1.11  1.0
+    }
+}
+
+pcm.out11_12 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.10  1.0
+        1.11  1.0
+    }
+}
+
+pcm.in13_14 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.12  1.0
+        1.13  1.0
+    }
+}
+
+pcm.out13_14 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.12  1.0
+        1.13  1.0
+    }
+}
+
+pcm.in15_16 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.14  1.0
+        1.15  1.0
+    }
+}
+
+pcm.out15_16 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.14  1.0
+        1.15  1.0
+    }
+}
+
+pcm.in17_18 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.16  1.0
+        1.17  1.0
+    }
+}
+
+pcm.out17_18 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.16  1.0
+        1.17  1.0
+    }
+}
+
+pcm.in19_20 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.18  1.0
+        1.19  1.0
+    }
+}
+
+pcm.out19_20 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.18  1.0
+        1.19  1.0
+    }
+}
+
+pcm.in21_22 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.20  1.0
+        1.21  1.0
+    }
+}
+
+pcm.out21_22 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.20  1.0
+        1.21  1.0
+    }
+}
+
+pcm.in23_24 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.22  1.0
+        1.23  1.0
+    }
+}
+
+pcm.out23_24 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.22  1.0
+        1.23  1.0
+    }
+}
+
+pcm.in25_26 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.24  1.0
+        1.25  1.0
+    }
+}
+
+pcm.out25_26 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.24  1.0
+        1.25  1.0
+    }
+}
+
+pcm.in27_28 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.26  1.0
+        1.27  1.0
+    }
+}
+
+pcm.out27_28 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.26  1.0
+        1.27  1.0
+    }
+}
+
+pcm.in29_30 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.28  1.0
+        1.29  1.0
+    }
+}
+
+pcm.out29_30 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.28  1.0
+        1.29  1.0
+    }
+}
+
+pcm.in31_32 {
+    type route
+    slave {
+        pcm "ravenna_shared_in"
+        channels 64
+    }
+    ttable {
+        0.30  1.0
+        1.31  1.0
+    }
+}
+
+pcm.out31_32 {
+    type route
+    slave {
+        pcm "ravenna_shared_out"
+        channels 64
+    }
+    ttable {
+        0.30  1.0
+        1.31  1.0
+    }
+}
