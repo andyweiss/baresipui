@@ -28,6 +28,7 @@ RUN apk add --no-cache docker-cli
 WORKDIR /app
 
 COPY --from=builder /app/.output ./.output
+COPY --from=builder /app/public/version.js ./public/version.js
 COPY --from=builder /app/package*.json ./
 
 EXPOSE 3000
