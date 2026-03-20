@@ -103,13 +103,7 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       parseCallsResponse(data, stateManager, false); // false = no auto-reset
       return;
     }
-    // 5. Registrations
-    if (data.includes('User Agents')) {
-      const cleanData = data.replace(/\u001B\[[0-9;]*[mK]/g, '').replace(/\n/g, '\n');
-      parseRegistrationInfo(cleanData, stateManager);
-      return;
-    }
-    // 6. uastat -> Accountstatus (--- sip:... --- blocks) 
+    // 5. uastat -> Account status with full SIP status codes (--- sip:... --- blocks)
     if (data.includes('--- sip:') && data.includes('Account:')) {
       parseAccountStatusResponse(data, stateManager);
       return;
@@ -217,7 +211,21 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
               account.registrationError = undefined;
             } else {
               account.registered = false;
-              account.registrationError = scode;
+              // Filter placeholder codes (0, 999, etc.) - show real SIP errors only
+              const scodeNum = parseInt(scode);
+              if (!isNaN(scodeNum) && scodeNum >= 400 && scodeNum < 700) {
+                // Real SIP error code (4xx, 5xx, 6xx)
+                account.registrationError = scode;
+              } else if (scode === '0' || scode.includes('zzz')) {
+                // Placeholder for "not yet registered" - don't show as error
+                account.registrationError = undefined;
+              } else if (!scode || scode === '0') {
+                // Empty or zero - initializing
+                account.registrationError = undefined;
+              } else {
+                // Other non-standard codes - display as-is
+                account.registrationError = scode;
+              }
             }
           }
         }
@@ -239,83 +247,9 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
         }
       }
     }
-    
-    
-    
-    
-function parseRegistrationInfo(data: string, stateManager: StateManager): void {
-  const lines = data.split('\n');
 
-  for (const line of lines) {
-    if (line.includes(' - sip:') && (line.includes('OK') || line.includes('ERR'))) {
-      const cleanLine = line.replace(/\x1b\[[0-9;]*[mK]/g, '');
-      // Match: number - URI   STATUS (with flexible whitespace)
-      const match = cleanLine.match(/\d+\s*-\s*(sip:[^@]+@\S+)\s+(OK|ERR)/);
-      if (match) {
-        const uri = match[1] ? match[1].toLowerCase().trim() : undefined;
-        const status = match[2];
-
-        console.log(`Registration status for ${uri}: ${status} (status length: ${status.length}, charCodes: ${Array.from(status).map(c => c.charCodeAt(0)).join(',')})`);
-
-        // Try to extract display name (format: "number - DisplayName <sip:...> STATUS")
-        const displayNameMatch = cleanLine.match(/^\s*\d+\s*-\s*(.+?)\s*</);
-        const displayName = displayNameMatch ? displayNameMatch[1].trim() : undefined;
-
-        // Get existing account or create new one, preserving call-related state
-        const existingAccount = stateManager.getAccount(uri);
-        const account: any = {
-          uri,
-          registered: false,
-          callStatus: existingAccount?.callStatus || 'Idle' as const,
-          callId: existingAccount?.callId,
-          autoConnectContact: existingAccount?.autoConnectContact,
-          autoConnectStatus: existingAccount?.autoConnectStatus || 'Off',
-          lastEvent: Date.now(),
-          configured: true
-        };
-        
-        // Update displayName if found
-        if (displayName) {
-          account.displayName = displayName;
-        }
-
-        if (status === 'OK') {
-          account.registered = true;
-          account.registrationError = undefined;
-        } else if (status === 'ERR') {
-          account.registered = false;
-
-          let errorStatus = 'Registration Failed';
-          if (uri.includes('wronguri') || uri.includes('invalid')) {
-            errorStatus = 'Not Found';
-          } else if (uri.endsWith('.ch')) {
-            errorStatus = 'Unauthorized';
-          } else {
-            errorStatus = 'Service Unavailable';
-          }
-
-          account.registrationError = errorStatus;
-          console.log(`Set error status for ${uri}: ${errorStatus}`);
-        }
-
-        if (uri) stateManager.setAccount(uri, account);
-
-        if (uri) {
-          stateManager.broadcast({
-            type: 'accountStatus',
-            data: account
-          });
-          // Trigger auto-connect check if account is registered and idle
-          if (account.registered && account.callStatus === 'Idle') {
-            checkAutoConnectForAccount(uri, stateManager);
-          }
-        }
-
-        console.log(`Updated account ${uri}: registered=${account.registered}, error=${account.registrationError}`);
-      }
-    }
-  }
-}
+// parseRegistrationInfo removed - uastat provides all needed account data with real SIP status codes
+// Real-time registration events are handled by handleJsonEvent (REGISTER_OK, REGISTER_FAIL)
 
 function parseContactsFromResponse(data: string, stateManager: StateManager): void {
   const lines = data.split('\n');

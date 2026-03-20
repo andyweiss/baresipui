@@ -220,9 +220,8 @@ export class BaresipConnection {
       this.sendCommand('listcalls');
       this.sendCommand('callstat');  // Query active calls on startup
       this.sendCommand('about');    // get baresip version
-      this.sendCommand('reginfo'); // registration info
       this.sendCommand('sysinfo'); // user system information
-      this.sendCommand('uastat'); // user agent statistics
+      this.sendCommand('uastat'); // user agent statistics - provides all account info including SIP status codes
       
 
       // Start polling contacts for presence updates
@@ -287,10 +286,6 @@ export class BaresipConnection {
       if (this.isConnected()) {
         this.sendCommand('contacts');
         this.sendCommand('presence_ts');  // Get presence timestamps from baresip
-        //this.sendCommand('uastat'); // user agent statistics
-      //this.sendCommand('listcalls');
-      //this.sendCommand('callstat');  // Query active calls on startup
-      //this.sendCommand('reginfo'); // registration info
       }
     }, this.CONTACTS_POLL_INTERVAL);
   }

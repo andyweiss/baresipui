@@ -93,12 +93,7 @@ List all SIP accounts with status
 ### GET /contacts
 List all contacts with auto-connect status
 
-### POST /command
-Send command to Baresip
-```json
-{
-  "command": "/uareginfo"
-}
+
 ```
 
 ### POST /autoconnect/:contact
