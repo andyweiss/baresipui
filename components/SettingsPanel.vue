@@ -93,8 +93,20 @@ const appConfig = useAppConfig();
 
 const baresipInfo = ref<{ version?: string; uptime?: string; started?: string }>({});
 
-const uiVersion = computed(() => {
-  return appConfig.version || 'unknown';
+const uiVersion = ref<string>('loading...');
+
+// Load version from /version.js at runtime
+onMounted(async () => {
+  try {
+    const response = await fetch('/version.js');
+    if (response.ok) {
+      uiVersion.value = (await response.text()).trim() || 'unknown';
+    } else {
+      uiVersion.value = 'dev';
+    }
+  } catch (e) {
+    uiVersion.value = 'dev';
+  }
 });
 
 async function fetchBaresipInfo() {

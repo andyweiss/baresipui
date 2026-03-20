@@ -15,8 +15,8 @@ COPY . .
 ENV BARESIP_HOST=${BARESIP_HOST}
 ENV BARESIP_PORT=${BARESIP_PORT}
 
-# Write version to file that will be read by app.config
-RUN echo "export const APP_VERSION = '${APP_VERSION}';" > /app/public/version.js
+# Write version to file
+RUN echo "${APP_VERSION}" > /app/public/version.js
 
 RUN npm run build
 
@@ -28,7 +28,6 @@ RUN apk add --no-cache docker-cli
 WORKDIR /app
 
 COPY --from=builder /app/.output ./.output
-COPY --from=builder /app/public/version.js ./public/version.js
 COPY --from=builder /app/package*.json ./
 
 EXPOSE 3000
