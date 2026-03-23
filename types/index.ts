@@ -71,6 +71,12 @@ export interface CallInfo {
     rtp_tx_errors?: number;
     rtcp_packets?: number;
   };
+  jitterBuffer?: {
+    current: number; // current jitter buffer size in ms
+    min: number; // minimum jitter buffer size in ms
+    max: number; // maximum jitter buffer size in ms
+    packets?: number; // number of packets in buffer
+  };
   videoRxStats?: {
     packets: number;
     packetsLost: number;

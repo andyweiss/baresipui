@@ -349,73 +349,48 @@ function parsePresenceTimestamps(data: string, stateManager: StateManager): void
   }
 }
 
-function parseCallStatResponse(data: string, stateManager: StateManager): void {
-  console.log('📊 parseCallStatResponse called');
-  
-  // Extract call ID
-  const callIdMatch = data.match(/id=([a-f0-9]+)/);
-  const callId = callIdMatch ? callIdMatch[1] : null;
+// Helper: Parse codec parameters from string like "stereo=0;sprop-stereo=1"
+function parseCodecParams(paramsString: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (paramsString?.trim()) {
+    paramsString.split(';').forEach(p => {
+      const [k, v] = p.split('=');
+      if (k && v) {
+        params[k.trim()] = v.trim();
+      }
+    });
+  }
+  return params;
+}
 
-  // Extract codecs from both local and remote formats
-  const localFormatsSection = data.split('local formats:')[1]?.split('remote formats:')[0] || '';
-  const remoteFormatsSection = data.split('remote formats:')[1]?.split('local attributes:')[0] || '';
+// Helper: Parse codec format lines into structured array
+function parseCodecFormats(section: string): any[] {
+  const codecs: any[] = [];
+  const lines = section.split('\n');
   
-  let activeCodec: any = null;
-  let localCodecs: any[] = [];
-  let remoteCodecs: any[] = [];
-  
-  // Parse local formats
-  if (localFormatsSection) {
-    const lines = localFormatsSection.split('\n');
-    for (const line of lines) {
-      const match = line.match(/\s*(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s*(?:\(([^)]*)\))?/);
-      if (match) {
-        const codecInfo = {
-          payloadType: match[1],
-          codec: match[2],
-          sampleRate: Number(match[3]),
-          channels: Number(match[4]),
-          params: {}
-        };
-        if (match[5]) {
-          match[5].split(';').forEach(p => {
-            const [k, v] = p.split('=');
-            if (k && v) codecInfo.params[k.trim()] = v.trim();
-          });
-        }
-        localCodecs.push(codecInfo);
-      }
+  for (const line of lines) {
+    // Match: "96 opus/48000/2 (params)" 
+    const match = line.match(/^\s*(\d+)\s+([A-Za-z0-9-]+)\/(\d+)\/(\d+)\s*(?:\(([^)]*)\))?/);
+    if (match) {
+      codecs.push({
+        payloadType: match[1],
+        codec: match[2],
+        sampleRate: Number(match[3]),
+        channels: Number(match[4]),
+        params: parseCodecParams(match[5] || '')
+      });
     }
   }
   
-  // Parse remote formats
-  if (remoteFormatsSection) {
-    const lines = remoteFormatsSection.split('\n');
-    for (const line of lines) {
-      const match = line.match(/\s*(\d+)\s+([A-Za-z0-9]+)\/(\d+)\/(\d+)\s*(?:\(([^)]*)\))?/);
-      if (match) {
-        const codecInfo = {
-          payloadType: match[1],
-          codec: match[2],
-          sampleRate: Number(match[3]),
-          channels: Number(match[4]),
-          params: {}
-        };
-        if (match[5]) {
-          match[5].split(';').forEach(p => {
-            const [k, v] = p.split('=');
-            if (k && v) codecInfo.params[k.trim()] = v.trim();
-          });
-        }
-        remoteCodecs.push(codecInfo);
-      }
-    }
-  }
+  return codecs;
+}
+
+// Helper: Build codec updates object from local/remote codec lists
+function buildCodecUpdates(localCodecs: any[], remoteCodecs: any[]): any {
+  const updates: any = {};
   
-  console.log('📊 Local codecs:', localCodecs.length, localCodecs.map(c => c.codec).join(','));
-  console.log('📊 Remote codecs:', remoteCodecs.length, remoteCodecs.map(c => c.codec).join(','));
-  
-  // Find first codec that exists in both local and remote (in same order)
+  // Find active codec (negotiated between both sides)
+  let activeCodec = null;
   for (const localCodec of localCodecs) {
     const remoteMatch = remoteCodecs.find(rc => 
       rc.codec === localCodec.codec && 
@@ -424,104 +399,78 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
     );
     if (remoteMatch) {
       activeCodec = localCodec;
-      console.log('📊 Active codec (in both local and remote):', activeCodec);
       break;
     }
   }
   
-  // Fallback: use first local codec if no common one found
+  // Fallback: Use first local codec if no match found
   if (!activeCodec && localCodecs.length > 0) {
     activeCodec = localCodecs[0];
   }
-
-  // Extract RTCP_STATS line (JSON format) - but parseRtcpSummaryLine handles this now
-  // Keep this for Socket.IO broadcasting only
-  const statsMatch = data.match(/RTCP_STATS:\s*(\{[^\n]+\})/);
-  let stats: any = {};
-  if (statsMatch) {
-    try {
-      stats = JSON.parse(statsMatch[1]);
-      
-      // Broadcast stats to all connected UI clients via Socket.IO
-      const socketConnection = getBaresipConnection();
-      if (socketConnection && socketConnection.io) {
-        socketConnection.io.emit('rtcp_stats', stats);
-      }
-    } catch (e) {
-      console.error('❌ Failed to parse RTCP_STATS JSON:', statsMatch[1], e);
-    }
+  
+  if (activeCodec) {
+    updates.audioCodec = activeCodec;
   }
+  
+  if (localCodecs.length > 0) {
+    updates.audioCodecs = localCodecs;      // Backward compatibility
+    updates.txCodecs = localCodecs;         // TX: What we send
+    updates.txAudioCodec = localCodecs[0];
+  }
+  
+  if (remoteCodecs.length > 0) {
+    updates.rxCodecs = remoteCodecs;        // RX: What we receive
+    updates.rxAudioCodec = remoteCodecs[0];
+  }
+  
+  return updates;
+}
 
-  // Try to find the call and update it
-  if (callId || activeCodec || Object.keys(stats).length > 0) {
+function parseCallStatResponse(data: string, stateManager: StateManager): void {
+  // Extract call ID (uppercase or lowercase hex)
+  const callIdMatch = data.match(/id=([a-fA-F0-9]+)/);
+  const callId = callIdMatch ? callIdMatch[1] : null;
+
+  // Extract and parse codec sections
+  const localFormatsSection = data.split('local formats:')[1]?.split('remote formats:')[0] || '';
+  const remoteFormatsSection = data.split('remote formats:')[1]?.split('local attributes:')[0] || '';
+  
+  const localCodecs = parseCodecFormats(localFormatsSection);
+  const remoteCodecs = parseCodecFormats(remoteFormatsSection);
+  
+  // Build updates object
+  const updates = buildCodecUpdates(localCodecs, remoteCodecs);
+  
+  // Nothing to update?
+  if (Object.keys(updates).length === 0) {
+    return;
+  }
+  
+  // Update call with specific ID or fallback to single active call
+  if (callId) {
+    stateManager.updateCall(callId, updates);
+  } else {
     const calls = stateManager.getCalls();
-    let updates: any = {};
-    if (activeCodec) updates.audioCodec = activeCodec;
-    // Store both local and remote codecs for potential RX/TX differentiation
-    if (localCodecs.length > 0 || remoteCodecs.length > 0) {
-      updates.audioCodecs = localCodecs; // Store as reference
-      updates.rxAudioCodec = remoteCodecs.length > 0 ? remoteCodecs[0] : undefined;
-      updates.txAudioCodec = localCodecs.length > 0 ? localCodecs[0] : undefined;
-    }
-    if (Object.keys(stats).length > 0) {
-      // Map new JSON stats to UI fields
-      updates.audioRxStats = {
-        packets: stats.rtp_rx_packets ?? 0,
-        packetsLost: stats.rtcp_lost_rx ?? 0,
-        jitter: stats.rtcp_jitter_rx_ms ?? 0,
-        rtt: stats.rtcp_rtt_ms ?? 0,
-        bitrate_kbps: stats.rx_bitrate_kbps ?? 0,
-        dropout: stats.rx_dropout ?? false,
-        dropout_total: stats.rx_dropout_total ?? 0,
-        rtp_rx_errors: stats.rtp_rx_errors ?? 0,
-        rtcp_packets: stats.rtcp_rx_packets ?? 0,
-      };
-      updates.audioTxStats = {
-        packets: stats.rtp_tx_packets ?? 0,
-        packetsLost: stats.rtcp_lost_tx ?? 0,
-        jitter: stats.rtcp_jitter_tx_ms ?? 0,
-        bitrate_kbps: stats.tx_bitrate_kbps ?? 0,
-        rtp_tx_errors: stats.rtp_tx_errors ?? 0,
-        rtcp_packets: stats.rtcp_tx_packets ?? 0,
-      };
-    }
-    // Use callId from old format
-    if (callId) {
-      stateManager.updateCall(callId, updates);
-      console.log(`📊 Updated call ${callId} with codec`, updates);
-    } else if (calls.length === 1 && activeCodec) {
+    if (calls.length === 1) {
       stateManager.updateCall(calls[0].callId, updates);
-      console.log(`📊 Updated single active call ${calls[0].callId} with codec`, updates);
     }
   }
 }
 
 function parseGetRtcpStatsResponse(data: string, stateManager: StateManager): void {
   try {
-    console.log('📊 parseGetRtcpStatsResponse called with data length:', data.length);
-    
-    // Parse JSON array directly (data is already the JSON string from response.data)
     const stats_array = JSON.parse(data);
     
     if (!Array.isArray(stats_array)) {
-      console.log('📊 Response is not an array:', typeof stats_array);
       return;
     }
     
-    console.log('📊 Parsing', stats_array.length, 'call stats');
-    
     for (const stats of stats_array) {
       const callId = stats.call_id;
-      if (!callId) {
-        console.log('📊 No call_id in stats:', JSON.stringify(stats).substring(0, 50));
-        continue;
-      }
+      if (!callId) continue;
       
       const call = stateManager.getCall(callId);
-      if (!call) {
-        console.log('📊 Call not found:', callId);
-        continue;
-      }
+      if (!call) continue;
       
       // Update RX stats
       if (!call.audioRxStats) {
@@ -549,7 +498,7 @@ function parseGetRtcpStatsResponse(data: string, stateManager: StateManager): vo
       stateManager.broadcast({ type: 'callUpdated', data: call });
     }
   } catch (error) {
-    console.debug('[parseGetRtcpStatsResponse] Error:', error);
+    // Silently ignore parse errors
   }
 }
 
@@ -581,7 +530,7 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
         const callState = match[3].trim().toUpperCase();
         const callId = match[4] || `${localUri}->${remoteUri}`; // Fallback-ID
         activeCallIds.add(callId);
-        console.log(`Found active call: ${localUri} -> ${remoteUri} [${callState}] ID=${callId}`);
+        
         // Update account call status
         const account = stateManager.getAccount(localUri);
         let callStatus: string;
@@ -711,7 +660,6 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           configured: true
         };
         stateManager.setAccount(uri, accountData);
-        console.log(`Loaded configured account from API: ${uri}`);
 
         stateManager.broadcast({
           type: 'accountStatus',
@@ -763,7 +711,11 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         }
         
         stateManager.updateAccountStatus(uri, updates);
-        console.log(`[CALL_ESTABLISHED] Account: ${uri}, Call ID: ${jsonEvent.id}, Peer: ${peerUri}`);
+        
+        // Mark call as needing codec info (will be fetched by connection)
+        stateManager.updateCall(jsonEvent.id, {
+          needsCodecInfo: true
+        });
       }
     } else if (jsonEvent.type === 'CALL_RINGING' || jsonEvent.type === 'CALL_INCOMING' || jsonEvent.type === 'CALL_OUTGOING' || jsonEvent.type === 'CALL_RTPESTAB') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
@@ -806,6 +758,13 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         }
         
         stateManager.updateAccountStatus(uri, updates);
+        
+        // Mark call as needing codec info when RTP is established
+        if (jsonEvent.type === 'CALL_RTPESTAB') {
+          stateManager.updateCall(jsonEvent.id, {
+            needsCodecInfo: true
+          });
+        }
       }
     } else if (jsonEvent.type === 'CALL_CLOSED' || jsonEvent.type === 'CALL_END' || jsonEvent.type === 'CALL_TERMINATE') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
@@ -882,12 +841,6 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           const isRegistrationError = registrationReasons.some(r => reason.includes(r));
           
           if (isOfflineReason || isRegistrationError) {
-            if (isOfflineReason) {
-              console.log(`🔴 Auto-connect call ended with offline reason: "${jsonEvent.param}" - setting ${autoConnectContact} to offline, skip reconnect`);
-            } else {
-              console.log(`🔴 Auto-connect call failed - registration error: "${jsonEvent.param}" - setting ${autoConnectContact} to offline, skip reconnect`);
-            }
-            
             // Set timestamp to prevent presence_ts from overwriting with old status
             stateManager.setContactCallFailureTimestamp(autoConnectContact, 'offline');
             skipReconnect = true; // Don't reconnect immediately
@@ -933,11 +886,7 @@ function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
       try {
         const stats = JSON.parse(jsonMatch[1]);
         const callId = stats.call_id;
-        
-        if (!callId) {
-          console.log('⚠️ No call_id in RTCP_STATS JSON');
-          return;
-        }
+        if (!callId) return;
         
         const updates: any = {};
         updates.audioRxStats = {
@@ -961,10 +910,9 @@ function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
         };
         
         stateManager.updateCall(callId, updates);
-        console.log(`📊 Updated call ${callId} with RTCP_STATS JSON`);
         return;
       } catch (e) {
-        console.log('⚠️ Failed to parse RTCP_STATS JSON, trying short format...');
+        // Failed to parse JSON format, try short format
       }
     }
   }
@@ -1000,13 +948,11 @@ function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
       };
       
       stateManager.updateCall(callId, updates);
-      console.log(`📊 Updated call ${callId} with short RTCP format:`, updates);
       return;
     }
   }
   
   // Fallback to OLD semicolon-delimited format (for compatibility)
-  console.log('📊 Trying old RTCP stats format:', line);
   
   const callIdMatch = line.match(/call_id=([^;]+)/);
   const packetsRxMatch = line.match(/packets_rx=(\d+)/);
@@ -1033,14 +979,11 @@ function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
     
     // Update the call with statistics
     stateManager.updateCall(callId, updates);
-    console.log(`📊 Updated call ${callId} with RTCP stats:`, updates);
   }
 }
 
 function parseCallStatLine(line: string, stateManager: StateManager): void {
   // Parse RTP statistics from Baresip callstat output
-  console.log('📊 Parsing call stat line:', line);
-  
   const callIdMatch = line.match(/Call\s+([a-zA-Z0-9-]+):/);
   const isRx = line.toLowerCase().includes('rx:') || line.toLowerCase().includes('receive');
   const isTx = line.toLowerCase().includes('tx:') || line.toLowerCase().includes('transmit');
@@ -1060,8 +1003,6 @@ function parseCallStatLine(line: string, stateManager: StateManager): void {
       bitrate: bitrateMatch ? parseInt(bitrateMatch[1]) : 0
     };
     
-    console.log(`📊 Parsed ${isRx ? 'RX' : 'TX'} stats:`, stats);
-    
     // If we have a call ID, update that specific call
     if (callIdMatch) {
       const callId = callIdMatch[1];
@@ -1075,7 +1016,6 @@ function parseCallStatLine(line: string, stateManager: StateManager): void {
       }
       
       stateManager.updateCall(callId, updates);
-      console.log(`Updated call ${callId} ${isRx ? 'RX' : 'TX'} stats:`, stats);
     } else {
       // Try to find active call and update it
       const calls = stateManager.getCalls();
@@ -1091,7 +1031,6 @@ function parseCallStatLine(line: string, stateManager: StateManager): void {
         }
         
         stateManager.updateCall(calls[0].callId, updates);
-        console.log(`Updated call ${calls[0].callId} ${isRx ? 'RX' : 'TX'} stats:`, stats);
       }
     }
   }
@@ -1268,7 +1207,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         registrationError: errorStatus,
         lastRegistrationAttempt: timestamp
       });
-      console.log(`Registration error for ${uri}: ${errorStatus}`);
     }
   } else if (line.includes('reg:') && line.includes('sip:')) {
     const match = line.match(/reg:\s*(sip:[^@\s]+@[^\s);]+)/);
@@ -1284,7 +1222,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
           configured: true
         };
         stateManager.setAccount(uri, accountData);
-        console.log(`Found account in reg message: ${uri}`);
 
         stateManager.broadcast({
           type: 'accountStatus',
@@ -1360,7 +1297,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
           const contact = presenceEvent.contact.replace('sip:', '').toLowerCase().trim();
           const status = presenceEvent.status.toLowerCase().trim();
           
-          console.log(`Enhanced presence JSON detected: ${contact} -> ${status}`);
           stateManager.setContactPresence(contact, status, true);
 
           stateManager.broadcast({
@@ -1399,7 +1335,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         status = 'away';
       }
       
-      console.log(`Enhanced presence detected: ${contact} -> ${status}`);
       stateManager.setContactPresence(contact, status, true);
 
       stateManager.broadcast({
@@ -1429,7 +1364,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
           configured: true
           };
           stateManager.setAccount(uri, accountData);
-          console.log(`Loaded configured account from text: ${uri} displayName: ${name}`);
 
           stateManager.broadcast({
             type: 'accountStatus',
@@ -1452,8 +1386,6 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
       // Check if contact is online (not busy - we want only one call per contact)
       const contactPresence = stateManager.getContactPresence(contact);
       if (contactPresence === 'online') {
-        console.log(`Queueing auto-connect: ${account.uri} to ${contact}...`);
-        
         // Add to queue to prevent race conditions with uafind
         autoConnectQueue.push(() => {
           // Double-check status before executing (might have changed while in queue)
@@ -1461,22 +1393,17 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
           const currentlyBusy = currentAccount && (currentAccount.callId || currentAccount.callStatus === 'In Call' || currentAccount.callStatus === 'Ringing');
           
           if (!currentAccount || currentlyBusy) {
-            console.log(`Skipping auto-connect for ${account.uri} - account busy or not found`);
             return;
           }
-          
-          console.log(`Executing auto-connect: ${account.uri} to ${contact}...`);
           
           const runtimeConfig = useRuntimeConfig();
           const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
           
           // Select account and dial sequentially
-          console.log(`Step 1: Selecting account ${account.uri}`);
           connection.sendCommand('uafind', account.uri);
           
           // Wait for account selection before dialing
           setTimeout(() => {
-            console.log(`Step 2: Dialing ${contact} from ${account.uri}`);
             connection.sendCommand('dial', contact);
           }, 150);
           
@@ -1499,37 +1426,22 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
 // Check auto-connect when account becomes registered
 function checkAutoConnectForAccount(accountUri: string, stateManager: StateManager): void {
   const account = stateManager.getAccount(accountUri);
-  console.log(`checkAutoConnectForAccount called for ${accountUri}`);
   
-  if (!account) {
-    console.log(`  -> No account found`);
-    return;
-  }
-  if (!account.autoConnectContact) {
-    console.log(`  -> No autoConnectContact configured`);
-    return;
-  }
-  if (!account.registered) {
-    console.log(`  -> Account not registered`);
+  if (!account || !account.autoConnectContact || !account.registered) {
     return;
   }
   
   // Check if account has an active call (callId is set) or is ringing
   // Don't check callStatus === 'Idle' because it shows end reason for 30s after call
   if (account.callId || account.callStatus === 'In Call' || account.callStatus === 'Ringing') {
-    console.log(`  -> Account busy (status: ${account.callStatus}, callId: ${account.callId})`);
     return;
   }
 
   // Check if the contact is online (not busy - we want only one call per contact)
   const contactPresence = stateManager.getContactPresence(account.autoConnectContact);
-  console.log(`  -> Contact ${account.autoConnectContact} presence: ${contactPresence}`);
   
   if (contactPresence === 'online') {
-    console.log(`Account ${accountUri} is ready, attempting auto-connect to ${account.autoConnectContact}`);
     attemptAutoConnect(account.autoConnectContact, stateManager);
-  } else {
-    console.log(`  -> Not connecting: contact is not online (${contactPresence})`);
   }
 }
 
@@ -1547,7 +1459,6 @@ function checkAutoConnectForContact(contact: string, stateManager: StateManager)
     if (account.autoConnectContact) {
       const normalizedAccountContact = account.autoConnectContact.replace('sip:', '').toLowerCase().trim();
       if (normalizedAccountContact === normalizedContact) {
-        console.log(`  -> Found account ${account.uri} configured for this contact`);
         checkAutoConnectForAccount(account.uri, stateManager);
       }
     }

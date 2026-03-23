@@ -100,83 +100,6 @@ export class BaresipConnection {
       }
     }
 
-    // Parser for 'callstat' response
-    private parseCallStatResponse(data: string): void {
-      // Beispiel callstat-Antwort:
-      // call: #1 <sip:alice@domain> <sip:bob@domain> [ESTABLISHED] id=abc123
-      // audio: opus/48000/2 ptime=20 maxaveragebitrate=128000
-      // RTCP_STATS: packets_rx=123 packets_tx=456 lost_rx=7 lost_tx=2 jitter_rx=12.3 jitter_tx=10.1 rtt=45.6
-      // (ggf. weitere Zeilen)
-
-      console.debug('[parseCallStatResponse] Raw data:', data);
-      const lines = data.split('\n');
-      let callId: string | undefined;
-      let audioCodec: any = undefined;
-      let audioRxStats: any = undefined;
-      let audioTxStats: any = undefined;
-
-      for (const line of lines) {
-        // CallId extrahieren
-        const callMatch = line.match(/id[=:]([\w\d]+)/);
-        if (callMatch) {
-          callId = callMatch[1];
-        }
-        // Audio-Codec-Zeile parsen
-        const audioMatch = line.match(/^audio:\s*([\w\d\-]+)/i);
-        if (audioMatch) {
-          // z.B. "opus/48000/2"
-          const codecLine = line.replace('audio: ', '').trim();
-          const [codecPart, ...paramParts] = codecLine.split(' ');
-          const [codec, sampleRate, channels] = codecPart.split('/');
-          const params: Record<string, string> = {};
-          paramParts.forEach(p => {
-            const [k, v] = p.split('=');
-            if (k && v) params[k] = v;
-          });
-          audioCodec = {
-            codec,
-            sampleRate: sampleRate ? Number(sampleRate) : undefined,
-            channels: channels ? Number(channels) : undefined,
-            params: Object.keys(params).length > 0 ? params : undefined
-          };
-        }
-        // RTCP_STATS parsen
-        const statsMatch = line.match(/RTCP_STATS:\s*([^\n]+)/);
-        if (statsMatch) {
-          const statsStr = statsMatch[1];
-          const stats: any = {};
-          statsStr.split(/\s+/).forEach(pair => {
-            const [key, value] = pair.split('=');
-            stats[key] = isNaN(Number(value)) ? value : Number(value);
-          });
-          // RX-Stats
-          audioRxStats = {
-            packets: stats.packets_rx ?? 0,
-            packetsLost: stats.lost_rx ?? 0,
-            jitter: stats.jitter_rx ?? 0,
-            bitrate: audioCodec?.params?.maxaveragebitrate ? Number(audioCodec.params.maxaveragebitrate) : 0
-          };
-          // TX-Stats
-          audioTxStats = {
-            packets: stats.packets_tx ?? 0,
-            packetsLost: stats.lost_tx ?? 0,
-            bitrate: audioCodec?.params?.maxaveragebitrate ? Number(audioCodec.params.maxaveragebitrate) : 0
-          };
-        }
-      }
-      if (callId) {
-        const update: any = {};
-        if (audioCodec) update.audioCodec = audioCodec;
-        if (audioRxStats) update.audioRxStats = audioRxStats;
-        if (audioTxStats) update.audioTxStats = audioTxStats;
-        if (Object.keys(update).length > 0) {
-          stateManager.updateCall(callId, update);
-          console.debug('[parseCallStatResponse] Updated call:', callId, update);
-        }
-      } else {
-        console.debug('[parseCallStatResponse] No callId found in callstat response:', data);
-      }
-    }
   private client: net.Socket | null = null;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 10;
@@ -218,7 +141,7 @@ export class BaresipConnection {
 
       this.sendCommand('contacts');
       this.sendCommand('listcalls');
-      this.sendCommand('callstat');  // Query active calls on startup
+      this.sendCommand('callstat');
       this.sendCommand('about');    // get baresip version
       this.sendCommand('sysinfo'); // user system information
       this.sendCommand('uastat'); // user agent statistics - provides all account info including SIP status codes
@@ -335,18 +258,46 @@ export class BaresipConnection {
     }
   }
 
+  private callStatsQueueIndex = 0; // Track which call to query next
+
   private startCallStatsPolling(): void {
     // Stop any existing polling
     this.stopCallStatsPolling();
 
-    console.log(`📊 Call stats polling enabled - sending 'callstat' command alle 2s wenn Calls aktiv sind`);
-
-    // poll every 2 seconds if there are active calls
+    // Poll every 2 seconds for RTCP stats and check for calls needing codec info
     this.callStatsPollingInterval = setInterval(() => {
-      if (this.isConnected() && stateManager.getCalls().length > 0) {
-        this.sendCommand('getrtcpstats');
+      if (this.isConnected()) {
+        const calls = stateManager.getCalls();
+        
+        // Check for calls that need codec info (once per call)
+        for (const call of calls) {
+          if (call.needsCodecInfo && call.localUri && call.callId) {
+            // Fetch codec info and mark as fetched
+            this.fetchCodecInfoForCall(call.callId, call.localUri);
+            
+            // Mark as fetched to avoid fetching again
+            stateManager.updateCall(call.callId, {
+              needsCodecInfo: false,
+              codecInfoFetched: true
+            });
+          }
+        }
+        
+        // Get RTCP stats for ALL calls (works without account selection)
+        if (calls.length > 0) {
+          this.sendCommand('getrtcpstats');
+        }
       }
     }, this.CALL_STATS_POLL_INTERVAL);
+  }
+
+  // Fetch codec info once when call is established
+  public fetchCodecInfoForCall(callId: string, localUri: string): void {
+    // Select account and query callstat ONCE
+    this.sendCommand('uafind', localUri);
+    setTimeout(() => {
+      this.sendCommand('callstat');
+    }, 150);
   }
 
   private stopCallStatsPolling(): void {

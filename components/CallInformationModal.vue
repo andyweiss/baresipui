@@ -8,7 +8,7 @@
       <!-- Header -->
       <div class="flex items-start justify-between mb-4">
         
-        <h3 class="text-lg font-semibold text-white">Call Statistics</h3>
+        <h3 class="text-lg font-semibold text-white">Call Information</h3>
         <button 
           @click="$emit('close')"
           class="text-gray-400 hover:text-white transition"
@@ -37,27 +37,74 @@
           </div>
         </div>
 
-
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">duration</p>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Duration</p>
             <p class="text-sm font-medium text-white">{{ call ? formattedDuration : '' }}</p>
           </div>
           <div>
-            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Active Audio Codec</p>
-            <p class="text-sm font-medium text-white">
-              <span v-if="call && typeof call.audioCodec === 'string'">{{ call.audioCodec }}</span>
-              <span v-else-if="call && call.audioCodec && typeof call.audioCodec === 'object'">{{ formatCodecDisplay(call.audioCodec) }}</span>
-              <span v-else class="text-gray-500 italic">No codec info</span>
-            </p>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Started</p>
+            <p class="text-sm font-medium text-white">{{ call && call.startTime ? formatDateTime(call.startTime) : '' }}</p>
           </div>
         </div>
 
+        <!-- Audio Codecs Grid -->
+        <div class="grid grid-cols-2 gap-4">
+          <!-- RX Codec (Receiving from remote) -->
+          <div class="relative group">
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1">
+              RX Codec
+              <span v-if="call && call.rxCodecs && call.rxCodecs.length > 1" class="text-blue-400 cursor-help">ⓘ</span>
+            </p>
+            <p class="text-sm font-medium text-white">
+              <span v-if="call && call.rxAudioCodec">{{ formatCodecDisplay(call.rxAudioCodec) }}</span>
+              <span v-else-if="call && call.audioCodec">{{ formatCodecDisplay(call.audioCodec) }}</span>
+              <span v-else class="text-gray-500 italic text-xs">No info</span>
+            </p>
+            
+            <!-- Tooltip for all offered codecs from remote -->
+            <div v-if="call && call.rxCodecs && call.rxCodecs.length > 1" 
+                 class="absolute bottom-full left-0 mb-2 hidden group-hover:block z-10 w-64">
+              <div class="bg-gray-900 border border-gray-700 rounded p-2 shadow-xl text-xs">
+                <p class="text-gray-400 font-semibold mb-1">Remote Offered Codecs:</p>
+                <div class="space-y-1 max-h-32 overflow-y-auto">
+                  <div v-for="(codec, idx) in call.rxCodecs" :key="idx" 
+                       :class="isActiveCodec(codec, call.rxAudioCodec) ? 'text-green-400 font-semibold' : 'text-gray-300'">
+                    {{ formatCodecDisplay(codec) }}
+                    <span v-if="isActiveCodec(codec, call.rxAudioCodec)" class="text-green-500">← active</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
-
-        <div>
-          <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Started</p>
-          <p class="text-sm font-medium text-white">{{ call && call.startTime ? formatDateTime(call.startTime) : '' }}</p>
+          <!-- TX Codec (Sending to remote) -->
+          <div class="relative group">
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1">
+              TX Codec
+              <span v-if="call && call.txCodecs && call.txCodecs.length > 1" class="text-blue-400 cursor-help">ⓘ</span>
+            </p>
+            <p class="text-sm font-medium text-white">
+              <span v-if="call && call.txAudioCodec">{{ formatCodecDisplay(call.txAudioCodec) }}</span>
+              <span v-else-if="call && call.audioCodec">{{ formatCodecDisplay(call.audioCodec) }}</span>
+              <span v-else class="text-gray-500 italic text-xs">No info</span>
+            </p>
+            
+            <!-- Tooltip for all offered codecs to remote -->
+            <div v-if="call && call.txCodecs && call.txCodecs.length > 1" 
+                 class="absolute bottom-full right-0 mb-2 hidden group-hover:block z-10 w-64">
+              <div class="bg-gray-900 border border-gray-700 rounded p-2 shadow-xl text-xs">
+                <p class="text-gray-400 font-semibold mb-1">Local Offered Codecs:</p>
+                <div class="space-y-1 max-h-32 overflow-y-auto">
+                  <div v-for="(codec, idx) in call.txCodecs" :key="idx" 
+                       :class="isActiveCodec(codec, call.txAudioCodec) ? 'text-green-400 font-semibold' : 'text-gray-300'">
+                    {{ formatCodecDisplay(codec) }}
+                    <span v-if="isActiveCodec(codec, call.txAudioCodec)" class="text-green-500">← active</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Audio RX Statistics -->
@@ -127,6 +174,25 @@
             </div>
           </div>
         </div>
+
+        <!-- Jitter Buffer Statistics -->
+        <div v-if="call && call.jitterBuffer" class="bg-gray-900 rounded p-3 mt-2">
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Jitter Buffer</p>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span class="text-gray-500">Current:</span>
+              <span class="text-white ml-1">{{ call.jitterBuffer.current }} ms</span>
+            </div>
+            <div>
+              <span class="text-gray-500">Range:</span>
+              <span class="text-white ml-1">{{ call.jitterBuffer.min }}-{{ call.jitterBuffer.max }} ms</span>
+            </div>
+            <div v-if="call.jitterBuffer.packets !== undefined">
+              <span class="text-gray-500">Packets:</span>
+              <span class="text-white ml-1">{{ call.jitterBuffer.packets }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -151,6 +217,13 @@ const formatCodecDisplay = (codec: any) => {
     }
   }
   return [name, rate, channels, bitrate].filter(Boolean).join(' ');
+};
+
+const isActiveCodec = (codec: any, activeCodec: any) => {
+  if (!codec || !activeCodec) return false;
+  return codec.codec === activeCodec.codec && 
+         codec.sampleRate === activeCodec.sampleRate && 
+         codec.channels === activeCodec.channels;
 };
 
 const props = defineProps<{

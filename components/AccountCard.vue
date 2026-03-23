@@ -119,8 +119,8 @@
       </svg>
     </button>
 
-    <!-- Call Statistics Modal -->
-    <CallStatisticsModal 
+    <!-- Call Information Modal -->
+    <CallInformationModal 
       v-if="activeCall"
       :show="showCallStats"
       :call="activeCall"
