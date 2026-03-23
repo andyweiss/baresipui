@@ -108,25 +108,18 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       parseAccountStatusResponse(data, stateManager);
       return;
     }
-
-    // Default: generisch loggen
-    stateManager.broadcast({
-      type: 'log',
-      timestamp,
-      message: `Command Response: ${JSON.stringify(response)}`
-    });
-    return;
   }
-  // Fallback: generisch loggen
+  
+  // Fallback: Log unhandled command response
   stateManager.broadcast({
     type: 'log',
     timestamp,
-    message: `Command Response: ${JSON.stringify(response)}`
+    message: `Unhandled Command Response: ${JSON.stringify(response)}`
   });
 }
 
 
-// System Info Parser
+// ************ System Info response Parser ************
 function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
   if (response.data && typeof response.data === 'string') {
     // Example sysinfo response:
@@ -160,135 +153,138 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
   }
 }
 
-// Parser for account status response uastat (--- sip:... --- blocks)
-    function parseAccountStatusResponse(data: string, stateManager: StateManager): void {
-      // Remove ANSI color codes
-      const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '');
-      // Split into blocks per account
-      const blocks = cleanData.split(/--- sip:/g).map(b => b.trim()).filter(Boolean);
-      for (const block of blocks) {
-        // The URI is in the first line of the block
-        const lines = block.split('\n').map(l => l.trim());
-        const uriMatch = lines[0].match(/^([^\s-]+) ---/);
-        const uri = uriMatch ? `sip:${uriMatch[1]}` : `sip:${lines[0].split(' ')[0]}`;
-        // Preserve only call-related state from existing account
-        const existingAccount = stateManager.getAccount(uri);
-        const account: any = {
-          uri,
-          registered: false,
-          callStatus: existingAccount?.callStatus || 'Idle',
-          callId: existingAccount?.callId,
-          autoConnectContact: existingAccount?.autoConnectContact,
-          autoConnectStatus: existingAccount?.autoConnectStatus || 'Off',
-          lastEvent: Date.now(),
-          configured: true
-        };
-        // Parse fields
-        let displayName = '';
-        for (const line of lines) {
-          if (line.startsWith('address:')) {
-            account.address = line.split('address:')[1].trim();
-            // Try to extract name from address if no dispname is present
-            const addrMatch = account.address.match(/^([^<]+)</);
-            if (addrMatch) {
-              displayName = addrMatch[1].trim();
-            }
-          }
-          if (line.startsWith('luri:')) {
-            account.luri = line.split('luri:')[1].trim();
-          }
-          if (line.startsWith('aor:')) {
-            account.aor = line.split('aor:')[1].trim();
-          }
-          if (line.startsWith('dispname:')) {
-            displayName = line.split('dispname:')[1].trim();
-          }
-          if (line.startsWith('scode:')) {
-            const scode = line.split('scode:')[1].trim();
-            account.scode = scode;
-            if (scode.startsWith('200')) {
-              account.registered = true;
-              account.registrationError = undefined;
-            } else {
-              account.registered = false;
-              // Filter placeholder codes (0, 999, etc.) - show real SIP errors only
-              const scodeNum = parseInt(scode);
-              if (!isNaN(scodeNum) && scodeNum >= 400 && scodeNum < 700) {
-                // Real SIP error code (4xx, 5xx, 6xx)
-                account.registrationError = scode;
-              } else if (scode === '0' || scode.includes('zzz')) {
-                // Placeholder for "not yet registered" - don't show as error
-                account.registrationError = undefined;
-              } else if (!scode || scode === '0') {
-                // Empty or zero - initializing
-                account.registrationError = undefined;
-              } else {
-                // Other non-standard codes - display as-is
-                account.registrationError = scode;
-              }
-            }
+// ************ Account status response uastat Parser ************
+function parseAccountStatusResponse(data: string, stateManager: StateManager): void {
+  // Remove ANSI color codes
+  const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '');
+  // Split into blocks per account
+  const blocks = cleanData.split(/--- sip:/g).map(b => b.trim()).filter(Boolean);
+  
+  for (const block of blocks) {
+    // The URI is in the first line of the block
+    const lines = block.split('\n').map(l => l.trim());
+    const uriMatch = lines[0].match(/^([^\s-]+) ---/);
+    const uri = uriMatch ? `sip:${uriMatch[1]}` : `sip:${lines[0].split(' ')[0]}`;
+    
+    if (!uri) continue; // Skip if no valid URI
+    
+    // Preserve only call-related state from existing account
+    const existingAccount = stateManager.getAccount(uri);
+    const account: any = {
+      uri,
+      registered: false,
+      callStatus: existingAccount?.callStatus || 'Idle',
+      callId: existingAccount?.callId,
+      autoConnectContact: existingAccount?.autoConnectContact,
+      autoConnectStatus: existingAccount?.autoConnectStatus || 'Off',
+      lastEvent: Date.now(),
+      configured: true
+    };
+    
+    // Parse fields
+    let displayName = '';
+    for (const line of lines) {
+      if (line.startsWith('address:')) {
+        const addressPart = line.split('address:')[1];
+        if (addressPart) {
+          account.address = addressPart.trim();
+          // Try to extract name from address if no dispname is present
+          const addrMatch = account.address.match(/^([^<]+)</);
+          if (addrMatch) {
+            displayName = addrMatch[1].trim();
           }
         }
-        if (displayName) {
-          account.displayName = displayName;
-        }
-        // Store in StateManager
-        if (uri) stateManager.setAccount(uri, account);
-        // Broadcast
-        if (uri) {
-          stateManager.broadcast({
-            type: 'accountStatus',
-            data: account
-          });
-          // Trigger auto-connect check if account is registered and idle
-          if (account.registered && account.callStatus === 'Idle') {
-            checkAutoConnectForAccount(uri, stateManager);
+      } else if (line.startsWith('luri:')) {
+        const luriPart = line.split('luri:')[1];
+        if (luriPart) account.luri = luriPart.trim();
+      } else if (line.startsWith('aor:')) {
+        const aorPart = line.split('aor:')[1];
+        if (aorPart) account.aor = aorPart.trim();
+      } else if (line.startsWith('dispname:')) {
+        const dispnamePart = line.split('dispname:')[1];
+        if (dispnamePart) displayName = dispnamePart.trim();
+      } else if (line.startsWith('scode:')) {
+        const scodePart = line.split('scode:')[1];
+        if (!scodePart) continue;
+        
+        const scode = scodePart.trim();
+        account.scode = scode;
+        
+        if (scode.startsWith('200')) {
+          account.registered = true;
+          account.registrationError = undefined;
+        } else {
+          account.registered = false;
+          const scodeNum = parseInt(scode);
+          
+          // Filter placeholder codes (0, 999, etc.) - show real SIP errors only
+          if (!isNaN(scodeNum) && scodeNum >= 400 && scodeNum < 700) {
+            // Real SIP error code (4xx, 5xx, 6xx)
+            account.registrationError = scode;
+          } else if (!scode || scode === '0' || scode.includes('zzz')) {
+            // Placeholder for "not yet registered" or empty - don't show as error
+            account.registrationError = undefined;
+          } else {
+            // Other non-standard codes - display as-is
+            account.registrationError = scode;
           }
         }
       }
     }
-
-// parseRegistrationInfo removed - uastat provides all needed account data with real SIP status codes
-// Real-time registration events are handled by handleJsonEvent (REGISTER_OK, REGISTER_FAIL)
-
-function parseContactsFromResponse(data: string, stateManager: StateManager): void {
-  const lines = data.split('\n');
-
-  for (const line of lines) {
-    if (line.includes('<sip:')) {
-      const cleanLine = line.replace(/\x1b\[[0-9;]*[mK]/g, '');
-      console.log(`Parsing contact line: "${cleanLine}"`);
-
-      // Match format: [spaces] STATUS name <sip:...>
-      // We ONLY extract name and contact URI, ignore status (comes from presence_ts)
-      const matchWithStatus = cleanLine.match(/(?:>\s*)?(?:\s*)(Unknown|Online|Busy|Offline|Away)?\s*(.+?)\s*<(sip:[^@]+@[^>]+)>/i);
-      if (matchWithStatus) {
-        const name = matchWithStatus[2].trim();
-        const contact = matchWithStatus[3];
-        
-        console.log(`Found contact: name="${name}", contact="${contact}"`);
-
-        // Get existing config or create new one
-        const existingConfig = stateManager.getContactConfig(contact);
-        const contactConfig = {
-          name: name,
-          enabled: existingConfig?.enabled || false,
-          status: existingConfig?.status || 'Off',
-          source: 'api'
-        };
-
-        // Update contact config (name, etc.) - NO STATUS UPDATE
-        stateManager.setContactConfig(contact, contactConfig);
-        
-        console.log(`Loaded contact from API: ${name} <${contact}>`);
-      } else {
-        console.log(`No match for line: "${cleanLine}"`);
-      }
+    
+    if (displayName) {
+      account.displayName = displayName;
+    }
+    
+    // Store in StateManager and broadcast
+    stateManager.setAccount(uri, account);
+    stateManager.broadcast({
+      type: 'accountStatus',
+      data: account
+    });
+    
+    // Trigger auto-connect check if account is registered and idle
+    if (account.registered && account.callStatus === 'Idle') {
+      checkAutoConnectForAccount(uri, stateManager);
     }
   }
+}
 
-  if (stateManager.getContactsSize() > 0) {
-    console.log(`Broadcasting ${stateManager.getContactsSize()} contacts`);
+
+// ************ Contacts Response Parser ************
+function parseContactsFromResponse(data: string, stateManager: StateManager): void {
+  // Remove ANSI color codes once for all data
+  const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '');
+  const lines = cleanData.split('\n');
+
+  let contactCount = 0;
+  for (const line of lines) {
+    if (!line.includes('<sip:')) continue;
+
+    // Match format: [spaces] STATUS name <sip:...>
+    // We ONLY extract name and contact URI, ignore status (comes from presence_ts)
+    const match = line.match(/(?:>\s*)?(?:\s*)(Unknown|Online|Busy|Offline|Away)?\s*(.+?)\s*<(sip:[^@]+@[^>]+)>/i);
+    if (!match) continue;
+
+    const name = match[2].trim();
+    const contact = match[3];
+
+    // Get existing config or create new one
+    const existingConfig = stateManager.getContactConfig(contact);
+    const contactConfig = {
+      name,
+      enabled: existingConfig?.enabled || false,
+      status: existingConfig?.status || 'Off',
+      source: 'api' as const
+    };
+
+    // Update contact config (name, etc.) - NO STATUS UPDATE
+    stateManager.setContactConfig(contact, contactConfig);
+    contactCount++;
+  }
+
+  // Broadcast updated contact list if any contacts were found
+  if (contactCount > 0) {
     stateManager.broadcast({
       type: 'contactsUpdate',
       contacts: stateManager.getContacts()
@@ -296,58 +292,56 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
   }
 }
 
+// ************ Presence Timestamps Parser ************
+// Parses presence status with timestamps from baresip's presence_ts command
+// Format: sip:user@domain|status|timestamp
+// timestamp: Unix timestamp in seconds (0 = no NOTIFY received yet)
 function parsePresenceTimestamps(data: string, stateManager: StateManager): void {
   const lines = data.split('\n');
+  const PRESENCE_TIMEOUT_SEC = 600; // 10 minutes - mark as unknown if no update
+  let updatedCount = 0;
 
-  let parsedCount = 0;
   for (const line of lines) {
     // Match format: sip:uri|status|timestamp
     const match = line.match(/(sip:[^@]+@[^|]+)\|(\w+)\|(\d+)/);
-    if (match) {
-      const contact = match[1];
-      const status = match[2].toLowerCase();
-      const timestamp = parseInt(match[3], 10);
-      
-      // Check if contact has manual override that's newer than baresip data
-      if (stateManager.hasContactPresenceOverride(contact, timestamp)) {
-        continue; // Don't overwrite manual status
-      }
-      
-      // Get previous status for auto-connect detection
-      const previousPresence = stateManager.getContactPresence(contact);
-      
-      if (timestamp > 0) {
-        // NOTIFY was received - check if too old
-        const lastSeenMs = timestamp * 1000;
-        const age = Math.floor((Date.now() - lastSeenMs) / 1000);
-        
-        const PRESENCE_TIMEOUT_SEC = 600; // 10 minutes
-        let effectiveStatus = status;
-        
-        if (age > PRESENCE_TIMEOUT_SEC) {
-          // No NOTIFY for > 30s → contact lost connectivity
-          effectiveStatus = 'unknown';
-        }
-        
-        // Update status
-        stateManager.setContactPresence(contact, effectiveStatus, false);
-        stateManager.setContactLastSeen(contact, lastSeenMs);
-        
-        parsedCount++;
-        
-        // Trigger auto-connect if contact changed to online
-        if (effectiveStatus === 'online' && previousPresence !== 'online') {
-          checkAutoConnectForContact(contact, stateManager);
-        }
-      } else {
-        // No NOTIFY received yet (timestamp=0)
-        stateManager.setContactPresence(contact, 'unknown', false);
-      }
+    if (!match) continue;
+
+    const contact = match[1];
+    const status = match[2].toLowerCase();
+    const timestamp = parseInt(match[3], 10);
+    
+    // Skip if contact has call failure timestamp that's newer than baresip data
+    if (stateManager.hasContactCallFailureTimestamp(contact, timestamp)) {
+      continue;
+    }
+    
+    // Handle case: No NOTIFY received yet
+    if (timestamp === 0) {
+      stateManager.setContactPresence(contact, 'unknown', false);
+      continue;
+    }
+    
+    // Calculate age and determine effective status
+    const lastSeenMs = timestamp * 1000;
+    const ageInSeconds = Math.floor((Date.now() - lastSeenMs) / 1000);
+    const effectiveStatus = ageInSeconds > PRESENCE_TIMEOUT_SEC ? 'unknown' : status;
+    
+    // Get previous status for auto-connect detection
+    const previousPresence = stateManager.getContactPresence(contact);
+    
+    // Update presence data
+    stateManager.setContactPresence(contact, effectiveStatus, false);
+    stateManager.setContactLastSeen(contact, lastSeenMs);
+    updatedCount++;
+    
+    // Trigger auto-connect if contact just came online
+    if (effectiveStatus === 'online' && previousPresence !== 'online') {
+      checkAutoConnectForContact(contact, stateManager);
     }
   }
   
-  if (parsedCount > 0) {
-    // Broadcast updated contacts
+  // Broadcast changes if any contacts were updated
+  if (updatedCount > 0) {
     stateManager.broadcast({
       type: 'contactsUpdate',
       contacts: stateManager.getContacts()
@@ -894,8 +888,8 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
               console.log(`🔴 Auto-connect call failed - registration error: "${jsonEvent.param}" - setting ${autoConnectContact} to offline, skip reconnect`);
             }
             
-            // Use override to prevent presence_ts from overwriting with old status
-            stateManager.setContactPresenceOverride(autoConnectContact, 'offline');
+            // Set timestamp to prevent presence_ts from overwriting with old status
+            stateManager.setContactCallFailureTimestamp(autoConnectContact, 'offline');
             skipReconnect = true; // Don't reconnect immediately
             
             // Broadcast contact update
