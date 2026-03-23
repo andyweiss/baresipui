@@ -390,7 +390,6 @@ function buildCodecUpdates(localCodecs: any[], remoteCodecs: any[]): any {
   const updates: any = {};
   
   // Find active codec (negotiated between both sides)
-  let activeCodec = null;
   for (const localCodec of localCodecs) {
     const remoteMatch = remoteCodecs.find(rc => 
       rc.codec === localCodec.codec && 
@@ -398,34 +397,24 @@ function buildCodecUpdates(localCodecs: any[], remoteCodecs: any[]): any {
       rc.channels === localCodec.channels
     );
     if (remoteMatch) {
-      activeCodec = localCodec;
+      updates.audioCodec = localCodec;
       break;
     }
   }
   
-  // Fallback: Use first local codec if no match found
-  if (!activeCodec && localCodecs.length > 0) {
-    activeCodec = localCodecs[0];
-  }
-  
-  if (activeCodec) {
-    updates.audioCodec = activeCodec;
-  }
-  
   if (localCodecs.length > 0) {
-    updates.audioCodecs = localCodecs;      // Backward compatibility
-    updates.txCodecs = localCodecs;         // TX: What we send
+    updates.txCodecs = localCodecs;
     updates.txAudioCodec = localCodecs[0];
   }
   
   if (remoteCodecs.length > 0) {
-    updates.rxCodecs = remoteCodecs;        // RX: What we receive
+    updates.rxCodecs = remoteCodecs;
     updates.rxAudioCodec = remoteCodecs[0];
   }
   
   return updates;
 }
-
+// ************ Callstat Parser ************
 function parseCallStatResponse(data: string, stateManager: StateManager): void {
   // Extract call ID (uppercase or lowercase hex)
   const callIdMatch = data.match(/id=([a-fA-F0-9]+)/);

@@ -157,29 +157,54 @@ export class StateManager {
     const now = Date.now();
     this.contactPresence.set(contact, presence);
     this.contactCallFailureTimestamp.set(contact, now);
+    // Clear lastSeen to prevent presence_ts from overwriting with old status after auto-clear
+    this.contactLastSeen.delete(contact);
   }
 
   // Check if call failure timestamp blocks old presence updates
   // Blocks old NOTIFYs (before the failure), but new NOTIFYs are always accepted
+  // Auto-clears after 10 minutes to match presence timeout
   hasContactCallFailureTimestamp(contact: string, baresipTimestamp: number): boolean {
     const failureTime = this.contactCallFailureTimestamp.get(contact);
     if (!failureTime) return false;
+    
+    // Auto-clear after 10 minutes (600s) - match PRESENCE_TIMEOUT_SEC
+    const ageSeconds = (Date.now() - failureTime) / 1000;
+    if (ageSeconds > 600) {
+      console.log(`[hasContactCallFailureTimestamp] Auto-clearing failure timestamp for ${contact} after ${ageSeconds.toFixed(0)}s`);
+      this.contactCallFailureTimestamp.delete(contact);
+      return false;
+    }
     
     // If baresip has NO timestamp, failure protection stays active
     if (!baresipTimestamp || baresipTimestamp === 0) {
       return true;
     }
     
+    // If baresip timestamp is NEWER than failure (fresh NOTIFY received), clear protection
+    const baresipTimestampMs = baresipTimestamp * 1000;
+    if (baresipTimestampMs > failureTime) {
+      console.log(`[hasContactCallFailureTimestamp] Fresh NOTIFY received for ${contact}, clearing failure timestamp`);
+      this.contactCallFailureTimestamp.delete(contact);
+      return false;
+    }
+    
     const baresipMs = baresipTimestamp * 1000;
     
     // If baresip has NOTIFY AFTER the failure → new presence info → clear protection
     if (baresipMs > failureTime) {
+      console.log(`[hasContactCallFailureTimestamp] Clearing failure timestamp for ${contact} - new NOTIFY received`);
       this.contactCallFailureTimestamp.delete(contact);
       return false;
     }
     
     // NOTIFY is older than failure → block it, keep offline status
     return true;
+  }
+
+  // Clear call failure timestamp (e.g., when receiving new online PRESENCE_EVENT)
+  clearContactCallFailureTimestamp(contact: string): void {
+    this.contactCallFailureTimestamp.delete(contact);
   }
 
   // Set lastSeen timestamp directly (from presence_ts command)
