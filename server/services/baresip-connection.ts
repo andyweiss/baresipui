@@ -153,9 +153,6 @@ export class BaresipConnection {
       this.startCallStatsPolling();
 
       setTimeout(() => {
-        console.log(`Accounts loaded via API: ${stateManager.getAccountsSize()}`);
-        console.log(`Contacts loaded via API: ${stateManager.getContactsSize()}`);
-        
         // Apply saved auto-connect configs to contacts
         this.applySavedConfigs();
       }, 2000);
@@ -266,7 +263,6 @@ export class BaresipConnection {
           if (displayName) {
             account.displayName = displayName;
             stateManager.setAccount(uri, account);
-            console.log(`Loaded display name for ${uri}: "${displayName}"`);
           }
         }
       }
@@ -382,8 +378,6 @@ export class BaresipConnection {
       if (process.env.DEBUG_TCP_BUS === 'true') {
         console.log(`[TCP-DEBUG] >>> SENT: ${jsonString} >>>`);
       }
-      
-      console.log(`Sent JSON command: ${jsonString} (as netstring: ${netstring})`);
       
       // Log to baresip logger (always when debug enabled, otherwise only important commands)
       const shouldLog = process.env.DEBUG_TCP_BUS === 'true' || 

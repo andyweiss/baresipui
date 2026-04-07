@@ -42,25 +42,25 @@ export default defineEventHandler(async (event) => {
     const config = useRuntimeConfig();
     const connection = getBaresipConnection(config.baresipHost, parseInt(config.baresipPort));
 
-    if (command === 'about') {
-      // sysinfo liefert bereits die Version - kein separates about nötig
+    if (command === 'sysinfo') {
+      // Send sysinfo and wait for response to be processed
       connection.sendCommand('sysinfo', params, token);
-      // Version direkt aus StateManager holen (wird beim Parsen gesetzt)
-      let version = stateManager.getBaresipVersion() || 'unbekannt';
-      for (let i = 0; i < 10 && version === 'unbekannt'; i++) {
-        await new Promise(r => setTimeout(r, 60));
-        version = stateManager.getBaresipVersion() || 'unbekannt';
-      }
+      
+      // Wait for response to be parsed and state updated (fixed delay)
+      await new Promise(r => setTimeout(r, 250));
+      
+      const baresipInfo = stateManager.getBaresipInfo();
+      
       return {
         success: true,
         command,
         params,
         timestamp: Date.now(),
-        version
+        ...baresipInfo
       };
     }
 
-    // Standard-Logik für andere Kommandos
+    // Standard logic for other commands
     if (command === 'dial' && params) {
       const { accountUri, target } = typeof params === 'object' ? params : { accountUri: undefined, target: params };
       if (!accountUri || !target) {
@@ -87,7 +87,7 @@ export default defineEventHandler(async (event) => {
       connection.sendCommand(command, params, token);
     }
 
-    // Fallback: baresipInfo wie im StateManager
+    // Fallback: baresipInfo may have been updated by the command - include it in response
     let baresipInfo = stateManager.getBaresipInfo ? stateManager.getBaresipInfo() : {};
     return {
       success: true,

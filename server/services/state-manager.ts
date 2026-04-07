@@ -41,7 +41,8 @@ export class StateManager {
   }
 
   setBaresipInfo(info: { version?: string; uptime?: string; started?: string }) {
-    this.baresipInfo = { ...this.baresipInfo, ...info };
+    // Replace old info completely instead of merging to avoid stale data
+    this.baresipInfo = info;
     this.broadcast({
       type: 'baresipInfo',
       data: this.baresipInfo
@@ -171,7 +172,6 @@ export class StateManager {
     // Auto-clear after 10 minutes (600s) - match PRESENCE_TIMEOUT_SEC
     const ageSeconds = (Date.now() - failureTime) / 1000;
     if (ageSeconds > 600) {
-      console.log(`[hasContactCallFailureTimestamp] Auto-clearing failure timestamp for ${contact} after ${ageSeconds.toFixed(0)}s`);
       this.contactCallFailureTimestamp.delete(contact);
       return false;
     }
@@ -184,7 +184,6 @@ export class StateManager {
     // If baresip timestamp is NEWER than failure (fresh NOTIFY received), clear protection
     const baresipTimestampMs = baresipTimestamp * 1000;
     if (baresipTimestampMs > failureTime) {
-      console.log(`[hasContactCallFailureTimestamp] Fresh NOTIFY received for ${contact}, clearing failure timestamp`);
       this.contactCallFailureTimestamp.delete(contact);
       return false;
     }
@@ -193,7 +192,6 @@ export class StateManager {
     
     // If baresip has NOTIFY AFTER the failure → new presence info → clear protection
     if (baresipMs > failureTime) {
-      console.log(`[hasContactCallFailureTimestamp] Clearing failure timestamp for ${contact} - new NOTIFY received`);
       this.contactCallFailureTimestamp.delete(contact);
       return false;
     }

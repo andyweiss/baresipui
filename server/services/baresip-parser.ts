@@ -145,12 +145,15 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
         version = line.split('Version:')[1]?.trim() || '';
       }
       if (line.trim().startsWith('Uptime:')) {
-        uptime = line.split('Uptime:')[1]?.trim() || '';
+        const uptimeValue = line.split('Uptime:')[1]?.trim() || '';
+        // Handle empty uptime (baresip just started or parsing issue)
+        uptime = uptimeValue || 'just started';
       }
       if (line.trim().startsWith('Started:')) {
         started = line.split('Started:')[1]?.trim() || '';
       }
     }
+    
     if (typeof stateManager.setBaresipInfo === 'function') {
       stateManager.setBaresipInfo({ version, uptime, started });
     }
