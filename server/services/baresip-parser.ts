@@ -95,12 +95,16 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       parseCallStatResponse(data, stateManager);
       return;
     }
-    // 4. Calls - for manual queries only, NO auto-reset
-    if ((data.includes('=== Call') || data.includes('call:') || 
+    // 4. Calls - Active call queries
+    // Matches: "Active calls (1)", "Active calls (0)", "no active call", "no calls"
+    // Purpose: Query current call state from baresip (e.g., after UI reconnect)
+    // Strategy: Last wins for updates - listcalls ADDS/UPDATES but does NOT remove
+    //           (Events like CALL_CLOSED handle removal in real-time)
+    if ((data.toLowerCase().includes('active calls') ||
         data.toLowerCase().includes('no active call') || 
         data.toLowerCase().includes('no calls')) &&
         !data.includes('Call debug')) {
-      parseCallsResponse(data, stateManager, false); // false = no auto-reset
+      parseCallsResponse(data, stateManager, false);
       return;
     }
     // 5. uastat -> Account status with full SIP status codes (--- sip:... --- blocks)
@@ -516,90 +520,105 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
   const lines = cleanData.split('\n');
   
   // Parse active calls and update account status
-  // Format examples from baresip v3.16.0:
-  // "call: #1 <sip:2061616@sip.srgssr.ch> <sip:2061531@sip.srgssr.ch> [ESTABLISHED] id=abc123"
-  // Or older format: "=== Call 1: sip:2061616@sip.srgssr.ch -> sip:2061531@sip.srgssr.ch [ESTABLISHED]"
+  // Actual baresip v3.16 format:
+  // User-Agent: 2061616@sip.srgssr.ch
+  // --- Active calls (1) ---
+  // > [line 1, id 8fd950528ad2127d]  1:23:38  ESTABLISHED            
+  //
+  // Strategy: Last wins for updates - new info overwrites old
+  // - listcalls response ADDS/UPDATES calls found (e.g., on UI reconnect)
+  // - BUT does NOT remove calls (unless autoReset=true)
+  // - Events (CALL_CLOSED) handle call removal in real-time
+  
   const activeCallIds: Set<string> = new Set();
   let foundAnyCall = false;
+  let currentUserAgent: string | null = null;
+  
   for (const line of lines) {
-    if ((line.includes('call:') || line.includes('=== Call')) && line.includes('sip:')) {
+    // Extract User-Agent (local account)
+    const uaMatch = line.match(/User-Agent:\s*(.+@.+)/);
+    if (uaMatch) {
+      currentUserAgent = `sip:${uaMatch[1].trim()}`;
+      continue;
+    }
+    
+    // Skip lines that indicate no calls
+    if (line.match(/active calls \(0\)/i) || line.match(/no active calls/i)) {
+      continue;
+    }
+    
+    // Parse call line: > [line 1, id 8fd950528ad2127d]  1:23:38  ESTABLISHED       
+    const callMatch = line.match(/>\s*\[line\s+\d+,\s*id\s+([a-f0-9]+)\]\s+[\d:]+\s+(\w+)\s+(sip:[^@\s]+@[^\s]+)/i);
+    if (callMatch) {
       foundAnyCall = true;
-      // Try new format first: call: #1 <local> <remote> [STATE] id=xxx
-      let match = line.match(/<(sip:[^@\s]+@[^\s>]+)>\s*<(sip:[^@\s]+@[^\s>]+)>\s*\[([^\]]+)\](?:.*id[=:]([^\s]+))?/i);
-      // Try older format: === Call N: local -> remote [STATE]
-      if (!match) {
-        match = line.match(/sip:([^@\s]+@[^\s>]+).*->.*sip:([^@\s]+@[^\s\[]+)\s*\[([^\]]+)\]/i);
-        if (match) {
-          match = [`sip:${match[1]}`, `sip:${match[1]}`, `sip:${match[2]}`, match[3], undefined];
-        }
+      
+      const callId = callMatch[1];
+      const callState = callMatch[2].trim().toUpperCase();
+      const remoteUri = callMatch[3];
+      const localUri = currentUserAgent;
+      
+      if (!localUri) {
+        continue;
       }
-      if (match) {
-        const localUri = match[1];
-        const remoteUri = match[2];
-        const callState = match[3].trim().toUpperCase();
-        const callId = match[4] || `${localUri}->${remoteUri}`; // Fallback-ID
-        activeCallIds.add(callId);
-        
-        // Update account call status
-        const account = stateManager.getAccount(localUri);
-        let callStatus: string;
-        let callDirection: 'incoming' | 'outgoing' | 'unknown' = 'unknown';
-        if (callState === 'ESTABLISHED') {
-          callStatus = 'In Call';
-        } else if ([
-          'TRYING', 'OUTGOING', 'PROGRESS', 'RINGING', 'EARLY', 'CALLING'
-        ].includes(callState)) {
-          callStatus = 'Ringing';
-        } else {
-          callStatus = callState;
-        }
-        // Direction heuristik: Wenn localUri == eigenem Account, outgoing
-        if (account && account.autoConnectContact) {
-          callDirection = 'outgoing';
-        }
-        // Updates für Account
-        const updates: any = { callStatus };
-        if (callId) updates.callId = callId;
-        if (account && account.autoConnectContact) {
-          updates.autoConnectStatus = (callState === 'ESTABLISHED') ? 'Connected' : 'Connecting';
-        }
-        if (account && localUri) {
-          stateManager.updateAccountStatus(String(localUri).toLowerCase().trim(), updates);
-        }
-        // Call-Objekt: update, wenn vorhanden, sonst add
-        const existingCall = stateManager.getCall(callId);
-        const callObj = {
-          callId,
-          localUri,
-          remoteUri,
-          peerName: remoteUri.split('@')[0],
-          state: callState === 'ESTABLISHED' ? 'Established' : 'Ringing',
-          direction: callDirection,
-          startTime: Date.now(),
-          answerTime: callState === 'ESTABLISHED' ? Date.now() : undefined
-        };
-        if (existingCall) {
-          stateManager.updateCall(callId, callObj);
-        } else {
-          stateManager.addCall(callObj);
-        }
+      
+      activeCallIds.add(callId);
+      
+      // Update account call status
+      const account = stateManager.getAccount(localUri);
+      let callStatus: string;
+      let callDirection: 'incoming' | 'outgoing' | 'unknown' = 'unknown';
+      if (callState === 'ESTABLISHED') {
+        callStatus = 'In Call';
+      } else if ([
+        'TRYING', 'OUTGOING', 'PROGRESS', 'RINGING', 'EARLY', 'CALLING'
+      ].includes(callState)) {
+        callStatus = 'Ringing';
+      } else {
+        callStatus = callState;
+      }
+      // Direction heuristic: If account has auto-connect, it's outgoing
+      if (account && account.autoConnectContact) {
+        callDirection = 'outgoing';
+      }
+      
+      // Updates for Account
+      const updates: any = { callStatus };
+      if (callId) updates.callId = callId;
+      if (account && account.autoConnectContact) {
+        updates.autoConnectStatus = (callState === 'ESTABLISHED') ? 'Connected' : 'Connecting';
+      }
+      if (account && localUri) {
+        stateManager.updateAccountStatus(String(localUri).toLowerCase().trim(), updates);
+      }
+      
+      // Call object: update if exists, otherwise add
+      const existingCall = stateManager.getCall(callId);
+      const callObj = {
+        callId,
+        localUri,
+        remoteUri,
+        peerName: remoteUri.split('@')[0].replace('sip:', ''),
+        state: callState === 'ESTABLISHED' ? 'Established' : 'Ringing',
+        direction: callDirection,
+        startTime: existingCall?.startTime || Date.now(),
+        answerTime: callState === 'ESTABLISHED' ? (existingCall?.answerTime || Date.now()) : undefined
+      };
+      if (existingCall) {
+        stateManager.updateCall(callId, callObj);
+      } else {
+        stateManager.addCall(callObj);
       }
     }
   }
-  
   
   // Auto-Reset only if explicitly enabled (default: disabled)
   if (autoReset) {
     const allAccounts = stateManager.getAccounts();
     const accountsWithCalls = new Set<string>();
-    for (const line of lines) {
-      if ((line.includes('call:') || line.includes('=== Call')) && line.includes('sip:')) {
-        const match = line.match(/<(sip:[^@\s]+@[^\s>]+)>/) || line.match(/sip:([^@\s]+@[^\s>]+)/);
-        if (match) {
-          const uri = match[1].toLowerCase().trim();
-          accountsWithCalls.add(uri);
-        }
-      }
+    
+    // Track which accounts have calls in this response
+    if (currentUserAgent && foundAnyCall) {
+      accountsWithCalls.add(currentUserAgent.toLowerCase().trim());
     }
     
     for (const account of allAccounts) {

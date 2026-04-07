@@ -139,12 +139,12 @@ export class BaresipConnection {
         // Logger might not be ready yet
       }
 
-      this.sendCommand('contacts');
-      this.sendCommand('listcalls');
-      this.sendCommand('callstat');
-      this.sendCommand('about');    // get baresip version
-      this.sendCommand('sysinfo'); // user system information
+      
+      this.sendCommand('sysinfo'); // system information including baresip version
       this.sendCommand('uastat'); // user agent statistics - provides all account info including SIP status codes
+      this.sendCommand('contacts');
+      this.sendCommand('listcalls'); // AFTER uastat so accounts exist
+      this.sendCommand('callstat');
       
 
       // Start polling contacts for presence updates

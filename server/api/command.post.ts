@@ -43,9 +43,9 @@ export default defineEventHandler(async (event) => {
     const connection = getBaresipConnection(config.baresipHost, parseInt(config.baresipPort));
 
     if (command === 'about') {
-      connection.sendCommand('about', params, token);
+      // sysinfo liefert bereits die Version - kein separates about nötig
+      connection.sendCommand('sysinfo', params, token);
       // Version direkt aus StateManager holen (wird beim Parsen gesetzt)
-      // Optional: kurz warten, falls noch keine Version gesetzt
       let version = stateManager.getBaresipVersion() || 'unbekannt';
       for (let i = 0; i < 10 && version === 'unbekannt'; i++) {
         await new Promise(r => setTimeout(r, 60));
