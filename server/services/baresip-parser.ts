@@ -217,15 +217,27 @@ function parseAccountStatusResponse(data: string, stateManager: StateManager): v
           account.registered = false;
           const scodeNum = parseInt(scode);
           
-          // Filter placeholder codes (0, 999, etc.) - show real SIP errors only
+          // Map status codes to user-friendly messages
           if (!isNaN(scodeNum) && scodeNum >= 400 && scodeNum < 700) {
-            // Real SIP error code (4xx, 5xx, 6xx)
+            // Real SIP error codes (4xx, 5xx, 6xx) - always show as-is
             account.registrationError = scode;
-          } else if (!scode || scode === '0' || scode.includes('zzz')) {
-            // Placeholder for "not yet registered" or empty - don't show as error
-            account.registrationError = undefined;
+          } else if (scodeNum === 0 || scode === '0') {
+            // Not initialized yet
+            account.registrationError = 'Not registered yet';
+          } else if (scodeNum === 999 || scode === '999' || scode.match(/^999\s*\(ERR\)$/i)) {
+            // Baresip internal placeholder for pending registration
+            account.registrationError = 'Initializing...';
+          } else if (scode.includes('fallback')) {
+            // Fallback registration mechanism active
+            account.registrationError = 'Unknown error';
+          } else if (scode.includes('zzz')) {
+            // Another baresip placeholder
+            account.registrationError = 'Waiting for response...';
+          } else if (!scode || scode.trim() === '') {
+            // Empty status code
+            account.registrationError = 'Status unknown';
           } else {
-            // Other non-standard codes - display as-is
+            // Unknown/other codes - show as-is
             account.registrationError = scode;
           }
         }
@@ -261,13 +273,19 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
   for (const line of lines) {
     if (!line.includes('<sip:')) continue;
 
-    // Match format: [spaces] STATUS name <sip:...>
-    // We ONLY extract name and contact URI, ignore status (comes from presence_ts)
-    const match = line.match(/(?:>\s*)?(?:\s*)(Unknown|Online|Busy|Offline|Away)?\s*(.+?)\s*<(sip:[^@]+@[^>]+)>/i);
-    if (!match) continue;
+    // Extract SIP URI from format: [spaces] [STATUS] name <sip:...>
+    // Status is ignored (comes from presence_ts command)
+    const sipMatch = line.match(/<(sip:[^@]+@[^>]+)>/i);
+    if (!sipMatch) continue;
 
-    const name = match[2].trim();
-    const contact = match[3];
+    const contact = sipMatch[1];
+    
+    // Extract name: everything before '<', remove markers, status and whitespace
+    const beforeUri = line.substring(0, line.indexOf('<')).trim();
+    const name = beforeUri
+      .replace(/^[>*]+\s*/, '')  // Remove leading markers like '>' or '*'
+      .replace(/^(Unknown|Online|Busy|Offline|Away)\s+/i, '')  // Remove status prefix
+      .trim() || contact;
 
     // Get existing config or create new one
     const existingConfig = stateManager.getContactConfig(contact);
@@ -414,6 +432,8 @@ function buildCodecUpdates(localCodecs: any[], remoteCodecs: any[]): any {
   
   return updates;
 }
+
+
 // ************ Callstat Parser ************
 function parseCallStatResponse(data: string, stateManager: StateManager): void {
   // Extract call ID (uppercase or lowercase hex)
@@ -608,10 +628,19 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
     if (jsonEvent.type === 'REGISTER_OK') {
       const uri = jsonEvent.accountaor;
       if (uri) {
+        const account = stateManager.getAccount(uri);
         stateManager.updateAccountStatus(uri, {
           registered: true,
           registrationError: undefined
         });
+        
+        // Ensure account is in state and broadcast update
+        if (account) {
+          stateManager.broadcast({
+            type: 'accountStatus',
+            data: stateManager.getAccount(uri)
+          });
+        }
         
         // Check if auto-connect should be triggered immediately
         checkAutoConnectForAccount(uri, stateManager);
@@ -619,6 +648,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
     } else if (jsonEvent.type === 'REGISTER_FAIL') {
       const uri = jsonEvent.accountaor;
       if (uri) {
+        // Parse error message and remove error code suffix [nnn]
         let errorStatus = 'Registration Error';
         if (jsonEvent.param) {
           const cleanParam = jsonEvent.param.replace(/\s*\[\d+\]\s*$/, '').trim();
@@ -626,16 +656,36 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
             errorStatus = cleanParam;
           }
         }
+        
+        // Update account status
         stateManager.updateAccountStatus(uri, {
           registered: false,
           registrationError: errorStatus,
           lastRegistrationAttempt: timestamp
         });
+        
+        // Broadcast updated account data to ensure UI updates
+        const account = stateManager.getAccount(uri);
+        if (account) {
+          stateManager.broadcast({
+            type: 'accountStatus',
+            data: account
+          });
+        }
       }
     } else if (jsonEvent.type === 'UNREGISTERING') {
       const uri = jsonEvent.accountaor;
       if (uri) {
         stateManager.updateAccountStatus(uri, { registered: false });
+        
+        // Broadcast updated account data
+        const account = stateManager.getAccount(uri);
+        if (account) {
+          stateManager.broadcast({
+            type: 'accountStatus',
+            data: account
+          });
+        }
       }
     } else if (jsonEvent.type === 'UA_EVENT' && jsonEvent.event_name === 'account') {
       const uri = jsonEvent.accountaor;

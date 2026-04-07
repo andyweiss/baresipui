@@ -73,13 +73,8 @@ static uint32_t wait_term(const struct sipevent_substate *substate)
 
 static uint32_t wait_fail(unsigned failc)
 {
-	switch (failc) {
-
-	case 1:  return 30;
-	case 2:  return 300;
-	case 3:  return 3600;
-	default: return 86400;
-	}
+	(void)failc;  /* Always use 30s retry interval */
+	return 30;
 }
 
 

@@ -16,6 +16,8 @@ services:
     environment:
       - BARESIP_HOST=baresip
       - BARESIP_PORT=4444
+      # Enable TCP bus debug logging (shows received data in baresip logs)
+      - DEBUG_TCP_BUS=true
     depends_on:
       - baresip
     restart: unless-stopped

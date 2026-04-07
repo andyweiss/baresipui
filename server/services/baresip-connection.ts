@@ -162,7 +162,32 @@ export class BaresipConnection {
     });
 
     this.client.on('data', (data) => {
-      parseBaresipEvent(data, stateManager);
+      // Log received data if debug enabled - BEFORE parsing
+      if (process.env.DEBUG_TCP_BUS === 'true') {
+        const dataStr = data.toString();
+        
+        // Always log to console first
+        console.log(`[TCP-DEBUG] <<< RECEIVED ${data.length} bytes <<<`);
+        console.log(dataStr);
+        
+        // Try to log to baresip logger
+        try {
+          const logger = getBaresipLogger();
+          logger.addLog('debug', 'tcp-socket', `<<< Received (${data.length} bytes): ${dataStr}`);
+        } catch (e) {
+          console.error('[TCP-DEBUG] Failed to log to baresip logger:', e);
+        }
+      }
+      
+      // Parse the event
+      try {
+        parseBaresipEvent(data, stateManager);
+      } catch (e) {
+        console.error('Failed to parse baresip event:', e);
+        if (process.env.DEBUG_TCP_BUS === 'true') {
+          console.error('Raw data was:', data.toString());
+        }
+      }
     });
 
     this.client.on('error', (err) => {
@@ -352,13 +377,22 @@ export class BaresipConnection {
       const netstring = createNetstring(jsonString);
       
       this.client.write(netstring);
+      
+      // Debug logging - always log if debug enabled
+      if (process.env.DEBUG_TCP_BUS === 'true') {
+        console.log(`[TCP-DEBUG] >>> SENT: ${jsonString} >>>`);
+      }
+      
       console.log(`Sent JSON command: ${jsonString} (as netstring: ${netstring})`);
       
-      // Log important commands
-      if (!['contacts', 'presence_ts', 'getrtcpstats'].includes(command)) {
+      // Log to baresip logger (always when debug enabled, otherwise only important commands)
+      const shouldLog = process.env.DEBUG_TCP_BUS === 'true' || 
+                       !['contacts', 'presence_ts', 'getrtcpstats'].includes(command);
+      
+      if (shouldLog) {
         try {
           const logger = getBaresipLogger();
-          logger.addLog('debug', 'tcp-socket', `Sent command: ${command}${params ? ' ' + params : ''}`);
+          logger.addLog('debug', 'tcp-socket', `>>> Sent command: ${command}${params ? ' ' + params : ''}`);
         } catch (e) {
           // Logger might not be available
         }
