@@ -1,5 +1,33 @@
 <template>
   <div class="min-h-screen bg-gray-900">
+    <!-- Disconnected Overlay -->
+    <Transition name="overlay-fade">
+      <div
+        v-if="!connected"
+        class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gray-900/80 backdrop-blur-sm"
+      >
+        <div class="flex flex-col items-center gap-6 select-none">
+          <!-- Warning Icon -->
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="w-40 h-40 text-red-500 drop-shadow-[0_0_32px_rgba(239,68,68,0.6)]"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z"
+              clip-rule="evenodd"
+            />
+          </svg>
+          <div class="text-center">
+            <p class="text-2xl font-bold text-red-400 tracking-wide">connection lost</p>
+            <p class="text-gray-400 mt-2 text-sm">Reconnecting to the server&hellip;</p>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <header class="bg-gray-800 shadow-lg">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="flex items-center justify-between">
@@ -201,3 +229,14 @@ const reloadConfig = async () => {
   // ...existing code...
 };
 </script>
+
+<style scoped>
+.overlay-fade-enter-active,
+.overlay-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.overlay-fade-enter-from,
+.overlay-fade-leave-to {
+  opacity: 0;
+}
+</style>
