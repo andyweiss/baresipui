@@ -1,25 +1,15 @@
 import { getBaresipConnection } from '../services/baresip-connection';
 import { stateManager } from '../services/state-manager';
-import { createError } from 'h3';
-import { readBody } from 'h3';
 
 async function parseRequestBody(event: any) {
   try {
     return await readBody(event);
-  } catch (err) {
-    // Fallback manual parsing
+  } catch {
+    // Fallback: readBody() fails in some Nitro versions (event.req.text not a function)
     return new Promise((resolve, reject) => {
       let body = '';
-      event.node.req.on('data', (chunk: Buffer) => {
-        body += chunk.toString();
-      });
-      event.node.req.on('end', () => {
-        try {
-          resolve(JSON.parse(body));
-        } catch (e) {
-          reject(e);
-        }
-      });
+      event.node.req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      event.node.req.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
       event.node.req.on('error', reject);
     });
   }
@@ -64,7 +54,7 @@ export default defineEventHandler(async (event) => {
     if (command === 'dial' && params) {
       const { accountUri, target } = typeof params === 'object' ? params : { accountUri: undefined, target: params };
       if (!accountUri || !target) {
-        throw createError({ statusCode: 400, message: 'accountUri und target erforderlich' });
+        throw createError({ statusCode: 400, message: 'accountUri and target required' });
       }
       // Use serialized command sequence to prevent uafind race conditions
       // No delay needed - TCP ordering guarantees sequential processing in baresip
@@ -75,7 +65,7 @@ export default defineEventHandler(async (event) => {
     } else if (command === 'hangup' && params) {
       const { accountUri } = typeof params === 'object' ? params : { accountUri: params };
       if (!accountUri) {
-        throw createError({ statusCode: 400, message: 'accountUri erforderlich' });
+        throw createError({ statusCode: 400, message: 'accountUri required' });
       }
       // Guard: only send hangup if account actually has an active call
       const account = stateManager.getAccount(accountUri);
@@ -96,8 +86,8 @@ export default defineEventHandler(async (event) => {
       connection.sendCommand(command, params, token);
     }
 
-    // Fallback: baresipInfo may have been updated by the command - include it in response
-    let baresipInfo = stateManager.getBaresipInfo ? stateManager.getBaresipInfo() : {};
+    // Fallback: include baresipInfo in response
+    const baresipInfo = stateManager.getBaresipInfo();
     return {
       success: true,
       command,

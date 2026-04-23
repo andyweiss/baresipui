@@ -5,20 +5,11 @@ import { checkAutoConnectForAccount } from '../../services/baresip-parser';
 async function parseRequestBody(event: any) {
   try {
     return await readBody(event);
-  } catch (err) {
-    // Fallback manual parsing
+  } catch {
     return new Promise((resolve, reject) => {
       let body = '';
-      event.node.req.on('data', (chunk: Buffer) => {
-        body += chunk.toString();
-      });
-      event.node.req.on('end', () => {
-        try {
-          resolve(JSON.parse(body));
-        } catch (e) {
-          reject(e);
-        }
-      });
+      event.node.req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      event.node.req.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
       event.node.req.on('error', reject);
     });
   }

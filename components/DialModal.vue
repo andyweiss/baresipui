@@ -150,7 +150,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
 
 interface Contact {
   contact: string;
@@ -193,7 +192,7 @@ const lastDialedDisplay = computed(() => {
   return lastDialed.value.displayName || extractUser(lastDialed.value.uri);
 });
 
-// placeholder shows e.g. "2070707"
+// placeholder shows e.g. first entry from call history
 const inputPlaceholder = computed(() => {
   if (history.value.length > 0) return extractUser(history.value[0].uri);
   return 'e.g. 100';

@@ -1,4 +1,3 @@
-import { parseNetstring } from '../utils/netstring';
 import type { StateManager } from './state-manager';
 import type { BaresipEvent, BaresipCommandResponse } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
@@ -76,37 +75,6 @@ export function parseBaresipEventBuffered(buffer: string, stateManager: StateMan
   return { remaining };
 }
 
-export function parseBaresipEvent(data: Buffer, stateManager: StateManager, rtcpBuffer?: { buffer: string }): void {
-  const dataStr = data.toString();
-
-  try {
-    const netstringMessages = parseNetstring(data);
-    if (netstringMessages.length > 0) {
-      for (const messageStr of netstringMessages) {
-        try {
-          const jsonMessage = JSON.parse(messageStr);
-
-          if (jsonMessage.response !== undefined) {
-            handleCommandResponse(jsonMessage, stateManager);
-          } else if (jsonMessage.event) {
-            handleJsonEvent(jsonMessage, stateManager);
-          }
-        } catch (e) {
-          handleTextLine(messageStr, stateManager);
-        }
-      }
-      return;
-    }
-  } catch (e) {
-    // Fallback to text parsing
-  }
-
-  const lines = dataStr.split('\n').filter(line => line.trim());
-  for (const line of lines) {
-    handleTextLine(line, stateManager);
-  }
-}
-
 function handleCommandResponse(response: BaresipCommandResponse, stateManager: StateManager): void {
   const timestamp = Date.now();
 
@@ -164,11 +132,7 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
   }
   
   // Fallback: Log unhandled command response
-  stateManager.broadcast({
-    type: 'log',
-    timestamp,
-    message: `Unhandled Command Response: ${JSON.stringify(response)}`
-  });
+  stateManager.addLog('response', `Unhandled Command Response`, response);
 }
 
 
@@ -505,6 +469,65 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   
   // Build updates object
   const updates = buildCodecUpdates(localCodecs, remoteCodecs);
+
+  // Parse jitter buffer — two formats:
+  // Format 1: "jitter buffer: current=20ms min=10ms max=100ms"
+  // Format 2: "jbuf: n=3/10 cur=20 min=0 max=200"
+  const jbuf1 = data.match(/jitter\s+buffer:\s*current[=:\s]+(\d+)\s*ms\s+min[=:\s]+(\d+)\s*ms\s+max[=:\s]+(\d+)\s*ms/i);
+  const jbuf2 = data.match(/jbuf:\s*(?:n=(\d+)\/\d+\s+)?cur[=:\s]+(\d+)\s+min[=:\s]+(\d+)\s+max[=:\s]+(\d+)/i);
+  if (jbuf1) {
+    updates.jitterBuffer = {
+      current: parseInt(jbuf1[1]),
+      min: parseInt(jbuf1[2]),
+      max: parseInt(jbuf1[3])
+    };
+  } else if (jbuf2) {
+    updates.jitterBuffer = {
+      packets: jbuf2[1] ? parseInt(jbuf2[1]) : undefined,
+      current: parseInt(jbuf2[2]),
+      min: parseInt(jbuf2[3]),
+      max: parseInt(jbuf2[4])
+    };
+  }
+
+  // Parse inline RTCP_STATS (may appear in callstat response)
+  const rtcpMatch = data.match(/RTCP_STATS:\s*(\{[^\n]+\})/);
+  if (rtcpMatch) {
+    try {
+      const stats = JSON.parse(rtcpMatch[1]);
+      updates.audioRxStats = {
+        packets: stats.rtp_rx_packets ?? 0,
+        packetsLost: stats.rtcp_lost_rx ?? 0,
+        jitter: stats.rtcp_jitter_rx_ms ?? 0,
+        rtt: stats.rtcp_rtt_ms ?? 0,
+        bitrate_kbps: stats.rx_bitrate_kbps ?? 0,
+        dropout: stats.rx_dropout ?? false,
+        dropout_total: stats.rx_dropout_total ?? 0,
+        rtp_rx_errors: stats.rtp_rx_errors ?? 0,
+        rtcp_packets: stats.rtcp_rx_packets ?? 0
+      };
+      updates.audioTxStats = {
+        packets: stats.rtp_tx_packets ?? 0,
+        packetsLost: stats.rtcp_lost_tx ?? 0,
+        jitter: stats.rtcp_jitter_tx_ms ?? 0,
+        bitrate_kbps: stats.tx_bitrate_kbps ?? 0,
+        rtp_tx_errors: stats.rtp_tx_errors ?? 0,
+        rtcp_packets: stats.rtcp_tx_packets ?? 0
+      };
+    } catch (e) {
+      // Silently ignore
+    }
+  }
+
+  // Parse audio stream line: "audio RTP tx=12345 rx=12345 ..."
+  // Fallback RX/TX packet info when no RTCP_STATS available
+  if (!updates.audioRxStats) {
+    const audioLine = data.match(/audio\s+(?:RTP\s+)?tx=(\d+)\s+rx=(\d+)/i);
+    if (audioLine) {
+      updates.audioTxStats = { ...updates.audioTxStats, packets: parseInt(audioLine[1]) };
+      updates.audioRxStats = { packets: parseInt(audioLine[2]), packetsLost: 0, jitter: 0, bitrate_kbps: 0, dropout: false, dropout_total: 0, rtp_rx_errors: 0 };
+    }
+  }
   
   // Nothing to update?
   if (Object.keys(updates).length === 0) {
@@ -573,7 +596,7 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
   
   // Parse active calls and update account status
   // Actual baresip v3.16 format:
-  // User-Agent: 2061616@sip.srgssr.ch
+  // User-Agent: <number>@<sip-domain>
   // --- Active calls (1) ---
   // > [line 1, id 8fd950528ad2127d]  1:23:38  ESTABLISHED            
   //
@@ -782,7 +805,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   if (jsonEvent.event && (jsonEvent.class === 'call' || jsonEvent.class === 'ua')) {
     if (jsonEvent.type === 'CALL_ESTABLISHED' || jsonEvent.type === 'CALL_CONNECT') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
-      const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri || jsonEvent.contacturi;
+      const rawPeerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri || jsonEvent.contacturi;
       const peerName = jsonEvent.peerdisplayname || jsonEvent.peername;
       
       if (uri && jsonEvent.id) {
@@ -794,12 +817,19 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         // Check if call already exists (e.g. from CALL_INCOMING/CALL_OUTGOING event)
         const existingCall = stateManager.getCall(jsonEvent.id);
         
+        // For outgoing calls: baresip sometimes sends the local contact URI as peeruri.
+        // If we already have a valid remoteUri from CALL_OUTGOING, keep it.
+        const isOutgoingCall = existingCall?.direction === 'outgoing';
+        const peerUri = (isOutgoingCall && existingCall?.remoteUri)
+          ? existingCall.remoteUri
+          : (rawPeerUri || existingCall?.remoteUri);
+        
         if (existingCall) {
           // Merge: update existing call, preserve direction and startTime
           stateManager.updateCall(jsonEvent.id, {
             state: 'Established',
             remoteUri: peerUri || existingCall.remoteUri,
-            peerName: peerName || peerUri?.split('@')[0] || existingCall.peerName,
+            peerName: peerName || peerUri?.split('@')[0]?.replace(/^sip:/, '') || existingCall.peerName,
             answerTime: Date.now()
           });
         } else {
@@ -810,7 +840,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
             callId: jsonEvent.id,
             localUri: uri,
             remoteUri: peerUri || 'unknown',
-            peerName: peerName || peerUri?.split('@')[0] || 'Unknown',
+            peerName: peerName || peerUri?.split('@')[0]?.replace(/^sip:/, '') || 'Unknown',
             state: 'Established',
             direction: isIncoming ? 'incoming' : 'outgoing',
             startTime: isIncoming ? Date.now() - 1000 : Date.now(),
@@ -834,7 +864,10 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
     } else if (jsonEvent.type === 'CALL_RINGING' || jsonEvent.type === 'CALL_INCOMING' || jsonEvent.type === 'CALL_OUTGOING' || jsonEvent.type === 'CALL_RTPESTAB') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
       const peerUri = jsonEvent.peeruri || jsonEvent.peer_uri || jsonEvent.remote_uri || jsonEvent.contacturi;
-      const peerName = jsonEvent.peerdisplayname || jsonEvent.peername;
+      // For outgoing calls, peerdisplayname often contains the local account's display name (FROM header),
+      // not the remote party's name. Only use it for incoming calls.
+      const isOutgoing = jsonEvent.type === 'CALL_OUTGOING' || jsonEvent.direction === 'outgoing';
+      const peerName = isOutgoing ? null : (jsonEvent.peerdisplayname || jsonEvent.peername);
       
       if (uri && jsonEvent.id) {
         const updates: any = { 
@@ -842,14 +875,21 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           callId: jsonEvent.id
         };
         
+        // For outgoing calls baresip sometimes sends the local contact URI as peeruri.
+        // If the account has autoConnectContact set, that is the authoritative remote party.
+        const account = stateManager.getAccount(uri);
+        const effectivePeerUri = (isOutgoing && account?.autoConnectContact)
+          ? account.autoConnectContact
+          : peerUri;
+
         // Check if call already exists and update it
         const existingCall = stateManager.getCall(jsonEvent.id);
         
         if (existingCall) {
           // Update existing call with new data
           stateManager.updateCall(jsonEvent.id, {
-            remoteUri: peerUri || existingCall.remoteUri,
-            peerName: peerName || peerUri?.split('@')[0] || existingCall.peerName,
+            remoteUri: effectivePeerUri || existingCall.remoteUri,
+            peerName: peerName || effectivePeerUri?.split('@')[0]?.replace(/^sip:/, '') || existingCall.peerName,
             state: jsonEvent.type === 'CALL_RTPESTAB' ? 'Established' : 'Ringing'
           });
         } else {
@@ -857,8 +897,8 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           stateManager.addCall({
             callId: jsonEvent.id,
             localUri: uri,
-            remoteUri: peerUri || 'unknown',
-            peerName: peerName || peerUri?.split('@')[0] || 'Unknown',
+            remoteUri: effectivePeerUri || 'unknown',
+            peerName: peerName || effectivePeerUri?.split('@')[0]?.replace(/^sip:/, '') || 'Unknown',
             state: jsonEvent.type === 'CALL_RTPESTAB' ? 'Established' : 'Ringing',
             direction: jsonEvent.direction || (jsonEvent.type === 'CALL_INCOMING' ? 'incoming' : 'outgoing'),
             startTime: Date.now()
@@ -866,7 +906,6 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         }
         
         // Check if this is an auto-connect call
-        const account = stateManager.getAccount(uri);
         if (account && account.autoConnectContact) {
           updates.autoConnectStatus = jsonEvent.type === 'CALL_RTPESTAB' ? 'Connected' : 'Connecting';
         }
@@ -1065,89 +1104,6 @@ function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
       return;
     }
   }
-  
-  // Fallback to OLD semicolon-delimited format (for compatibility)
-  
-  const callIdMatch = line.match(/call_id=([^;]+)/);
-  const packetsRxMatch = line.match(/packets_rx=(\d+)/);
-  const packetsTxMatch = line.match(/packets_tx=(\d+)/);
-  
-  if (callIdMatch && packetsRxMatch) {
-    const callId = callIdMatch[1];
-    const updates: any = {};
-    
-    updates.audioRxStats = {
-      packets: parseInt(packetsRxMatch[1]),
-      packetsLost: 0,
-      jitter: 0,
-      bitrate: 0
-    };
-    
-    if (packetsTxMatch) {
-      updates.audioTxStats = {
-        packets: parseInt(packetsTxMatch[1]),
-        packetsLost: 0,
-        bitrate: 0
-      };
-    }
-    
-    // Update the call with statistics
-    stateManager.updateCall(callId, updates);
-  }
-}
-
-function parseCallStatLine(line: string, stateManager: StateManager): void {
-  // Parse RTP statistics from Baresip callstat output
-  const callIdMatch = line.match(/Call\s+([a-zA-Z0-9-]+):/);
-  const isRx = line.toLowerCase().includes('rx:') || line.toLowerCase().includes('receive');
-  const isTx = line.toLowerCase().includes('tx:') || line.toLowerCase().includes('transmit');
-  
-  if (!isRx && !isTx) return;
-  
-  const packetsMatch = line.match(/packets[=:\s]+(\d+)/i);
-  const lostMatch = line.match(/lost[=:\s]+(\d+)/i);
-  const jitterMatch = line.match(/jitter[=:\s]+([\d.]+)/i);
-  const bitrateMatch = line.match(/bitrate[=:\s]+(\d+)/i);
-  
-  if (packetsMatch) {
-    const stats = {
-      packets: parseInt(packetsMatch[1]),
-      packetsLost: lostMatch ? parseInt(lostMatch[1]) : 0,
-      jitter: jitterMatch ? parseFloat(jitterMatch[1]) : undefined,
-      bitrate: bitrateMatch ? parseInt(bitrateMatch[1]) : 0
-    };
-    
-    // If we have a call ID, update that specific call
-    if (callIdMatch) {
-      const callId = callIdMatch[1];
-      const updates: any = {};
-      
-      if (isRx) {
-        updates.audioRxStats = stats;
-      } else {
-        updates.audioTxStats = { ...stats };
-        delete updates.audioTxStats.jitter; // TX doesn't have jitter
-      }
-      
-      stateManager.updateCall(callId, updates);
-    } else {
-      // Try to find active call and update it
-      const calls = stateManager.getCalls();
-      if (calls.length === 1) {
-        // Only one active call, update it
-        const updates: any = {};
-        
-        if (isRx) {
-          updates.audioRxStats = stats;
-        } else {
-          updates.audioTxStats = { ...stats };
-          delete updates.audioTxStats.jitter;
-        }
-        
-        stateManager.updateCall(calls[0].callId, updates);
-      }
-    }
-  }
 }
 
 /**
@@ -1235,16 +1191,6 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     return;
   }
 
-  // Parse call statistics output from /callstat command
-  // Example formats:
-  // "audio RX: packets=1234 lost=5 jitter=12.5ms bitrate=64000"
-  // "       rx: 1234 packets, 5 lost, jitter=12.5ms"
-  // "Stream #0 audio RX: pt=8, packets=1234, lost=5, jitter=12.5ms"
-  if (line.match(/audio\s+(RX|TX):|\s+(rx|tx):|Stream.*audio/i)) {
-    parseCallStatLine(line, stateManager);
-    return; // Don't broadcast as log
-  }
-
   // Handle PRESENCE_EVENT messages from enhanced_presence module
   // Handles both JSON format: PRESENCE_EVENT: {"contact":"sip:user@domain","status":"online"}
   // and colon-delimited format: PRESENCE_EVENT:sip:user@domain:online
@@ -1301,179 +1247,30 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     return; // Don't process PRESENCE_EVENT lines further (prevents double-processing & spurious account creation)
   }
 
-  // Create a proper LogEntry object and broadcast it
+  // Create a log entry from text line (stored via addLog, sent only to log subscribers)
   const logEntry = createLogEntryFromLine(line, timestamp);
-  
-  stateManager.broadcast({
-    type: 'log',
-    data: logEntry
-  });
+  stateManager.addLog(logEntry.level || 'info', logEntry.message, logEntry);
 
-  if (line.includes('registered successfully')) {
-    const match = line.match(/<([^>]+)>/);
-    if (match) {
-      const uri = match[1];
-      stateManager.updateAccountStatus(uri, {
-        registered: true,
-        registrationError: undefined
-      });
-      // Trigger auto-connect check when account registers
-      checkAutoConnectForAccount(uri, stateManager);
-    }
-  } else if (line.includes('unregistering')) {
-    const match = line.match(/<([^>]+)>/);
-    if (match) {
-      const uri = match[1];
-      stateManager.updateAccountStatus(uri, { registered: false });
-    }
-  } else if (line.includes('reg:') && (line.includes('401 Unauthorized') || line.includes('403 Forbidden') || line.includes('404 Not Found') || line.includes('408 Request Timeout') || line.includes('503 Service Unavailable'))) {
-    const match = line.match(/reg:\s*(sip:[^@]+@[^)]+)/);
-    if (match) {
-      const uri = match[1];
-      let errorStatus = 'Registration Error';
-      if (line.includes('401 Unauthorized')) errorStatus = 'Unauthorized';
-      else if (line.includes('403 Forbidden')) errorStatus = 'Forbidden';
-      else if (line.includes('404 Not Found')) errorStatus = 'Not Found';
-      else if (line.includes('408 Request Timeout')) errorStatus = 'Timeout';
-      else if (line.includes('503 Service Unavailable')) errorStatus = 'Service Unavailable';
-
-      stateManager.updateAccountStatus(uri, {
-        registered: false,
-        registrationError: errorStatus,
-        lastRegistrationAttempt: timestamp
-      });
-    }
-  } else if (line.includes('reg:') && line.includes('sip:')) {
-    const match = line.match(/reg:\s*(sip:[^@\s]+@[^\s);]+)/);
-    if (match) {
-      const uri = match[1];
-      if (!stateManager.hasAccount(uri)) {
-        const accountData = {
-          uri,
-          registered: false,
-          callStatus: 'Idle' as const,
-          autoConnectStatus: 'Off',
-          lastEvent: timestamp,
-          configured: true
-        };
-        stateManager.setAccount(uri, accountData);
-
-        stateManager.broadcast({
-          type: 'accountStatus',
-          data: accountData
-        });
-      }
-    }
-  } else if (line.includes('Call established')) {
-    const match = line.match(/<([^>]+)>/);
-    if (match) {
-      const uri = match[1];
-      stateManager.updateAccountStatus(uri, { callStatus: 'In Call' });
-    }
-  } else if (line.includes('Call ringing')) {
-    const match = line.match(/<([^>]+)>/);
-    if (match) {
-      const uri = match[1];
-      stateManager.updateAccountStatus(uri, { callStatus: 'Ringing' });
-    }
-  } else if (line.includes('Call terminated') || line.includes('session closed')) {
-    const match = line.match(/<([^>]+)>/);
-    if (match) {
-      const uri = match[1];
-      stateManager.updateAccountStatus(uri, { callStatus: 'Idle' });
-      // Trigger auto-connect check when call terminates
-      checkAutoConnectForAccount(uri, stateManager);
-    }
-  } else if (line.includes('presence:') && line.includes('open')) {
+  // Text-based presence parsing (from baresip modules that don't use JSON events)
+  // PRESENCE_EVENT is handled above; these catch other text-format presence lines
+  if (line.includes('presence:') && line.includes('open')) {
     const match = line.match(/(sip:[^@]+@[^\s]+)/);
     if (match) {
       const contact = match[1].toLowerCase().trim();
       stateManager.setContactPresence(contact, 'online', true);
-
-      stateManager.broadcast({
-        type: 'presence',
-        timestamp,
-        contact,
-        status: 'online'
-      });
-
-      // Trigger auto-connect check for all accounts configured for this contact
+      stateManager.broadcast({ type: 'presence', timestamp, contact, status: 'online' });
       checkAutoConnectForContact(contact, stateManager);
-
-      const config = stateManager.getContactConfig(contact);
-      if (config?.enabled) {
-        attemptAutoConnect(contact, stateManager);
-      }
     }
   } else if (line.includes('presence:') && (line.includes('closed') || line.includes('offline'))) {
     const match = line.match(/(sip:[^@]+@[^\s]+)/);
     if (match) {
       const contact = match[1].toLowerCase().trim();
       stateManager.setContactPresence(contact, 'offline', true);
-
-      stateManager.broadcast({
-        type: 'presence',
-        timestamp,
-        contact,
-        status: 'offline'
-      });
-    }
-  } else if (line.indexOf('enhanced_presence:') !== -1 && line.indexOf('is now') !== -1) {
-    // Handle legacy enhanced presence module messages (fallback)
-    // Format: enhanced_presence: <"unity 1" <sip:2061531@sip.srgssr.ch>;presence=p2p> is now 'Online'
-    const match = line.match(/<(sip:[^@]+@[^>]+)>[^>]*is now '([^']+)'/);
-    if (match) {
-      const contact = match[1].toLowerCase().trim();
-      const statusText = match[2].toLowerCase();
-      
-      let status = 'unknown';
-      if (statusText === 'online' || statusText === 'open') {
-        status = 'online';
-      } else if (statusText === 'offline' || statusText === 'closed') {
-        status = 'offline';
-      } else if (statusText === 'busy') {
-        status = 'busy';
-      } else if (statusText === 'away') {
-        status = 'away';
-      }
-      
-      stateManager.setContactPresence(contact, status, true);
-
-      stateManager.broadcast({
-        type: 'presence',
-        timestamp,
-        contact,
-        status
-      });
-
-      const config = stateManager.getContactConfig(contact);
-      if (config?.enabled && status === 'online') {
-        attemptAutoConnect(contact, stateManager);
-      }
-    }
-  } else if (line.includes('sip:') && line.includes('@') && !line.includes('presence:') && !line.includes('reg:') && !line.includes('PRESENCE') && !line.includes('enhanced_presence')) {
-      const match = line.match(/([^<]*)<\s*(sip:[^@\s]+@[^\s>;,)]+)\s*>?/);
-    if (match) {
-        const name = match[1] ? match[1].trim() : undefined;
-        const uri = match[2];
-      if (!stateManager.hasAccount(uri)) {
-        const accountData = {
-          uri,
-          registered: false,
-          callStatus: 'Idle' as const,
-          autoConnectStatus: 'Off',
-          lastEvent: timestamp,
-          configured: true
-          };
-          stateManager.setAccount(uri, accountData);
-
-          stateManager.broadcast({
-            type: 'accountStatus',
-            data: accountData
-          });
-      }
+      stateManager.broadcast({ type: 'presence', timestamp, contact, status: 'offline' });
     }
   }
+  // All other state changes (registration, calls) arrive via JSON events
+  // and are handled in handleJsonEvent — no text-based fallback needed
 }
 
 function attemptAutoConnect(contact: string, stateManager: StateManager): void {

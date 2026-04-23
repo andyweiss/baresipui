@@ -159,12 +159,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
-import SettingsPanel from '@/components/SettingsPanel.vue';
 import { useSocketIO } from '@/composables/useSocketIO';
 
 // Use Socket.IO instead of WebSocket
-const { connected, accounts, contacts, calls, sendCommand, toggleAutoConnect } = useSocketIO();
+const { connected, accounts, contacts, calls, sendCommand } = useSocketIO();
 
 // Track already-recorded call IDs to avoid duplicates
 const recordedCallIds = new Set<string>();
@@ -259,12 +257,12 @@ const handleHangup = async (accountUri: string) => {
   }
 };
 
-const handleToggleAutoConnect = async (contact: string, enabled: boolean) => {
-  // ...existing code...
-};
-
 const reloadConfig = async () => {
-  // ...existing code...
+  try {
+    await sendCommand('regall');
+  } catch (err: any) {
+    alert('Error reloading config: ' + (err?.message || err));
+  }
 };
 </script>
 

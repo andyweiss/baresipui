@@ -129,6 +129,10 @@
               <span class="text-gray-500">Jitter:</span>
               <span :class="jitterColor(call.audioRxStats.jitter)" class="ml-1">{{ call.audioRxStats.jitter?.toFixed(1) ?? '0.0' }} ms</span>
             </div>
+            <div v-if="call.audioRxStats.rtt !== undefined && call.audioRxStats.rtt !== null">
+              <span class="text-gray-500">RTT:</span>
+              <span :class="call.audioRxStats.rtt > 150 ? 'text-red-400' : call.audioRxStats.rtt > 80 ? 'text-orange-400' : 'text-green-400'" class="ml-1">{{ call.audioRxStats.rtt?.toFixed(1) ?? '0.0' }} ms</span>
+            </div>
             <div>
               <span class="text-gray-500">RX Errors:</span>
               <span :class="call.audioRxStats.rtp_rx_errors > 0 ? 'text-orange-400' : 'text-green-400'" class="ml-1">
@@ -172,6 +176,14 @@
                 {{ call.audioTxStats.rtp_tx_errors ?? 0 }}
               </span>
             </div>
+            <div v-if="call.audioTxStats.rtcp_packets !== undefined">
+              <span class="text-gray-500">RTCP Pkts:</span>
+              <span class="text-white ml-1">{{ call.audioTxStats.rtcp_packets }}</span>
+            </div>
+            <div v-if="call.audioRxStats && call.audioRxStats.rtcp_packets !== undefined">
+              <span class="text-gray-500">RTCP RX Pkts:</span>
+              <span class="text-white ml-1">{{ call.audioRxStats.rtcp_packets }}</span>
+            </div>
           </div>
         </div>
 
@@ -199,7 +211,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
 import type { CallInfo } from '~/types';
 
 const formatCodecDisplay = (codec: any) => {
@@ -282,24 +293,26 @@ const formattedDuration = computed(() => {
   return result;
 });
 
-const formatUri = (uri: string) => {
-  const match = uri.match(/^sip:([^@]+@[^>]+)/);
-  return match ? match[1] : uri;
-};
-
 const getRemotePartyDisplayName = (call: CallInfo | undefined): string => {
   if (!call) return '';
-  let displayValue = call.remoteUri || call.peerName;
+  
+  // Check contacts first
+  // (contacts not available in modal, fall through)
+  
+  // For outgoing calls: always use remoteUri (dialed number), not peerName
+  if (call.direction === 'outgoing' && call.remoteUri) {
+    const stripped = call.remoteUri.replace(/^sip:/, '');
+    const userMatch = stripped.match(/^([^@]+)@/);
+    return userMatch ? userMatch[1] : stripped;
+  }
+  
+  // Incoming: prefer peerName
+  let displayValue = call.peerName || call.remoteUri;
   if (!displayValue) return 'Unknown';
   displayValue = displayValue.replace(/^sip:/, '');
   const userMatch = displayValue.match(/^([^@]+)@/);
   if (userMatch) return userMatch[1];
   return displayValue;
-};
-
-const formatTime = (timestamp: number) => {
-  if (!timestamp) return 'N/A';
-  return new Date(timestamp).toLocaleTimeString();
 };
 
 const packetLossPercent = (stats: { packets: number; packetsLost: number }) => {
@@ -311,12 +324,6 @@ const jitterColor = (jitter: number) => {
   if (jitter < 30) return 'text-green-400';
   if (jitter < 50) return 'text-orange-400';
   return 'text-red-400';
-};
-
-const formatBitrate = (bitrate: number) => {
-  if (bitrate >= 1000000) return `${(bitrate / 1000000).toFixed(1)} Mbit/s`;
-  if (bitrate >= 1000) return `${(bitrate / 1000).toFixed(1)} kbit/s`;
-  return `${bitrate} bit/s`;
 };
 
 const formatDateTime = (timestamp: number) => {

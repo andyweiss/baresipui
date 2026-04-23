@@ -39,7 +39,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
 
 const props = defineProps<{
   contact: any;
@@ -92,14 +91,6 @@ const presenceDisplay = computed(() => {
   const presence = props.contact.presence?.toLowerCase() || 'unknown';
   if (presence === 'busy') return 'CONNECTED';
   return (presence || 'unknown').toUpperCase();
-});
-
-const autoConnectColor = computed(() => {
-  const status = props.contact.status || 'Off';
-  if (status === 'Connected') return 'text-green-400';
-  if (status === 'Connecting') return 'text-blue-400';
-  if (status === 'Failed') return 'text-red-400';
-  return 'text-gray-300';
 });
 
 const formatTimestamp = (timestamp: number): string => {

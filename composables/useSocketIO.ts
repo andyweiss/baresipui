@@ -42,12 +42,15 @@ export const useSocketIO = () => {
   const accounts = ref<any[]>([]);
   const contacts = ref<any[]>([]);
   const calls = ref<any[]>([]);
-  const logs = ref<any[]>([]);
 
   const connect = () => {
     socket.value = io({
       path: '/socket.io/',
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000
     });
 
     socket.value.on('connect', () => {
@@ -58,12 +61,48 @@ export const useSocketIO = () => {
       connected.value = false;
     });
 
-    socket.value.on('init', (data: any) => {
-      mergeAndSortAccounts(data.accounts || []);
-      contacts.value = data.contacts || [];
-      calls.value = data.calls || [];
-      baresipConnected.value = data.baresipConnected ?? false;
+    socket.value.on('reconnect', () => {
+      // After reconnect, request fresh call/account state from baresip
+      sendCommand('listcalls');
       sendCommand('uastat');
+    });
+
+    // Dedicated real-time call event handlers (no polling, immediate push from server)
+    socket.value.on('callAdded', (call: any) => {
+      const callIndex = calls.value.findIndex(c => c.callId === call.callId);
+      if (callIndex >= 0) {
+        calls.value = [...calls.value.slice(0, callIndex), call, ...calls.value.slice(callIndex + 1)];
+      } else {
+        calls.value = [...calls.value, call];
+      }
+    });
+
+    socket.value.on('callUpdated', (call: any) => {
+      const callIndex = calls.value.findIndex(c => c.callId === call.callId);
+      if (callIndex >= 0) {
+        calls.value = [...calls.value.slice(0, callIndex), call, ...calls.value.slice(callIndex + 1)];
+      } else {
+        calls.value = [...calls.value, call];
+      }
+    });
+
+    socket.value.on('callRemoved', (data: any) => {
+      const callId = data.callId || data;
+      calls.value = calls.value.filter(c => c.callId !== callId);
+    });
+
+    socket.value.on('callsCleared', () => {
+      calls.value = [];
+    });
+
+    socket.value.on('accountStatus', (acc: any) => {
+      const idx = accounts.value.findIndex(a => a.uri === acc.uri);
+      if (idx >= 0) {
+        accounts.value[idx] = { ...accounts.value[idx], ...acc };
+      } else {
+        accounts.value.push(acc);
+      }
+      accounts.value.sort(accountSortFn);
     });
 
     socket.value.on('baresipStatus', (data: any) => {
@@ -78,67 +117,34 @@ export const useSocketIO = () => {
       baresipConnected.value = false;
     });
 
-    socket.value.on('message', (data: any) => {
-      if (data.type === 'init') {
-        mergeAndSortAccounts(data.accounts || []);
-        contacts.value = data.contacts || [];
-        calls.value = data.calls || [];
-        baresipConnected.value = data.baresipConnected ?? false;
-        sendCommand('uastat');
-      } else if (data.type === 'accountStatus') {
-          const idx = accounts.value.findIndex(a => a.uri === data.data.uri);
-          if (idx >= 0) {
-            accounts.value[idx] = { ...accounts.value[idx], ...data.data };
-          } else {
-            accounts.value.push(data.data);
-          }
-          accounts.value.sort(accountSortFn);
-      } else if (data.type === 'accountsUpdate') {
-        mergeAndSortAccounts(data.accounts || []);
-      } else if (data.type === 'log') {
-        // ...
-        logs.value.push(data.log || data);
-        if (logs.value.length > 1000) {
-          logs.value.shift();
-        }
-      } else if (data.type === 'presence') {
-        const contact = contacts.value.find(c => c.contact === data.contact);
-        if (contact) {
-          contact.presence = data.status;
-        }
-      } else if (data.type === 'autoConnectStatus') {
-        const contact = contacts.value.find(c => c.contact === data.contact);
-        if (contact) {
-          contact.status = data.status;
-        }
-      } else if (data.type === 'contactsUpdate') {
-        contacts.value = data.contacts || [];
-      } else if (data.type === 'baresipStatus') {
-        baresipConnected.value = data.data?.connected ?? data.connected ?? false;
-        if (!baresipConnected.value) {
-          calls.value = [];
-        }
-      } else if (data.type === 'baresipDisconnected') {
-        calls.value = [];
-        baresipConnected.value = false;
-      } else if (data.type === 'callsCleared') {
-        calls.value = [];
-      } else if (data.type === 'callAdded' || data.type === 'callUpdated') {
-        const callIndex = calls.value.findIndex(c => c.callId === data.data.callId);
-        if (callIndex >= 0) {
-          // Update existing call - force reactivity
-          calls.value = [
-            ...calls.value.slice(0, callIndex),
-            data.data,
-            ...calls.value.slice(callIndex + 1)
-          ];
-        } else {
-          // Add new call
-          calls.value = [...calls.value, data.data];
-        }
-      } else if (data.type === 'callRemoved') {
-        calls.value = calls.value.filter(c => c.callId !== data.data.callId);
+    socket.value.on('init', (data: any) => {
+      mergeAndSortAccounts(data.accounts || []);
+      contacts.value = data.contacts || [];
+      calls.value = data.calls || [];
+      baresipConnected.value = data.baresipConnected ?? false;
+      sendCommand('uastat');
+    });
+
+    socket.value.on('accountsUpdate', (data: any) => {
+      mergeAndSortAccounts(data.accounts || []);
+    });
+
+    socket.value.on('presence', (data: any) => {
+      const contact = contacts.value.find(c => c.contact === data.contact);
+      if (contact) {
+        contact.presence = data.status;
       }
+    });
+
+    socket.value.on('autoConnectStatus', (data: any) => {
+      const contact = contacts.value.find(c => c.contact === data.contact);
+      if (contact) {
+        contact.status = data.status;
+      }
+    });
+
+    socket.value.on('contactsUpdate', (data: any) => {
+      contacts.value = data.contacts || [];
     });
 
     socket.value.on('error', (error: any) => {
@@ -191,7 +197,6 @@ export const useSocketIO = () => {
     accounts,
     contacts,
     calls,
-    logs,
     sendCommand,
     toggleAutoConnect
   };

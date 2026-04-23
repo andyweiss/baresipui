@@ -87,9 +87,7 @@
 
 <script setup lang="ts">
 
-import { defineProps, ref, onMounted, onActivated, defineExpose, computed } from 'vue';
 const props = defineProps<{ reloadConfig: () => void, sendCommand?: (cmd: string) => Promise<any> }>();
-const appConfig = useAppConfig();
 
 const baresipInfo = ref<{ version?: string; uptime?: string; started?: string }>({});
 

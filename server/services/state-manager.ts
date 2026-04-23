@@ -15,30 +15,19 @@ export class StateManager {
   private contactCallFailureTimestamp = new Map<string, number>(); // Timestamp when auto-connect call failed
   private activeCalls = new Map<string, CallInfo>(); // Track all active calls
   private audioMeters = new Map<string, AudioMeter>(); // Track audio levels per account
-  private wsClients = new Set<any>();
-  private socketClients = new Set<any>(); // Socket.IO clients
-  private sseStreams = new Set<any>(); // SSE streams
+  private socketClients = new Set<any>();
+  private io: any = null; // Socket.IO server instance for room-based broadcasting
   private logs: LogEntry[] = [];
-  private maxLogs = 1000; // Maximum number of logs to keep
+  private maxLogs = 1000;
+  private logBatchBuffer: LogEntry[] = [];
+  private logBatchTimer: any = null;
+  private readonly LOG_BATCH_INTERVAL = 500; // Batch log broadcasts every 500ms
   private baresipConnected = false; // Track Baresip TCP connection status
   private baresipInfo: { version?: string; uptime?: string; started?: string } = {};
   // contacts API: loads contact names only
   // presence_ts: ONLY source for presence status (checks timestamp age)
 
-  constructor() {
-    // Timeout mechanism disabled - presence_ts handles it
-  }
-
-  // Presence timeout check is now handled by presence_ts command
-  // This method is kept for potential future use but is not called
-  private checkPresenceTimeouts(): void {
-    // Disabled - presence_ts command handles timeout checking every 5 seconds
-    // by comparing baresip timestamps against current time
-  }
-
-  destroy(): void {
-    // No intervals to clear - timeout handling moved to presence_ts
-  }
+  constructor() {}
 
   setBaresipInfo(info: { version?: string; uptime?: string; started?: string }) {
     // Replace old info completely instead of merging to avoid stale data
@@ -54,10 +43,10 @@ export class StateManager {
   }
 
   getAccounts(): Account[] {
-    // 1. Accounts kopieren (autoConnectContact bleibt wie gespeichert)
+    // 1. Clone accounts (autoConnectContact stays as stored)
     const accounts = Array.from(this.accounts.values()).map(acc => ({ ...acc }));
 
-    // 2. Stabile Sortierung: numerisch nach SIP-Nummer, dann lexikografisch nach URI
+    // 2. Stable sort: numeric by SIP number, then lexicographic by URI
     function extractNumber(uri: string): number | null {
       if (!uri) return null;
       const match = uri.replace(/^sip:/, '').match(/(\d+)/);
@@ -194,14 +183,6 @@ export class StateManager {
       return false;
     }
     
-    const baresipMs = baresipTimestamp * 1000;
-    
-    // If baresip has NOTIFY AFTER the failure → new presence info → clear protection
-    if (baresipMs > failureTime) {
-      this.contactCallFailureTimestamp.delete(contact);
-      return false;
-    }
-    
     // NOTIFY is older than failure → block it, keep offline status
     return true;
   }
@@ -252,12 +233,8 @@ export class StateManager {
     });
   }
 
-  addWsClient(client: any): void {
-    this.wsClients.add(client);
-  }
-
-  removeWsClient(client: any): void {
-    this.wsClients.delete(client);
+  setIO(ioServer: any): void {
+    this.io = ioServer;
   }
 
   addSocketClient(client: any): void {
@@ -269,32 +246,23 @@ export class StateManager {
   }
 
   broadcast(data: any): void {
-    const message = JSON.stringify(data);
-    
-    // Broadcast to WebSocket clients
-    this.wsClients.forEach(client => {
-      try {
-        if (client.readyState === 1 || (client.send && typeof client.send === 'function')) {
-          client.send(message);
-        }
-      } catch (error) {
-        console.error('Error broadcasting to WS client:', error);
-        this.wsClients.delete(client);
-      }
-    });
+    // Skip log events in broadcast — logs are sent only to 'logs' room subscribers
+    if (data.type === 'log' || data.type === 'logBatch') return;
 
-    // Broadcast to Socket.IO clients
+    // Only truly disposable events use volatile emit (dropped if socket buffer full)
+    const volatileTypes = ['audioMeter'];
+    const isVolatile = volatileTypes.includes(data.type);
+
     this.socketClients.forEach(client => {
       try {
         if (client.connected) {
-          // Emit with specific event type for better handling
+          const emitter = isVolatile ? client.volatile : client;
           if (data.type) {
-            // For 'log' events, send the log entry directly (from data.data)
-            const payload = data.type === 'log' ? (data.data || data) : (data.data || data);
-            client.emit(data.type, payload);
+            const payload = data.data || data;
+            emitter.emit(data.type, payload);
+          } else {
+            emitter.emit('message', data);
           }
-          // Also emit as 'message' for backward compatibility
-          client.emit('message', data);
         }
       } catch (error) {
         console.error('Error broadcasting to Socket.IO client:', error);
@@ -324,27 +292,34 @@ export class StateManager {
   }
 
   addLog(type: string, message: string, data?: any): void {
-    // Extrahiere Version immer auf Top-Level, falls vorhanden
-    let version: string | undefined = undefined;
-    if (data && typeof data === 'object') {
-      if (data.version) version = data.version;
-      else if (data.data && data.data.version) version = data.data.version;
-    }
     const logEntry: LogEntry = {
       timestamp: Date.now(),
       type,
       message,
-      data,
-      ...(version ? { version } : {})
+      data
     };
     this.logs.push(logEntry);
     if (this.logs.length > this.maxLogs) {
       this.logs = this.logs.slice(-this.maxLogs);
     }
-    this.broadcast({
-      type: 'log',
-      log: logEntry
-    });
+    // Batch logs and send only to 'logs' room subscribers
+    this.logBatchBuffer.push(logEntry);
+    if (!this.logBatchTimer) {
+      this.logBatchTimer = setTimeout(() => {
+        this.flushLogBatch();
+      }, this.LOG_BATCH_INTERVAL);
+    }
+  }
+
+  private flushLogBatch(): void {
+    this.logBatchTimer = null;
+    if (this.logBatchBuffer.length === 0) return;
+    const entries = this.logBatchBuffer;
+    this.logBatchBuffer = [];
+    // Send only to clients in the 'logs' room
+    if (this.io) {
+      this.io.to('logs').volatile.emit('logBatch', { logs: entries });
+    }
   }
 
   getLogs(limit: number = 100): LogEntry[] {
@@ -353,6 +328,10 @@ export class StateManager {
 
   clearLogs(): void {
     this.logs = [];
+    // Notify log subscribers
+    if (this.io) {
+      this.io.to('logs').emit('logsCleared');
+    }
   }
 
   // Call Management

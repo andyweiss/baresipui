@@ -42,21 +42,24 @@ export interface CallInfo {
   answerTime?: number;
   endTime?: number;
   duration?: number;
-  // Stream statistics
+  needsCodecInfo?: boolean;
+  codecInfoFetched?: boolean;
   audioCodec?: {
     codec: string;
     sampleRate: number;
     channels: number;
     params?: Record<string, string>;
   };
-  videoCodec?: string;
+  txAudioCodec?: { codec: string; sampleRate: number; channels: number; params?: Record<string, string> };
+  rxAudioCodec?: { codec: string; sampleRate: number; channels: number; params?: Record<string, string> };
+  txCodecs?: Array<{ payloadType: string; codec: string; sampleRate: number; channels: number; params?: Record<string, string> }>;
+  rxCodecs?: Array<{ payloadType: string; codec: string; sampleRate: number; channels: number; params?: Record<string, string> }>;
   audioRxStats?: {
     packets: number;
     packetsLost: number;
-    jitter: number; // in ms
-    rtt?: number; // in ms
-    bitrate: number; // in bit/s (deprecated, use bitrate_kbps)
-    bitrate_kbps?: number; // in kbit/s
+    jitter: number;       // ms
+    rtt?: number;         // ms
+    bitrate_kbps: number;
     dropout?: boolean;
     dropout_total?: number;
     rtp_rx_errors?: number;
@@ -65,28 +68,16 @@ export interface CallInfo {
   audioTxStats?: {
     packets: number;
     packetsLost: number;
-    jitter?: number; // in ms
-    bitrate: number; // in bit/s (deprecated, use bitrate_kbps)
-    bitrate_kbps?: number; // in kbit/s
+    jitter?: number;      // ms
+    bitrate_kbps: number;
     rtp_tx_errors?: number;
     rtcp_packets?: number;
   };
   jitterBuffer?: {
-    current: number; // current jitter buffer size in ms
-    min: number; // minimum jitter buffer size in ms
-    max: number; // maximum jitter buffer size in ms
-    packets?: number; // number of packets in buffer
-  };
-  videoRxStats?: {
-    packets: number;
-    packetsLost: number;
-    jitter: number; // in ms
-    bitrate: number; // in bit/s
-  };
-  videoTxStats?: {
-    packets: number;
-    packetsLost: number;
-    bitrate: number; // in bit/s
+    current: number;    // ms
+    min: number;        // ms
+    max: number;        // ms
+    packets?: number;
   };
 }
 

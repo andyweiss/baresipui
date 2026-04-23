@@ -1,105 +1,11 @@
 import net from 'node:net';
 import { createNetstring } from '../utils/netstring';
 import { stateManager } from './state-manager';
-import { parseBaresipEvent, parseBaresipEventBuffered } from './baresip-parser';
+import { parseBaresipEventBuffered } from './baresip-parser';
 import { getAutoConnectConfigManager } from './autoconnect-config';
 import { getBaresipLogger } from '../utils/logger';
 
 export class BaresipConnection {
-    // Parser for 'contacts' response
-    private parseContactsResponse(data: string): void {
-      const lines = data.split('\n');
-      for (const line of lines) {
-        const match = line.match(/<sip:([^>]+)>/);
-        if (match) {
-          const contact = `sip:${match[1]}`;
-          // Optionally extract name
-          const nameMatch = line.match(/^([^<]+)</);
-          const name = nameMatch ? nameMatch[1].trim() : contact;
-          stateManager.setContactConfig(contact, { name, enabled: true, status: 'Unknown', source: 'baresip' });
-        }
-      }
-      stateManager.broadcast({ type: 'contactsUpdate', contacts: stateManager.getContacts() });
-    }
-
-    /**
-     * Parses the response from the 'listcalls' command and updates the state manager.
-     * Example line: "call: #1 <sip:alice@domain> <sip:bob@domain> [ESTABLISHED] id=abc123"
-     */
-    private parseListCallsResponse(data: string): void {
-      console.debug('[parseListCallsResponse] Raw data:', data);
-      const lines = data.split('\n');
-      for (const line of lines) {
-        // Try to match local and remote URI, state, and callId
-        const match = line.match(/<(sip:[^>]+)>\s*<(sip:[^>]+)>\s*\[(\w+)\][^\n]*id[=:]([^\s]+)/);
-        if (match) {
-          const localUri = match[1] || null;
-          const remoteUri = match[2] || null;
-          const state = match[3] || 'Unknown';
-          const callId = match[4] || null;
-          console.debug('[parseListCallsResponse] Parsed:', { callId, localUri, remoteUri, state });
-          stateManager.addCall({ callId, localUri, remoteUri, state, startTime: Date.now() });
-        } else if (line.trim()) {
-          console.debug('[parseListCallsResponse] No match for line:', line);
-        }
-      }
-      // Broadcast the updated calls list
-      stateManager.broadcast({ type: 'callsUpdate', calls: stateManager.getCalls() });
-    }
-
-    // Parser for 'getrtcpstats' response (JSON array)
-    private parseGetRtcpStatsResponse(data: string): void {
-      try {
-        const cleanData = data.trim().replace(/[\[\]]/g, '').trim();
-        if (!cleanData) return;
-        
-        // Split multiple JSON objects
-        const jsonObjects = cleanData.split('},').map((obj, idx, arr) => {
-          if (idx === arr.length - 1) return obj + '}';
-          return obj + '}';
-        }).filter(obj => obj.trim().startsWith('{'));
-        
-        for (const jsonStr of jsonObjects) {
-          try {
-            const stats = JSON.parse(jsonStr);
-            const callId = stats.call_id;
-            if (!callId) continue;
-            
-            const call = stateManager.getCall(callId);
-            if (!call) continue;
-            
-            // Update RX stats
-            if (!call.audioRxStats) {
-              call.audioRxStats = { packets: 0, lost: 0, bitrate_kbps: 0, dropout: false, dropout_total: 0, rtp_rx_errors: 0, jitter: 0 };
-            }
-            call.audioRxStats.packets = stats.rtp_rx_packets ?? 0;
-            call.audioRxStats.lost = stats.rtcp_lost_rx ?? 0;
-            call.audioRxStats.bitrate_kbps = stats.rx_bitrate_kbps ?? 0;
-            call.audioRxStats.dropout = stats.rx_dropout ?? false;
-            call.audioRxStats.dropout_total = stats.rx_dropout_total ?? 0;
-            call.audioRxStats.rtp_rx_errors = stats.rtp_rx_errors ?? 0;
-            call.audioRxStats.jitter = stats.rtcp_jitter_rx_ms ?? 0;
-            
-            // Update TX stats
-            if (!call.audioTxStats) {
-              call.audioTxStats = { packets: 0, lost: 0, bitrate_kbps: 0, jitter: 0 };
-            }
-            call.audioTxStats.packets = stats.rtp_tx_packets ?? 0;
-            call.audioTxStats.lost = stats.rtcp_lost_tx ?? 0;
-            call.audioTxStats.bitrate_kbps = stats.tx_bitrate_kbps ?? 0;
-            call.audioTxStats.jitter = stats.rtcp_jitter_tx_ms ?? 0;
-            
-            stateManager.broadcast({ type: 'callUpdated', data: call });
-            console.debug('[parseGetRtcpStatsResponse] Updated call:', callId);
-          } catch (e) {
-            // Skip JSON parse errors
-          }
-        }
-      } catch (error) {
-        console.debug('[parseGetRtcpStatsResponse] Error:', error);
-      }
-    }
-
   private client: net.Socket | null = null;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 10;
@@ -244,50 +150,12 @@ export class BaresipConnection {
     }, this.CONTACTS_POLL_INTERVAL);
   }
 
-  private async loadAccountDisplayNames(): Promise<void> {
-    try {
-      const accountsFile = await readFile('/config/accounts', 'utf-8');
-      const lines = accountsFile.split('\n');
-      
-      for (const line of lines) {
-        // Skip comments and empty lines
-        if (line.trim().startsWith('#') || !line.trim()) continue;
-        
-        // Match format: DisplayName<sip:...> or <sip:...>
-        const match = line.match(/^([^<]+)<(sip:[^@]+@[^>;]+)>/);
-        if (match) {
-          const displayName = match[1].trim();
-          const uri = match[2];
-          
-          // Get or create account and set display name
-          const account = stateManager.getAccount(uri) || {
-            uri,
-            registered: false,
-            callStatus: 'Idle' as const,
-            autoConnectStatus: 'Off',
-            lastEvent: Date.now(),
-            configured: true
-          };
-          
-          if (displayName) {
-            account.displayName = displayName;
-            stateManager.setAccount(uri, account);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load account display names:', err);
-    }
-  }
-
   private stopContactsPolling(): void {
     if (this.contactsPollingInterval) {
       clearInterval(this.contactsPollingInterval);
       this.contactsPollingInterval = null;
     }
   }
-
-  private callStatsQueueIndex = 0; // Track which call to query next
 
   private startCallStatsPolling(): void {
     // Stop any existing polling

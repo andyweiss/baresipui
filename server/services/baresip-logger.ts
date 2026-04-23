@@ -14,8 +14,8 @@ export class BaresipLogger {
   private stateManager: StateManager;
   private logBuffer: LogEntry[] = [];
   private maxBufferSize = 1000;
-  private pendingLogLine = ''; // Für mehrzeilige Logs
-  private flushTimer: NodeJS.Timeout | null = null; // Timer zum Flushen von pending logs
+  private pendingLogLine = ''; // Buffer for multi-line logs
+  private flushTimer: NodeJS.Timeout | null = null; // Timer for flushing pending logs
 
   constructor(stateManager: StateManager) {
     this.stateManager = stateManager;
@@ -201,17 +201,11 @@ export class BaresipLogger {
       return;
     }
     
-    // Add to buffer
+    // Add to buffer (no broadcast — logs are sent only to 'logs' room subscribers)
     this.logBuffer.push(entry);
     if (this.logBuffer.length > this.maxBufferSize) {
-      this.logBuffer.shift(); // Remove oldest entry
+      this.logBuffer.shift();
     }
-
-    // Broadcast to clients
-    this.stateManager.broadcast({
-      type: 'log',
-      data: entry
-    });
   }
 
   private parseLogLine(line: string, stream: 'stdout' | 'stderr'): LogEntry {
@@ -300,10 +294,6 @@ export class BaresipLogger {
 
   clearLogs(): void {
     this.logBuffer = [];
-    this.stateManager.broadcast({
-      type: 'logsCleared',
-      data: {}
-    });
   }
 
   /**
@@ -318,16 +308,10 @@ export class BaresipLogger {
       accountUri
     };
 
-    // Add to buffer
+    // Add to buffer (no broadcast — logs are sent only to 'logs' room subscribers)
     this.logBuffer.push(entry);
     if (this.logBuffer.length > this.maxBufferSize) {
       this.logBuffer.shift();
     }
-
-    // Broadcast to clients
-    this.stateManager.broadcast({
-      type: 'log',
-      data: entry
-    });
   }
 }

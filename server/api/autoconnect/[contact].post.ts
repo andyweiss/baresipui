@@ -1,9 +1,22 @@
 import { stateManager } from '../../services/state-manager';
 import { getAutoConnectConfigManager } from '../../services/autoconnect-config';
 
+async function parseRequestBody(event: any) {
+  try {
+    return await readBody(event);
+  } catch {
+    return new Promise((resolve, reject) => {
+      let body = '';
+      event.node.req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      event.node.req.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
+      event.node.req.on('error', reject);
+    });
+  }
+}
+
 export default defineEventHandler(async (event) => {
   const contact = getRouterParam(event, 'contact');
-  const body = await readBody(event);
+  const body = await parseRequestBody(event);
   const { enabled } = body;
 
   if (!contact) {

@@ -140,9 +140,7 @@
 
 <script setup lang="ts">
 
-import { computed, ref, watch } from 'vue';
 import type { CallInfo } from '~/types';
-import DialModal from './DialModal.vue';
 
 const props = defineProps({
   account: { type: Object, required: true },
@@ -235,22 +233,42 @@ const getContactDisplayName = (contact: any) => {
 const getRemotePartyDisplayName = (call: CallInfo): string => {
   if (!call) return '';
   
-  // Extract username from remoteUri or peerName
-  let displayValue = call.remoteUri || call.peerName;
-  
-  if (!displayValue) return 'Unknown';
-  
-  // Remove sip: prefix if present
-  displayValue = displayValue.replace(/^sip:/, '');
-  
-  // Extract only the username part (before @)
-  const userMatch = displayValue.match(/^([^@]+)@/);
-  if (userMatch) {
-    return userMatch[1];
+  // During ringing, name is not yet reliable — caller handles display separately
+  if (call.state === 'Ringing') {
+    return call.direction === 'incoming' ? 'Incoming...' : 'Calling...';
   }
   
-  // If no @ found, return as-is
-  return displayValue;
+  // Check if remoteUri matches a known contact → use contact display name
+  if (call.remoteUri) {
+    const uri = call.remoteUri.replace(/^sip:/, '').toLowerCase();
+    const contact = props.contacts.find((c: any) => {
+      const contactUri = String(c.contact || '').replace(/^sip:/, '').toLowerCase();
+      return contactUri === uri || contactUri === uri.split('@')[0];
+    });
+    if (contact) return getContactDisplayName(contact);
+  }
+  
+  // For outgoing calls not in contacts: always show the dialed number from remoteUri
+  if (call.direction === 'outgoing' && call.remoteUri) {
+    const stripped = call.remoteUri.replace(/^sip:/, '');
+    const userMatch = stripped.match(/^([^@]+)@/);
+    return userMatch ? userMatch[1] : stripped;
+  }
+  
+  // Incoming: use display name from baresip
+  if (call.peerName && call.peerName !== 'Unknown') {
+    return call.peerName.replace(/^sip:/, '');
+  }
+  
+  // Last resort: SIP username from remoteUri
+  if (call.remoteUri) {
+    const stripped = call.remoteUri.replace(/^sip:/, '');
+    const userMatch = stripped.match(/^([^@]+)@/);
+    if (userMatch) return userMatch[1];
+    return stripped;
+  }
+  
+  return '';
 };
 
 const getContactByUri = (uri: string) => {
@@ -314,29 +332,6 @@ const callStatusColor = computed(() => {
   // All other statuses (errors/call end reasons) = red
   return 'text-red-400';
 });
-
-const getRightStatusText = () => {
-  // If auto-connect is active and we have an active call → "Connected"
-  if (localAutoConnectContact.value && activeCall.value) {
-    return 'Connected';
-  }
-  // If no auto-connect but we have an active call → show remote party number
-  if (!localAutoConnectContact.value && activeCall.value) {
-    return getRemotePartyDisplayName(activeCall.value);
-  }
-  // If auto-connect is active but no call → show contact info
-  if (localAutoConnectContact.value) {
-    const contact = getContactByUri(localAutoConnectContact.value);
-    if (!contact) return 'Off';
-    const displayName = getContactDisplayName(contact);
-    const presence = contact.presence || 'unknown';
-    if (presence === 'busy') return `${displayName} (busy)`;
-    if (presence === 'online') return `${displayName} (online)`;
-    return displayName;
-  }
-  // No auto-connect, no active call
-  return 'Off';
-};
 
 const getAutoConnectDisplayText = () => {
   if (!localAutoConnectContact.value) {

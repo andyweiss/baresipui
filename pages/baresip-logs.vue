@@ -155,7 +155,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { io } from 'socket.io-client';
 import type { LogEntry } from '~/server/services/baresip-logger';
 
@@ -190,11 +189,11 @@ const scrollToBottom = () => {
 const handleScroll = () => {
   if (!logsContainer.value || isScrolling) return;
   
-  // Sofort prüfen ob User hochgescrollt hat
+  // Check if user has scrolled up
   const { scrollTop, scrollHeight, clientHeight } = logsContainer.value;
   const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
   
-  // Wenn mehr als 20px vom Ende entfernt, deaktiviere Auto-Scroll sofort
+  // If more than 20px from bottom, disable auto-scroll immediately
   if (distanceFromBottom > 20 && autoScroll.value) {
     autoScroll.value = false;
   }
@@ -208,8 +207,8 @@ const handleNewLog = (logData: LogEntry) => {
   
   logs.value.push(logData);
   
-  // Limit buffer - aber nur wenn Auto-Scroll AN ist
-  // Wenn User hochscrollt (Auto-Scroll AUS), behalten wir alle Logs
+  // Limit buffer only when auto-scroll is ON
+  // When user scrolls up (auto-scroll OFF), keep all logs
   if (autoScroll.value && logs.value.length > 5000) {
     logs.value.shift();
   }
@@ -231,18 +230,18 @@ const filteredLogs = computed(() => {
   }
 
   if (filterAccount.value) {
-    // Extrahiere die Nummer aus der Account URI (z.B. "2061228" aus "sip:2061228@sip.srgssr.ch")
+    // Extract the number from the account URI (e.g. "12345" from "sip:12345@example.com")
     const accountMatch = filterAccount.value.match(/(\d+)/);
     if (accountMatch) {
       const accountNumber = accountMatch[1];
-      // Suche nach der Nummer in der gesamten Message
+      // Search for the number in the entire message
       filtered = filtered.filter(log => 
         (log.message || '').includes(accountNumber) ||
         (log.accountUri || '').includes(accountNumber) ||
         (log.source || '').includes(accountNumber)
       );
     } else {
-      // Fallback: exaktes Match wie vorher
+      // Fallback: exact match
       filtered = filtered.filter(log => (log.accountUri || '') === filterAccount.value);
     }
   }
@@ -260,8 +259,6 @@ const filteredLogs = computed(() => {
 });
 
 onMounted(async () => {
-  console.log('🔌 Initializing Socket.IO connection...');
-  
   // Connect to Socket.IO for real-time logs
   socket.value = io({
     path: '/socket.io/',
@@ -269,20 +266,32 @@ onMounted(async () => {
   });
 
   socket.value.on('connect', () => {
-    console.log('✅ Socket.IO connected:', socket.value.id);
+    // Subscribe to logs room to receive live log updates
+    socket.value.emit('subscribeLogs');
   });
 
-  socket.value.on('connect_error', (error: any) => {
-    console.error('❌ Socket.IO connection error:', error);
+  socket.value.on('connect_error', (_error: any) => {
+    // connection error
   });
 
-  socket.value.on('disconnect', (reason: string) => {
-    console.warn('⚠️ Socket.IO disconnected:', reason);
+  socket.value.on('disconnect', (_reason: string) => {
+    // disconnected
   });
 
-  // Listen for 'log' event (emitted directly)
-  socket.value.on('log', (data: LogEntry) => {
-    handleNewLog(data);
+  // Listen for historical logs (sent on subscribeLogs)
+  socket.value.on('logHistory', (data: any) => {
+    const entries = data.logs || [];
+    for (const entry of entries) {
+      handleNewLog(entry);
+    }
+  });
+
+  // Listen for batched log events (live updates)
+  socket.value.on('logBatch', (data: any) => {
+    const entries = data.logs || [];
+    for (const entry of entries) {
+      handleNewLog(entry);
+    }
   });
 
   socket.value.on('logsCleared', () => {
@@ -309,7 +318,7 @@ onMounted(async () => {
       accounts.value = accountsResponse;
     }
   } catch (error) {
-    console.error('Failed to load accounts:', error);
+    // Failed to load accounts
   }
 
   // Load initial logs
@@ -331,13 +340,13 @@ onMounted(async () => {
   if (logsContainer.value) {
     logsContainer.value.addEventListener('scroll', handleScroll, { passive: true });
     
-    // Setup ResizeObserver für automatische Scroll-Anpassung
+    // Setup ResizeObserver for automatic scroll adjustment
     previousScrollHeight = logsContainer.value.scrollHeight;
     
     resizeObserver = new ResizeObserver(() => {
       if (!logsContainer.value || autoScroll.value || isScrolling) return;
       
-      // Wenn Auto-Scroll AUS: Passe scrollTop an, damit sichtbare Position gleich bleibt
+      // When auto-scroll is OFF: adjust scrollTop to keep visible position stable
       const newScrollHeight = logsContainer.value.scrollHeight;
       const heightDiff = newScrollHeight - previousScrollHeight;
       
@@ -368,7 +377,7 @@ onUnmounted(() => {
   }
 });
 
-// Watch: Nur für Auto-Scroll (wenn AN)
+// Watch: only for auto-scroll (when ON)
 watch(
   () => [filteredLogs.value.length, logUpdateTrigger.value],
   async () => {
@@ -433,14 +442,14 @@ const getSourceStyle = (source: string): { icon: string; class: string } => {
     return { icon: '⚙️', class: 'bg-orange-900/50 text-orange-300' };
   }
   
-  // Default für andere Sources (z.B. spezifische Module)
+  // Default for other sources (e.g. specific modules)
   return { icon: '📝', class: 'bg-gray-700 text-gray-300' };
 };
 
 const toggleAutoScroll = () => {
   autoScroll.value = !autoScroll.value;
   if (autoScroll.value) {
-    // Wenn Auto-Scroll wieder aktiviert wird, trimme Buffer auf 5000
+    // When auto-scroll is re-enabled, trim buffer to 5000
     if (logs.value.length > 5000) {
       logs.value = logs.value.slice(-5000);
     }
