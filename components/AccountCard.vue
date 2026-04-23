@@ -377,14 +377,8 @@ const autoConnectDisplayColor = computed(() => {
 });
 
 const showConnectionLine = computed(() => {
-  // Show line when account is In Call AND the configured contact is busy
-  if (props.account.callStatus !== 'In Call') return false;
-  if (!localAutoConnectContact.value) return false;
-  
-  const contact = getContactByUri(localAutoConnectContact.value);
-  if (!contact) return false;
-  
-  return contact.presence === 'busy';
+  // Show line whenever account is In Call (auto-connect or manual)
+  return props.account.callStatus === 'In Call';
 });
 
 const formatTimestamp = (timestamp: number) => {
