@@ -86,15 +86,15 @@
       <!-- Call and Hangup buttons -->
       <div class="flex gap-2">
         <button
-          @click="$emit('call', account.uri)"
-          :disabled="!account.registered"
+          @click="showDialModal = true"
+          :disabled="!account.registered || hasActiveCall"
           :class="callButtonClass"
         >
           Call
         </button>
         <button
           @click="$emit('hangup', account.uri)"
-          :disabled="!account.registered"
+          :disabled="!account.registered || !hasActiveCall"
           :class="hangupButtonClass"
         >
           Hangup
@@ -126,6 +126,15 @@
       :call="activeCall"
       @close="showCallStats = false"
     />
+
+    <!-- Dial Modal -->
+    <DialModal
+      :show="showDialModal"
+      :account-uri="account.uri"
+      :contacts="contacts"
+      @close="showDialModal = false"
+      @dial="handleDial"
+    />
   </div>
 </template>
 
@@ -133,6 +142,7 @@
 
 import { computed, ref, watch } from 'vue';
 import type { CallInfo } from '~/types';
+import DialModal from './DialModal.vue';
 
 const props = defineProps({
   account: { type: Object, required: true },
@@ -143,6 +153,7 @@ const props = defineProps({
 const emit = defineEmits(['call', 'hangup', 'assignContact']);
 
 const showCallStats = ref(false);
+const showDialModal = ref(false);
 
 // Local state for the select to prevent jumping back
 const localAutoConnectContact = ref(props.account.autoConnectContact || '');
@@ -278,20 +289,21 @@ const getStatusText = () => {
 
 const callButtonClass = computed(() => {
   const baseClass = 'px-3 py-1.5 text-xs font-medium rounded transition';
-  if (props.account.registered) {
-    return `${baseClass} bg-green-600 text-white hover:bg-green-700`;
-  } else {
-    return `${baseClass} bg-gray-600 text-gray-400 cursor-not-allowed`;
+  if (!props.account.registered) {
+    return `${baseClass} bg-green-600 text-white opacity-40 cursor-not-allowed`;
   }
+  if (hasActiveCall.value) {
+    return `${baseClass} bg-green-600 text-white opacity-40 cursor-not-allowed`;
+  }
+  return `${baseClass} bg-green-600 text-white hover:bg-green-700`;
 });
 
 const hangupButtonClass = computed(() => {
   const baseClass = 'px-3 py-1.5 text-xs font-medium rounded transition';
-  if (props.account.registered) {
-    return `${baseClass} bg-red-600 text-white hover:bg-red-700`;
-  } else {
-    return `${baseClass} bg-gray-600 text-gray-400 cursor-not-allowed`;
+  if (!props.account.registered || !hasActiveCall.value) {
+    return `${baseClass} bg-red-600 text-white opacity-40 cursor-not-allowed`;
   }
+  return `${baseClass} bg-red-600 text-white hover:bg-red-700`;
 });
 
 const callStatusColor = computed(() => {
@@ -378,5 +390,10 @@ const showConnectionLine = computed(() => {
 const formatTimestamp = (timestamp: number) => {
   if (!timestamp) return 'N/A';
   return new Date(timestamp).toLocaleTimeString();
+};
+
+const handleDial = (target: string, displayName?: string) => {
+  showDialModal.value = false;
+  emit('call', props.account.uri, target, displayName);
 };
 </script>

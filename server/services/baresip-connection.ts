@@ -1,7 +1,7 @@
 import net from 'node:net';
 import { createNetstring } from '../utils/netstring';
 import { stateManager } from './state-manager';
-import { parseBaresipEvent } from './baresip-parser';
+import { parseBaresipEvent, parseBaresipEventBuffered } from './baresip-parser';
 import { getAutoConnectConfigManager } from './autoconnect-config';
 import { getBaresipLogger } from '../utils/logger';
 
@@ -105,9 +105,11 @@ export class BaresipConnection {
   private readonly MAX_RECONNECT_ATTEMPTS = 10;
   private readonly BASE_RECONNECT_DELAY = 1000;
   private contactsPollingInterval: NodeJS.Timeout | null = null;
-  private readonly CONTACTS_POLL_INTERVAL = 5000; // Poll contacts every 5 seconds
+  private readonly CONTACTS_POLL_INTERVAL = 10000; // Poll contacts/presence every 10 seconds
   private callStatsPollingInterval: NodeJS.Timeout | null = null;
-  private readonly CALL_STATS_POLL_INTERVAL = 2000; // Poll call stats every 2 seconds
+  private readonly CALL_STATS_POLL_INTERVAL = 3000; // Poll RTCP stats every 3 seconds
+  private tcpBuffer = ''; // Persistent buffer for fragmented TCP netstrings
+  private uafindLock: Promise<void> = Promise.resolve(); // Serialize uafind+command sequences
 
   constructor(
     private host: string,
@@ -116,7 +118,9 @@ export class BaresipConnection {
 
   async connect(): Promise<void> {
     if (this.client) {
+      this.client.removeAllListeners(); // Prevent old close handler from triggering zombie reconnect
       this.client.destroy();
+      this.client = null;
     }
 
     // Load auto-connect config before connecting
@@ -141,8 +145,9 @@ export class BaresipConnection {
 
       
       this.sendCommand('sysinfo'); // system information including baresip version
-      this.sendCommand('uastat'); // user agent statistics - provides all account info including SIP status codes
+      this.sendCommand('uastat'); // initial account info - ongoing updates come via REGISTER_OK/FAIL events
       this.sendCommand('contacts');
+      this.sendCommand('presence_ts'); // initial presence state
       this.sendCommand('listcalls'); // AFTER uastat so accounts exist
       this.sendCommand('callstat');
       
@@ -159,6 +164,9 @@ export class BaresipConnection {
     });
 
     this.client.on('data', (data) => {
+      // Accumulate data in persistent buffer to handle TCP fragmentation
+      this.tcpBuffer += data.toString();
+
       // Log received data if debug enabled - BEFORE parsing
       if (process.env.DEBUG_TCP_BUS === 'true') {
         const dataStr = data.toString();
@@ -176,9 +184,10 @@ export class BaresipConnection {
         }
       }
       
-      // Parse the event
+      // Parse all complete netstrings from buffer
       try {
-        parseBaresipEvent(data, stateManager);
+        const result = parseBaresipEventBuffered(this.tcpBuffer, stateManager);
+        this.tcpBuffer = result.remaining;
       } catch (e) {
         console.error('Failed to parse baresip event:', e);
         if (process.env.DEBUG_TCP_BUS === 'true') {
@@ -211,6 +220,7 @@ export class BaresipConnection {
         // Logger might not be available
       }
       
+      this.tcpBuffer = ''; // Clear buffer on disconnect
       this.stopContactsPolling();
       this.stopCallStatsPolling();
       this.scheduleReconnect();
@@ -224,13 +234,12 @@ export class BaresipConnection {
     // Stop any existing polling
     this.stopContactsPolling();
 
-    console.log(`Starting contacts polling (every ${this.CONTACTS_POLL_INTERVAL}ms)`);
-    
-    // Poll immediately, then at intervals
+    // Poll contacts and presence timestamps at intervals
+    // Account status updates arrive via JSON events (REGISTER_OK/FAIL) - no uastat polling needed
     this.contactsPollingInterval = setInterval(() => {
       if (this.isConnected()) {
         this.sendCommand('contacts');
-        this.sendCommand('presence_ts');  // Get presence timestamps from baresip
+        this.sendCommand('presence_ts');
       }
     }, this.CONTACTS_POLL_INTERVAL);
   }
@@ -273,7 +282,6 @@ export class BaresipConnection {
 
   private stopContactsPolling(): void {
     if (this.contactsPollingInterval) {
-      console.log('Stopping contacts polling');
       clearInterval(this.contactsPollingInterval);
       this.contactsPollingInterval = null;
     }
@@ -285,7 +293,7 @@ export class BaresipConnection {
     // Stop any existing polling
     this.stopCallStatsPolling();
 
-    // Poll every 2 seconds for RTCP stats and check for calls needing codec info
+    // Poll every 3 seconds for RTCP stats and check for calls needing codec info
     this.callStatsPollingInterval = setInterval(() => {
       if (this.isConnected()) {
         const calls = stateManager.getCalls();
@@ -314,16 +322,31 @@ export class BaresipConnection {
 
   // Fetch codec info once when call is established
   public fetchCodecInfoForCall(callId: string, localUri: string): void {
-    // Select account and query callstat ONCE
-    this.sendCommand('uafind', localUri);
-    setTimeout(() => {
-      this.sendCommand('callstat');
-    }, 150);
+    // Use serialized command sequence to prevent uafind race conditions
+    this.sendCommandSequence([
+      { command: 'uafind', params: localUri },
+      { command: 'callstat' }
+    ]);
+  }
+
+  /**
+   * Execute a sequence of commands atomically - prevents uafind interleaving.
+   * Commands are sent back-to-back on the same TCP connection.
+   * TCP guarantees ordering, so baresip processes them sequentially.
+   * The lock prevents other sendCommandSequence calls from interleaving.
+   */
+  sendCommandSequence(commands: Array<{command: string, params?: string, token?: string}>): void {
+    this.uafindLock = this.uafindLock.then(async () => {
+      for (const cmd of commands) {
+        this.sendCommand(cmd.command, cmd.params, cmd.token);
+      }
+      // Small yield to ensure TCP write is flushed before releasing lock
+      await new Promise(r => setTimeout(r, 10));
+    });
   }
 
   private stopCallStatsPolling(): void {
     if (this.callStatsPollingInterval) {
-      console.log('Stopping call stats polling');
       clearInterval(this.callStatsPollingInterval);
       this.callStatsPollingInterval = null;
     }

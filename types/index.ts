@@ -106,10 +106,14 @@ export interface BaresipEvent {
   event_name?: string;
   local_uri?: string;
   peer_uri?: string;
+  remote_uri?: string;
   id?: string;
   peeruri?: string;
   contacturi?: string;
   localuri?: string;
+  direction?: 'incoming' | 'outgoing';
+  peerdisplayname?: string;
+  peername?: string;
 }
 
 export interface BaresipCommandResponse {

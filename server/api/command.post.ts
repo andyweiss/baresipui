@@ -66,19 +66,28 @@ export default defineEventHandler(async (event) => {
       if (!accountUri || !target) {
         throw createError({ statusCode: 400, message: 'accountUri und target erforderlich' });
       }
-      connection.sendCommand('uafind', accountUri, token);
-      setTimeout(() => {
-        connection.sendCommand('dial', target, token);
-      }, 150);
+      // Use serialized command sequence to prevent uafind race conditions
+      // No delay needed - TCP ordering guarantees sequential processing in baresip
+      connection.sendCommandSequence([
+        { command: 'uafind', params: accountUri, token },
+        { command: 'dial', params: target, token }
+      ]);
     } else if (command === 'hangup' && params) {
       const { accountUri } = typeof params === 'object' ? params : { accountUri: params };
       if (!accountUri) {
         throw createError({ statusCode: 400, message: 'accountUri erforderlich' });
       }
-      connection.sendCommand('uafind', accountUri, token);
-      setTimeout(() => {
-        connection.sendCommand('hangup', undefined, token);
-      }, 150);
+      // Guard: only send hangup if account actually has an active call
+      const account = stateManager.getAccount(accountUri);
+      if (!account || (account.callStatus !== 'In Call' && account.callStatus !== 'Ringing')) {
+        console.log(`Hangup ignored for ${accountUri}: no active call (status: ${account?.callStatus || 'unknown'})`);
+        return { success: true, command, params, timestamp: Date.now(), ignored: true, reason: 'no active call' };
+      }
+      // Use serialized command sequence to prevent uafind race conditions
+      connection.sendCommandSequence([
+        { command: 'uafind', params: accountUri, token },
+        { command: 'hangup', token }
+      ]);
     } else if (command.startsWith('/') || (!params && typeof command === 'string' && command.includes(' '))) {
       const [cmd, ...paramsParts] = command.replace('/', '').split(' ');
       const parsedParams = paramsParts.join(' ');

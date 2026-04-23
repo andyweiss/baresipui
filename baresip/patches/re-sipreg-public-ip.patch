@@ -8,7 +8,7 @@ index bd3c4c9..605c996 100644
  		       sip_uas_auth_h *authh, void *arg);
 +
 +
-+/* Public IP for NAT traversal (learned from Via received parameter) */
++/* Public IP for NAT traversal (learned from Via received/rport parameters) */
 +void sip_set_public_addr(const struct sa *addr);
 +const struct sa *sip_get_public_addr(void);
 diff --git a/src/sip/sip.c b/src/sip/sip.c
@@ -21,7 +21,7 @@ index 9e5649c..3cda782 100644
  }
 +
 +
-+/* Public IP storage for NAT traversal */
++/* Public IP storage for NAT traversal (includes rport) */
 +static struct sa global_public_addr;
 +static bool has_global_public_addr = false;
 +
@@ -41,18 +41,16 @@ diff --git a/src/sipevent/subscribe.c b/src/sipevent/subscribe.c
 index 390b5c0..4546001 100644
 --- a/src/sipevent/subscribe.c
 +++ b/src/sipevent/subscribe.c
-@@ -304,7 +304,16 @@ static int send_handler(enum sip_transp tp, struct sa *src,
+@@ -304,7 +304,14 @@ static int send_handler(enum sip_transp tp, struct sa *src,
  	(void)dst;
  	(void)contp;
  
 -	sip_contact_set(&contact, sub->cuser, src, tp);
-+	/* Use public IP for Contact if available (NAT traversal for SUBSCRIBE) */
++	/* Use public IP+rport for Contact if available (NAT traversal) */
 +	const struct sa *contact_addr = sip_get_public_addr();
 +	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
-+		struct sa pub_with_port;
-+		sa_cpy(&pub_with_port, contact_addr);
-+		sa_set_port(&pub_with_port, sa_port(src));
-+		sip_contact_set(&contact, sub->cuser, &pub_with_port, tp);
++		/* Use public_addr directly - it already contains the correct rport */
++		sip_contact_set(&contact, sub->cuser, contact_addr, tp);
 +	} else {
 +		sip_contact_set(&contact, sub->cuser, src, tp);
 +	}
@@ -72,15 +70,21 @@ index ca87884..76d4e8a 100644
  };
  
  
-@@ -225,6 +227,16 @@ static void response_handler(int err, const struct sip_msg *msg, void *arg)
+@@ -225,6 +227,22 @@ static void response_handler(int err, const struct sip_msg *msg, void *arg)
  
  	case 401:
  	case 407:
-+		/* Extract public IP from Via received parameter */
++		/* Extract public IP from Via received and rport parameters */
 +		{
 +			struct pl received;
 +			if (0 == msg_param_decode(&msg->via.params, "received", &received)) {
-+				if (0 == sa_set(&reg->public_addr, &received, sa_port(&reg->laddr))) {
++				struct pl rport_pl;
++				uint16_t pub_port = sa_port(&reg->laddr);
++				/* Use rport if available (external NAT port) */
++				if (0 == msg_param_decode(&msg->via.params, "rport", &rport_pl)) {
++					pub_port = pl_u32(&rport_pl);
++				}
++				if (0 == sa_set(&reg->public_addr, &received, pub_port)) {
 +					reg->has_public_addr = true;
 +					sip_set_public_addr(&reg->public_addr);
 +				}
@@ -94,7 +98,7 @@ index ca87884..76d4e8a 100644
  		sa_set_port(src, reg->srcport);
  
 -	reg->laddr = *src;
-+	/* Use public IP for Contact if available */
++	/* Use public IP+rport for Contact if available */
 +	if (reg->has_public_addr) {
 +		reg->laddr = reg->public_addr;
 +	} else {
@@ -116,18 +120,16 @@ diff --git a/src/sipsess/connect.c b/src/sipsess/connect.c
 index 9a3f234..ce3d1bb 100644
 --- a/src/sipsess/connect.c
 +++ b/src/sipsess/connect.c
-@@ -38,7 +38,16 @@ static int send_handler(enum sip_transp tp, struct sa *src,
+@@ -38,7 +38,14 @@ static int send_handler(enum sip_transp tp, struct sa *src,
  			return err;
  	}
  
 -	sip_contact_set(&contact, sess->cuser, src, tp);
-+	/* Use public IP for Contact if available */
++	/* Use public IP+rport for Contact if available (NAT traversal) */
 +	const struct sa *contact_addr = sip_get_public_addr();
 +	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
-+		struct sa pub_with_port;
-+		sa_cpy(&pub_with_port, contact_addr);
-+		sa_set_port(&pub_with_port, sa_port(src));
-+		sip_contact_set(&contact, sess->cuser, &pub_with_port, tp);
++		/* Use public_addr directly - it already contains the correct rport */
++		sip_contact_set(&contact, sess->cuser, contact_addr, tp);
 +	} else {
 +		sip_contact_set(&contact, sess->cuser, src, tp);
 +	}
@@ -138,36 +140,32 @@ diff --git a/src/sipsess/reply.c b/src/sipsess/reply.c
 index df73d32..1941119 100644
 --- a/src/sipsess/reply.c
 +++ b/src/sipsess/reply.c
-@@ -141,7 +141,16 @@ int sipsess_reply_2xx(struct sipsess *sess, const struct sip_msg *msg,
+@@ -141,7 +141,14 @@ int sipsess_reply_2xx(struct sipsess *sess, const struct sip_msg *msg,
  	if (non_invite && sess->neg_state != SDP_NEG_REMOTE_OFFER)
  		desc = NULL;
  
 -	sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
-+	/* Use public IP for Contact if available */
++	/* Use public IP+rport for Contact if available (NAT traversal) */
 +	const struct sa *contact_addr = sip_get_public_addr();
 +	if (contact_addr && sa_isset(contact_addr, SA_ADDR)) {
-+		struct sa pub_with_port;
-+		sa_cpy(&pub_with_port, contact_addr);
-+		sa_set_port(&pub_with_port, sa_port(&msg->dst));
-+		sip_contact_set(&contact, sess->cuser, &pub_with_port, msg->tp);
++		/* Use public_addr directly - it already contains the correct rport */
++		sip_contact_set(&contact, sess->cuser, contact_addr, msg->tp);
 +	} else {
 +		sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
 +	}
  	err = sip_treplyf(non_invite ? NULL : &sess->st,
  			  reply ? &reply->mb : NULL, sess->sip,
  			  msg, true, scode, reason,
-@@ -253,7 +262,16 @@ int sipsess_reply_1xx(struct sipsess *sess, const struct sip_msg *msg,
+@@ -253,7 +262,14 @@ int sipsess_reply_1xx(struct sipsess *sess, const struct sip_msg *msg,
  	reply->sess = sess;
  	reply->scode = scode;
  
 -	sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
-+	/* Use public IP for Contact if available */
++	/* Use public IP+rport for Contact if available (NAT traversal) */
 +	const struct sa *contact_addr2 = sip_get_public_addr();
 +	if (contact_addr2 && sa_isset(contact_addr2, SA_ADDR)) {
-+		struct sa pub_with_port2;
-+		sa_cpy(&pub_with_port2, contact_addr2);
-+		sa_set_port(&pub_with_port2, sa_port(&msg->dst));
-+		sip_contact_set(&contact, sess->cuser, &pub_with_port2, msg->tp);
++		/* Use public_addr directly - it already contains the correct rport */
++		sip_contact_set(&contact, sess->cuser, contact_addr2, msg->tp);
 +	} else {
 +		sip_contact_set(&contact, sess->cuser, &msg->dst, msg->tp);
 +	}

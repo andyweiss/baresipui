@@ -166,6 +166,33 @@ import { useSocketIO } from '@/composables/useSocketIO';
 // Use Socket.IO instead of WebSocket
 const { connected, accounts, contacts, calls, sendCommand, toggleAutoConnect } = useSocketIO();
 
+// Track already-recorded call IDs to avoid duplicates
+const recordedCallIds = new Set<string>();
+
+// Watch for incoming calls becoming established → save to history
+watch(calls, (newCalls) => {
+  for (const call of newCalls) {
+    if (
+      call.direction === 'incoming' &&
+      call.state === 'Established' &&
+      call.callId &&
+      !recordedCallIds.has(call.callId)
+    ) {
+      recordedCallIds.add(call.callId);
+      fetch('/api/call-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountUri: call.localUri,
+          remoteUri: call.remoteUri,
+          direction: 'incoming',
+          displayName: call.peerName,
+        }),
+      }).catch(() => {});
+    }
+  }
+}, { deep: true });
+
 // Active tab state
 const activeTab = ref('accounts');
 const settingsPanelRef = ref();
@@ -194,30 +221,41 @@ const handleAssignContact = async (accountUri: string, contactUri: string) => {
   }
 };
 
-const handleCall = async (accountUri: string) => {
-  const input = prompt('Enter target number or SIP address:', '');
-  if (!input) return;
-  let target = input.trim();
-  // If not a SIP URI, extract domain from account
-  if (!target.startsWith('sip:')) {
+const handleCall = async (accountUri: string, target: string, displayName?: string) => {
+  let sipTarget = target.trim();
+  // If not a SIP URI, extract domain from account and build one
+  if (!sipTarget.startsWith('sip:')) {
     const match = accountUri.match(/^sip:[^@]+@(.+)$/);
     const domain = match ? match[1] : '';
     if (domain) {
-      target = `sip:${target}@${domain}`;
+      sipTarget = `sip:${sipTarget}@${domain}`;
     }
   }
   try {
-    await sendCommand('dial', { accountUri, target });
+    await sendCommand('dial', { accountUri, target: sipTarget });
+    // Persist to call history
+    await fetch('/api/call-history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountUri, remoteUri: sipTarget, direction: 'outgoing', displayName }),
+    });
   } catch (err: any) {
     alert('Error dialing: ' + (err?.message || err));
   }
 };
 
+const pendingHangups = new Set<string>();
+
 const handleHangup = async (accountUri: string) => {
+  // Guard against rapid double-clicks: skip if hangup already in flight for this account
+  if (pendingHangups.has(accountUri)) return;
+  pendingHangups.add(accountUri);
   try {
     await sendCommand('hangup', { accountUri });
   } catch (err: any) {
     alert('Error hanging up: ' + (err?.message || err));
+  } finally {
+    pendingHangups.delete(accountUri);
   }
 };
 

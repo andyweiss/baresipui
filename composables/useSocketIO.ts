@@ -68,10 +68,14 @@ export const useSocketIO = () => {
 
     socket.value.on('baresipStatus', (data: any) => {
       baresipConnected.value = data.connected;
+      if (!data.connected) {
+        calls.value = [];
+      }
     });
 
     socket.value.on('baresipDisconnected', () => {
       calls.value = [];
+      baresipConnected.value = false;
     });
 
     socket.value.on('message', (data: any) => {
@@ -109,6 +113,16 @@ export const useSocketIO = () => {
         }
       } else if (data.type === 'contactsUpdate') {
         contacts.value = data.contacts || [];
+      } else if (data.type === 'baresipStatus') {
+        baresipConnected.value = data.data?.connected ?? data.connected ?? false;
+        if (!baresipConnected.value) {
+          calls.value = [];
+        }
+      } else if (data.type === 'baresipDisconnected') {
+        calls.value = [];
+        baresipConnected.value = false;
+      } else if (data.type === 'callsCleared') {
+        calls.value = [];
       } else if (data.type === 'callAdded' || data.type === 'callUpdated') {
         const callIndex = calls.value.findIndex(c => c.callId === data.data.callId);
         if (callIndex >= 0) {

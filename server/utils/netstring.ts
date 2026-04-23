@@ -26,6 +26,5 @@ export function parseNetstring(data: Buffer): string[] {
 
 export function createNetstring(data: string): string {
   const netstring = `${data.length}:${data},`;
-  console.log(`Creating netstring: "${data}" -> "${netstring}"`);
   return netstring;
 }

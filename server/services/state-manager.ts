@@ -121,6 +121,12 @@ export class StateManager {
         type: 'baresipStatus',
         data: { connected }
       });
+      if (!connected) {
+        // Also send dedicated disconnect event
+        this.broadcast({
+          type: 'baresipDisconnected'
+        });
+      }
     }
   }
 
@@ -371,6 +377,24 @@ export class StateManager {
         data: updated
       });
     }
+  }
+
+  clearCalls(): void {
+    this.activeCalls.clear();
+    this.broadcast({
+      type: 'callsCleared'
+    });
+  }
+
+  setAllCallStatus(status: string): void {
+    for (const [uri, account] of this.accounts.entries()) {
+      const updated = { ...account, callStatus: status, callId: undefined };
+      this.accounts.set(uri, updated);
+    }
+    this.broadcast({
+      type: 'accountsUpdate',
+      accounts: this.getAccounts()
+    });
   }
 
   removeCall(callId: string): void {

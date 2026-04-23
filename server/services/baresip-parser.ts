@@ -27,6 +27,55 @@ function processAutoConnectQueue() {
   }
 }
 
+// Buffered version: accepts a string buffer, parses all complete netstrings,
+// returns remaining unconsumed bytes (incomplete netstring at end).
+// All messages processed synchronously to preserve correct event ordering.
+export function parseBaresipEventBuffered(buffer: string, stateManager: StateManager): { remaining: string } {
+  let remaining = buffer;
+
+  while (remaining.length > 0) {
+    const colonIndex = remaining.indexOf(':');
+    if (colonIndex === -1) break; // No complete length prefix yet
+
+    const length = parseInt(remaining.substring(0, colonIndex), 10);
+    if (isNaN(length) || length < 0) {
+      // Corrupt data - skip one character and retry
+      remaining = remaining.substring(1);
+      continue;
+    }
+
+    const startIndex = colonIndex + 1;
+    const endIndex = startIndex + length;
+
+    // Not enough data yet - wait for more TCP chunks
+    if (remaining.length < endIndex + 1) break;
+
+    // Validate trailing comma
+    if (remaining[endIndex] !== ',') {
+      // Corrupt frame - skip one character and retry
+      remaining = remaining.substring(1);
+      continue;
+    }
+
+    const messageStr = remaining.substring(startIndex, endIndex);
+    remaining = remaining.substring(endIndex + 1);
+
+    // Process synchronously - ordering is critical for correct state
+    try {
+      const jsonMessage = JSON.parse(messageStr);
+      if (jsonMessage.response !== undefined) {
+        handleCommandResponse(jsonMessage, stateManager);
+      } else if (jsonMessage.event) {
+        handleJsonEvent(jsonMessage, stateManager);
+      }
+    } catch (e) {
+      handleTextLine(messageStr, stateManager);
+    }
+  }
+
+  return { remaining };
+}
+
 export function parseBaresipEvent(data: Buffer, stateManager: StateManager, rtcpBuffer?: { buffer: string }): void {
   const dataStr = data.toString();
 
@@ -323,50 +372,50 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
 // timestamp: Unix timestamp in seconds (0 = no NOTIFY received yet)
 function parsePresenceTimestamps(data: string, stateManager: StateManager): void {
   const lines = data.split('\n');
-  const PRESENCE_TIMEOUT_SEC = 600; // 10 minutes - mark as unknown if no update
-  let updatedCount = 0;
+  const PRESENCE_TIMEOUT_SEC = 7200; // 2 hours - SIP SUBSCRIBE cycle is ~3600s, NOTIFY only on change
+  let parsedCount = 0;
 
   for (const line of lines) {
     // Match format: sip:uri|status|timestamp
     const match = line.match(/(sip:[^@]+@[^|]+)\|(\w+)\|(\d+)/);
     if (!match) continue;
 
-    const contact = match[1];
+    const contact = match[1].trim();
     const status = match[2].toLowerCase();
     const timestamp = parseInt(match[3], 10);
-    
+    parsedCount++;
+
     // Skip if contact has call failure timestamp that's newer than baresip data
     if (stateManager.hasContactCallFailureTimestamp(contact, timestamp)) {
       continue;
     }
-    
+
     // Handle case: No NOTIFY received yet
     if (timestamp === 0) {
       stateManager.setContactPresence(contact, 'unknown', false);
       continue;
     }
-    
+
     // Calculate age and determine effective status
     const lastSeenMs = timestamp * 1000;
     const ageInSeconds = Math.floor((Date.now() - lastSeenMs) / 1000);
     const effectiveStatus = ageInSeconds > PRESENCE_TIMEOUT_SEC ? 'unknown' : status;
-    
+
     // Get previous status for auto-connect detection
     const previousPresence = stateManager.getContactPresence(contact);
-    
+
     // Update presence data
     stateManager.setContactPresence(contact, effectiveStatus, false);
     stateManager.setContactLastSeen(contact, lastSeenMs);
-    updatedCount++;
-    
+
     // Trigger auto-connect if contact just came online
     if (effectiveStatus === 'online' && previousPresence !== 'online') {
       checkAutoConnectForContact(contact, stateManager);
     }
   }
-  
-  // Broadcast changes if any contacts were updated
-  if (updatedCount > 0) {
+
+  // Always broadcast when we processed at least one contact entry
+  if (parsedCount > 0) {
     stateManager.broadcast({
       type: 'contactsUpdate',
       contacts: stateManager.getContacts()
@@ -742,28 +791,32 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           callId: jsonEvent.id
         };
         
-        // Add call to active calls tracking
-        stateManager.addCall({
-          callId: jsonEvent.id,
-          localUri: uri,
-          remoteUri: peerUri || 'unknown',
-          peerName: peerName || peerUri?.split('@')[0] || 'Unknown',
-          state: 'Established',
-          direction: jsonEvent.direction || 'unknown',
-          startTime: jsonEvent.param?.includes('incoming') ? Date.now() - 1000 : Date.now(),
-          answerTime: Date.now(),
-          audioRxStats: {
-            packets: 0,
-            packetsLost: 0,
-            jitter: 0,
-            bitrate: 64000
-          },
-          audioTxStats: {
-            packets: 0,
-            packetsLost: 0,
-            bitrate: 64000
-          }
-        });
+        // Check if call already exists (e.g. from CALL_INCOMING/CALL_OUTGOING event)
+        const existingCall = stateManager.getCall(jsonEvent.id);
+        
+        if (existingCall) {
+          // Merge: update existing call, preserve direction and startTime
+          stateManager.updateCall(jsonEvent.id, {
+            state: 'Established',
+            remoteUri: peerUri || existingCall.remoteUri,
+            peerName: peerName || peerUri?.split('@')[0] || existingCall.peerName,
+            answerTime: Date.now()
+          });
+        } else {
+          // New call (no prior CALL_INCOMING/CALL_OUTGOING event seen)
+          // Detect direction from param field (baresip includes "incoming" in param for incoming calls)
+          const isIncoming = jsonEvent.param?.toLowerCase().indexOf('incoming') !== -1;
+          stateManager.addCall({
+            callId: jsonEvent.id,
+            localUri: uri,
+            remoteUri: peerUri || 'unknown',
+            peerName: peerName || peerUri?.split('@')[0] || 'Unknown',
+            state: 'Established',
+            direction: isIncoming ? 'incoming' : 'outgoing',
+            startTime: isIncoming ? Date.now() - 1000 : Date.now(),
+            answerTime: Date.now()
+          });
+        }
         
         // Only set autoConnectStatus if this account has auto-connect configured
         const account = stateManager.getAccount(uri);
@@ -1193,23 +1246,45 @@ function handleTextLine(line: string, stateManager: StateManager): void {
   }
 
   // Handle PRESENCE_EVENT messages from enhanced_presence module
+  // Handles both JSON format: PRESENCE_EVENT: {"contact":"sip:user@domain","status":"online"}
+  // and colon-delimited format: PRESENCE_EVENT:sip:user@domain:online
   if (line.indexOf('PRESENCE_EVENT:') !== -1) {
-    const parts = line.split(':');
-    if (parts.length >= 3) {
-      const contact = parts[1].replace('sip:', '').trim();
-      const status = parts[2].toLowerCase().trim();
-      
-      let mappedStatus = 'unknown';
-      if (status === 'online' || status === 'open') {
-        mappedStatus = 'online';
-      } else if (status === 'offline' || status === 'closed') {
-        mappedStatus = 'offline';
-      } else if (status === 'busy') {
-        mappedStatus = 'busy';
-      } else if (status === 'away') {
-        mappedStatus = 'away';
+    let contact: string | null = null;
+    let mappedStatus = 'unknown';
+    
+    // Try JSON format first
+    const jsonStart = line.indexOf('{');
+    if (jsonStart !== -1) {
+      try {
+        const presenceEvent = JSON.parse(line.substring(jsonStart));
+        if (presenceEvent.contact && presenceEvent.status) {
+          contact = presenceEvent.contact;
+          if (!contact!.startsWith('sip:')) contact = 'sip:' + contact;
+          contact = contact!.toLowerCase().trim();
+          const status = presenceEvent.status.toLowerCase().trim();
+          if (status === 'online' || status === 'open') mappedStatus = 'online';
+          else if (status === 'offline' || status === 'closed') mappedStatus = 'offline';
+          else if (status === 'busy') mappedStatus = 'busy';
+          else if (status === 'away') mappedStatus = 'away';
+        }
+      } catch (e) { /* ignore JSON parse errors */ }
+    }
+    
+    // Fallback: colon-delimited format PRESENCE_EVENT:sip:user@domain:status
+    // Can't use simple split(':') because sip: contains a colon
+    if (!contact) {
+      const eventMatch = line.match(/PRESENCE_EVENT:\s*(sip:[^@]+@[^:]+):(\w+)/i);
+      if (eventMatch) {
+        contact = eventMatch[1].toLowerCase().trim();
+        const status = eventMatch[2].toLowerCase().trim();
+        if (status === 'online' || status === 'open') mappedStatus = 'online';
+        else if (status === 'offline' || status === 'closed') mappedStatus = 'offline';
+        else if (status === 'busy') mappedStatus = 'busy';
+        else if (status === 'away') mappedStatus = 'away';
       }
-      
+    }
+    
+    if (contact) {
       stateManager.setContactPresence(contact, mappedStatus, true);
 
       stateManager.broadcast({
@@ -1219,12 +1294,11 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         status: mappedStatus
       });
 
-      // Trigger auto-connect check for all accounts configured for this contact
-      // when contact status changes to online
       if (mappedStatus === 'online') {
         checkAutoConnectForContact(contact, stateManager);
       }
     }
+    return; // Don't process PRESENCE_EVENT lines further (prevents double-processing & spurious account creation)
   }
 
   // Create a proper LogEntry object and broadcast it
@@ -1311,7 +1385,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
       checkAutoConnectForAccount(uri, stateManager);
     }
   } else if (line.includes('presence:') && line.includes('open')) {
-    const match = line.match(/sip:([^@]+@[^\s]+)/);
+    const match = line.match(/(sip:[^@]+@[^\s]+)/);
     if (match) {
       const contact = match[1].toLowerCase().trim();
       stateManager.setContactPresence(contact, 'online', true);
@@ -1332,7 +1406,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
       }
     }
   } else if (line.includes('presence:') && (line.includes('closed') || line.includes('offline'))) {
-    const match = line.match(/sip:([^@]+@[^\s]+)/);
+    const match = line.match(/(sip:[^@]+@[^\s]+)/);
     if (match) {
       const contact = match[1].toLowerCase().trim();
       stateManager.setContactPresence(contact, 'offline', true);
@@ -1344,45 +1418,12 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         status: 'offline'
       });
     }
-  } else if (line.indexOf('PRESENCE_EVENT:') !== -1) {
-    // Handle enhanced presence JSON events
-    // Format: PRESENCE_EVENT: {"contact":"sip:2061531@sip.srgssr.ch","status":"online"}
-    const jsonStart = line.indexOf('{');
-    if (jsonStart !== -1) {
-      try {
-        const jsonStr = line.substring(jsonStart);
-        const presenceEvent = JSON.parse(jsonStr);
-        
-        if (presenceEvent.contact && presenceEvent.status) {
-          // Extract contact without sip: prefix
-          const contact = presenceEvent.contact.replace('sip:', '').toLowerCase().trim();
-          const status = presenceEvent.status.toLowerCase().trim();
-          
-          stateManager.setContactPresence(contact, status, true);
-
-          stateManager.broadcast({
-            type: 'presence',
-            timestamp,
-            contact,
-            status
-          });
-
-          // Trigger auto-connect check for all accounts configured for this contact
-          // when contact status changes to online
-          if (status === 'online') {
-            checkAutoConnectForContact(contact, stateManager);
-          }
-        }
-      } catch (e) {
-        console.error('Failed to parse PRESENCE_EVENT JSON:', e);
-      }
-    }
   } else if (line.indexOf('enhanced_presence:') !== -1 && line.indexOf('is now') !== -1) {
     // Handle legacy enhanced presence module messages (fallback)
     // Format: enhanced_presence: <"unity 1" <sip:2061531@sip.srgssr.ch>;presence=p2p> is now 'Online'
-    const match = line.match(/<sip:([^@]+@[^>]+)>[^>]*is now '([^']+)'/);
+    const match = line.match(/<(sip:[^@]+@[^>]+)>[^>]*is now '([^']+)'/);
     if (match) {
-      const contact = match[1];
+      const contact = match[1].toLowerCase().trim();
       const statusText = match[2].toLowerCase();
       
       let status = 'unknown';
@@ -1410,7 +1451,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
         attemptAutoConnect(contact, stateManager);
       }
     }
-  } else if (line.includes('sip:') && line.includes('@') && !line.includes('presence:') && !line.includes('reg:')) {
+  } else if (line.includes('sip:') && line.includes('@') && !line.includes('presence:') && !line.includes('reg:') && !line.includes('PRESENCE') && !line.includes('enhanced_presence')) {
       const match = line.match(/([^<]*)<\s*(sip:[^@\s]+@[^\s>;,)]+)\s*>?/);
     if (match) {
         const name = match[1] ? match[1].trim() : undefined;
@@ -1460,13 +1501,13 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
           const runtimeConfig = useRuntimeConfig();
           const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
           
-          // Select account and dial sequentially
-          connection.sendCommand('uafind', account.uri);
-          
-          // Wait for account selection before dialing
-          setTimeout(() => {
-            connection.sendCommand('dial', contact);
-          }, 150);
+          // Use serialized command sequence to prevent uafind race conditions
+          // (e.g. codec info fetch could interleave and change active UA)
+          // No delay needed - TCP ordering guarantees sequential processing
+          connection.sendCommandSequence([
+            { command: 'uafind', params: account.uri },
+            { command: 'dial', params: contact }
+          ]);
           
           // All status updates happen through baresip events:
           // CALL_OUTGOING -> callStatus: 'Ringing', autoConnectStatus: 'Connecting'

@@ -11,5 +11,6 @@ baresip/config/accounts
 baresip/config/contacts
 baresip/config/autoconnect.json
 baresip/config/current_contact
+baresip/config/call-history.json
 baresip/.asoundrc
 tests/
