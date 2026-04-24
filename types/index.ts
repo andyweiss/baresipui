@@ -124,3 +124,12 @@ export interface WebSocketMessage {
   contact?: string;
   status?: string;
 }
+
+export interface LogEntry {
+  timestamp: number;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  source: string;
+  message: string;
+  accountUri?: string;
+  data?: any;
+}

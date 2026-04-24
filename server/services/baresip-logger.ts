@@ -1,13 +1,15 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { stat, rename, unlink } from 'fs/promises';
 import type { StateManager } from './state-manager';
+import type { LogEntry } from '~/types';
 
-export interface LogEntry {
-  timestamp: number;
-  level: 'debug' | 'info' | 'warn' | 'error';
-  source: string;
-  message: string;
-  accountUri?: string;
-}
+// Re-export LogEntry so existing imports still work
+export type { LogEntry };
+
+const LOG_FILE = process.env.BARESIP_LOG_FILE || '/shared-logs/baresip.log';
+const LOG_MAX_SIZE = 100 * 1024 * 1024; // 100 MB
+const LOG_MAX_FILES = 5;
+const LOG_ROTATION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 export class BaresipLogger {
   private logProcess: ChildProcess | null = null;
@@ -16,14 +18,17 @@ export class BaresipLogger {
   private maxBufferSize = 1000;
   private pendingLogLine = ''; // Buffer for multi-line logs
   private flushTimer: NodeJS.Timeout | null = null; // Timer for flushing pending logs
+  private rotationTimer: NodeJS.Timeout | null = null;
 
   constructor(stateManager: StateManager) {
     this.stateManager = stateManager;
   }
 
-  start(containerName: string = 'baresip'): void {
+  start(): void {
     try {
-      this.logProcess = spawn('docker', ['logs', '-f', '--tail', '100', containerName], {
+      // Read baresip container logs from shared volume file using tail -F
+      // -F follows by name (handles rotation/truncate), -n 100 shows last 100 lines
+      this.logProcess = spawn('tail', ['-F', '-n', '100', LOG_FILE], {
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
@@ -31,25 +36,37 @@ export class BaresipLogger {
         this.processLogData(data.toString(), 'stdout');
       });
 
+      // tail -F outputs file-tracking messages on stderr (e.g. "file truncated")
       this.logProcess.stderr?.on('data', (data: Buffer) => {
-        this.processLogData(data.toString(), 'stderr');
+        const msg = data.toString().trim();
+        if (msg && !msg.includes('file truncated') && !msg.includes('has appeared')) {
+          console.error('tail stderr:', msg);
+        }
       });
 
       this.logProcess.on('error', (err) => {
-        console.error('❌ Docker logs process error:', err.message);
-        this.addLog('error', 'system', `Failed to read container logs: ${err.message}`);
+        console.error('Log reader process error:', err.message);
+        this.addAndBroadcast('error', 'system', `Failed to read log file: ${err.message}`);
       });
 
       this.logProcess.on('close', (code) => {
         if (code !== 0 && code !== null) {
-          this.addLog('warn', 'system', `Container logs stream closed with code ${code}`);
+          this.addAndBroadcast('warn', 'system', `Log reader closed with code ${code}`);
         }
       });
 
-      this.addLog('info', 'system', `Started monitoring container logs: ${containerName}`);
+      this.addAndBroadcast('info', 'system', `Started monitoring log file: ${LOG_FILE}`);
+
+      // Start periodic log rotation check
+      this.rotationTimer = setInterval(() => {
+        this.rotateIfNeeded().catch(err => {
+          console.error('Log rotation error:', err.message);
+        });
+      }, LOG_ROTATION_CHECK_INTERVAL);
+
     } catch (err: any) {
-      console.error('❌ Failed to start docker logs:', err.message);
-      this.addLog('error', 'system', `Failed to start container logger: ${err.message}`);
+      console.error('Failed to start log reader:', err.message);
+      this.addAndBroadcast('error', 'system', `Failed to start log reader: ${err.message}`);
     }
   }
 
@@ -58,6 +75,12 @@ export class BaresipLogger {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
+    }
+    
+    // Cancel rotation timer
+    if (this.rotationTimer) {
+      clearInterval(this.rotationTimer);
+      this.rotationTimer = null;
     }
     
     // Process any pending log line before stopping
@@ -96,9 +119,6 @@ export class BaresipLogger {
       }
       
       // Check if this is a new log entry start
-      // Baresip modules typically start with: "module: message" (e.g., "uag: ", "call: ", "reg: ")
-      // Or timestamp patterns like "15:47:35.456#" or "[timestamp]"
-      // SIP headers (Contact:, Max-Forwards:, etc.) are NOT new entries
       const isNewEntry = this.isNewLogEntry(line);
       
       if (isNewEntry && this.pendingLogLine) {
@@ -201,11 +221,14 @@ export class BaresipLogger {
       return;
     }
     
-    // Add to buffer (no broadcast — logs are sent only to 'logs' room subscribers)
+    // Store in local buffer for historical retrieval
     this.logBuffer.push(entry);
     if (this.logBuffer.length > this.maxBufferSize) {
       this.logBuffer.shift();
     }
+
+    // Broadcast live via stateManager (sends to 'logs' room subscribers)
+    this.stateManager.addLog(entry.level, entry.source, entry.message, entry.accountUri);
   }
 
   private parseLogLine(line: string, stream: 'stdout' | 'stderr'): LogEntry {
@@ -218,14 +241,14 @@ export class BaresipLogger {
     let accountUri: string | undefined;
 
     // Pattern: "module: message"
-    const moduleMatch = line.match(/^([a-z_]+):\s+(.+)$/i);
+    const moduleMatch = line.match(/^([a-z_]+):\s+(.+)$/is);
     if (moduleMatch) {
       source = moduleMatch[1];
       message = moduleMatch[2];
     }
 
     // Pattern: "DEBUG: message" or "INFO: message"
-    const levelMatch = line.match(/^(DEBUG|INFO|WARN|ERROR|WARNING):\s+(.+)$/i);
+    const levelMatch = line.match(/^(DEBUG|INFO|WARN|ERROR|WARNING):\s+(.+)$/is);
     if (levelMatch) {
       const levelStr = levelMatch[1].toLowerCase();
       level = levelStr === 'warning' ? 'warn' : levelStr as LogEntry['level'];
@@ -259,16 +282,6 @@ export class BaresipLogger {
     };
   }
 
-  private getLevelEmoji(level: LogEntry['level']): string {
-    switch (level) {
-      case 'debug': return '🔍';
-      case 'info': return 'ℹ️';
-      case 'warn': return '⚠️';
-      case 'error': return '❌';
-      default: return '📝';
-    }
-  }
-
   getLogs(limit?: number): LogEntry[] {
     if (limit) {
       return this.logBuffer.slice(-limit);
@@ -297,9 +310,9 @@ export class BaresipLogger {
   }
 
   /**
-   * Manually add a log entry (for internal debug messages, TCP events, etc.)
+   * Add a log to the local buffer AND broadcast it live via stateManager.
    */
-  addLog(level: LogEntry['level'], source: string, message: string, accountUri?: string): void {
+  private addAndBroadcast(level: LogEntry['level'], source: string, message: string, accountUri?: string): void {
     const entry: LogEntry = {
       timestamp: Date.now(),
       level,
@@ -308,10 +321,57 @@ export class BaresipLogger {
       accountUri
     };
 
-    // Add to buffer (no broadcast — logs are sent only to 'logs' room subscribers)
     this.logBuffer.push(entry);
     if (this.logBuffer.length > this.maxBufferSize) {
       this.logBuffer.shift();
+    }
+
+    // Broadcast live to log subscribers
+    this.stateManager.addLog(level, source, message, accountUri);
+  }
+
+  /**
+   * Manually add a log entry (for external callers like baresip-connection.ts)
+   */
+  addLog(level: LogEntry['level'], source: string, message: string, accountUri?: string): void {
+    this.addAndBroadcast(level, source, message, accountUri);
+  }
+
+  /**
+   * Log rotation: rotate baresip.log when it exceeds LOG_MAX_SIZE.
+   * Keeps up to LOG_MAX_FILES rotated files (baresip.log.1 through baresip.log.5).
+   * tail -F follows by name and handles rotation automatically.
+   */
+  private async rotateIfNeeded(): Promise<void> {
+    try {
+      const stats = await stat(LOG_FILE);
+      if (stats.size < LOG_MAX_SIZE) return;
+
+      console.log(`Log rotation: ${LOG_FILE} is ${(stats.size / 1024 / 1024).toFixed(1)} MB, rotating...`);
+
+      // Delete oldest file if it exists
+      const oldestFile = `${LOG_FILE}.${LOG_MAX_FILES}`;
+      try { await unlink(oldestFile); } catch {}
+
+      // Shift existing rotated files: .4 -> .5, .3 -> .4, etc.
+      for (let i = LOG_MAX_FILES - 1; i >= 1; i--) {
+        const src = `${LOG_FILE}.${i}`;
+        const dst = `${LOG_FILE}.${i + 1}`;
+        try { await rename(src, dst); } catch {}
+      }
+
+      // Rotate current file: baresip.log -> baresip.log.1
+      await rename(LOG_FILE, `${LOG_FILE}.1`);
+
+      // The tee process in the baresip container will recreate baresip.log automatically
+      // tail -F will detect the new file and continue following it
+
+      this.addAndBroadcast('info', 'system', `Log file rotated (was ${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
+    } catch (err: any) {
+      // File might not exist yet (container not started)
+      if (err.code !== 'ENOENT') {
+        console.error('Log rotation error:', err.message);
+      }
     }
   }
 }

@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
-      - /var/run/docker.sock:/var/run/docker.sock
+      - shared-logs:/shared-logs:ro
     networks:
       - baresip-network
     healthcheck:
@@ -29,17 +29,18 @@ services:
     image: ghcr.io/andyweiss/baresip:latest
     container_name: baresip
     restart: unless-stopped
+    init: true
+    entrypoint: ["/bin/sh", "-c"]
     volumes:
       - ./baresip/config:/config
       - ./baresip/.asoundrc:/root/.asoundrc
+      - shared-logs:/shared-logs
     ports:
       - 4444:4444/tcp
       - 5060:5060/udp
       - 10000-10500:10000-10500/udp
     command:
-      - baresip
-      - -f
-      - /config
+      - "/entrypoint.sh baresip -f /config 2>&1 | tee /shared-logs/baresip.log"
     stdin_open: true
     tty: true
     security_opt:
@@ -56,7 +57,9 @@ services:
       - SYS_NICE
     networks:
       - baresip-network
-volumes: {}
+volumes:
+  shared-logs:
 networks:
   baresip-network:
+    driver: bridge
     driver: bridge

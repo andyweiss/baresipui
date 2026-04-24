@@ -1,11 +1,4 @@
-import type { Account, Contact, ContactConfig, CallInfo, AudioMeter } from '~/types';
-
-interface LogEntry {
-  timestamp: number;
-  type: string;
-  message: string;
-  data?: any;
-}
+import type { Account, Contact, ContactConfig, CallInfo, AudioMeter, LogEntry } from '~/types';
 
 export class StateManager {
   private accounts = new Map<string, Account>();
@@ -291,11 +284,13 @@ export class StateManager {
     return this.accounts.size;
   }
 
-  addLog(type: string, message: string, data?: any): void {
+  addLog(level: LogEntry['level'], source: string, message: string, accountUri?: string, data?: any): void {
     const logEntry: LogEntry = {
       timestamp: Date.now(),
-      type,
+      level,
+      source,
       message,
+      accountUri,
       data
     };
     this.logs.push(logEntry);
@@ -318,7 +313,7 @@ export class StateManager {
     this.logBatchBuffer = [];
     // Send only to clients in the 'logs' room
     if (this.io) {
-      this.io.to('logs').volatile.emit('logBatch', { logs: entries });
+      this.io.to('logs').emit('logBatch', { logs: entries });
     }
   }
 

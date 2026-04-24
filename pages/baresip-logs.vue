@@ -156,7 +156,7 @@
 
 <script setup lang="ts">
 import { io } from 'socket.io-client';
-import type { LogEntry } from '~/server/services/baresip-logger';
+import type { LogEntry } from '~/types';
 
 const logs = ref<LogEntry[]>([]);
 const filterLevel = ref('');
@@ -217,12 +217,18 @@ const handleNewLog = (logData: LogEntry) => {
   logUpdateTrigger.value++;
 };
 
-// Computed: Gefilterte Logs
+// Computed: Filtered logs with hierarchical level filter
+const LOG_LEVEL_HIERARCHY: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+
 const filteredLogs = computed(() => {
   let filtered = logs.value;
 
   if (filterLevel.value) {
-    filtered = filtered.filter(log => (log.level || '').toLowerCase() === filterLevel.value.toLowerCase());
+    const minLevel = LOG_LEVEL_HIERARCHY[filterLevel.value] ?? 0;
+    filtered = filtered.filter(log => {
+      const logLevel = LOG_LEVEL_HIERARCHY[(log.level || 'info').toLowerCase()] ?? 1;
+      return logLevel >= minLevel;
+    });
   }
 
   if (filterSource.value) {
@@ -321,19 +327,10 @@ onMounted(async () => {
     // Failed to load accounts
   }
 
-  // Load initial logs
-  try {
-    const response = await $fetch('/api/baresip-logs', {
-      query: { limit: 100 }
-    });
-    if (response.success && response.logs) {
-      logs.value = response.logs;
-      if (autoScroll.value) {
-        nextTick(() => scrollToBottom());
-      }
-    }
-  } catch (error) {
-    // Silent error handling
+  // Initial logs are loaded via Socket.IO logHistory event (on subscribeLogs)
+  // No separate REST fetch needed — avoids duplicates and format mismatches
+  if (autoScroll.value) {
+    nextTick(() => scrollToBottom());
   }
 
   // Add scroll event listener

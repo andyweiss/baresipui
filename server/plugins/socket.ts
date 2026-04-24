@@ -38,19 +38,27 @@ function initSocketIO(httpServer: any) {
     // Log room: clients subscribe when opening the logs page
     socket.on('subscribeLogs', () => {
       socket.join('logs');
-      // Send historical logs from both baresip-logger and state-manager
+      // Send merged historical logs from both sources, sorted by timestamp
+      let allLogs: any[] = [];
       try {
         const logger = getBaresipLogger();
-        const baresipLogs = logger.getLogs(500);
-        if (baresipLogs.length > 0) {
-          socket.emit('logHistory', { logs: baresipLogs });
-        }
+        allLogs = allLogs.concat(logger.getLogs(500));
       } catch (e) {
         // Logger might not be ready
       }
-      const stateLogs = stateManager.getLogs(500);
-      if (stateLogs.length > 0) {
-        socket.emit('logHistory', { logs: stateLogs });
+      allLogs = allLogs.concat(stateManager.getLogs(500));
+      // Deduplicate by timestamp+message, sort by timestamp
+      const seen = new Set<string>();
+      const deduped = allLogs.filter(log => {
+        const key = `${log.timestamp}:${log.message}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      deduped.sort((a, b) => a.timestamp - b.timestamp);
+      const merged = deduped.slice(-1000);
+      if (merged.length > 0) {
+        socket.emit('logHistory', { logs: merged });
       }
     });
 

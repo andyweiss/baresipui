@@ -131,8 +131,9 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
     }
   }
   
-  // Fallback: Log unhandled command response
-  stateManager.addLog('response', `Unhandled Command Response`, response);
+  // Fallback: Log unhandled command response as warning with full response data
+  const responseText = response.data || JSON.stringify(response);
+  stateManager.addLog('warn', 'tcp-socket', `Unhandled Command Response: ${responseText}`, undefined, response);
 }
 
 
@@ -715,7 +716,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
 
   // Add log entry (skip VU_TX_REPORT and VU_RX_REPORT to avoid clutter)
   if (jsonEvent.type !== 'VU_TX_REPORT' && jsonEvent.type !== 'VU_RX_REPORT') {
-    stateManager.addLog('event', `${jsonEvent.class}:${jsonEvent.type}`, jsonEvent);
+    stateManager.addLog('info', 'tcp-socket', `${jsonEvent.class}:${jsonEvent.type}`, undefined, jsonEvent);
   }
 
   if (jsonEvent.event && jsonEvent.class === 'ua') {
@@ -1251,7 +1252,7 @@ function handleTextLine(line: string, stateManager: StateManager): void {
 
   // Create a log entry from text line (stored via addLog, sent only to log subscribers)
   const logEntry = createLogEntryFromLine(line, timestamp);
-  stateManager.addLog(logEntry.level || 'info', logEntry.message, logEntry);
+  stateManager.addLog(logEntry.level || 'info', logEntry.source || 'baresip', logEntry.message, logEntry.accountUri);
 
   // Text-based presence parsing (from baresip modules that don't use JSON events)
   // PRESENCE_EVENT is handled above; these catch other text-format presence lines
