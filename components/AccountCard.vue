@@ -164,15 +164,15 @@ watch(() => props.account.autoConnectContact, (newValue) => {
 const activeCall = computed(() => {
   if (!props.account?.uri) return undefined;
   const accountUri = String(props.account.uri).toLowerCase().trim();
-  // 1. search by callId if available
+  // 1. search by callId — don't filter by state, account.callStatus is authoritative
   if (props.account.callId) {
-    const byId = props.calls.find(call => call.callId === props.account.callId);
-    if (byId && (byId.state === 'Established' || byId.state === 'Ringing')) return byId;
+    const byId = (props.calls as any[]).find(call => call.callId === props.account.callId);
+    if (byId) return byId;
   }
-  // 2. fallback: search by localUri
-  const byUri = props.calls.find(call =>
+  // 2. fallback: search by localUri for any non-closed call
+  const byUri = (props.calls as any[]).find(call =>
     call.localUri && String(call.localUri).toLowerCase().trim() === accountUri &&
-    (call.state === 'Established' || call.state === 'Ringing')
+    call.state !== 'Closing' && call.state !== 'Closed'
   );
   return byUri;
 });
@@ -334,40 +334,66 @@ const callStatusColor = computed(() => {
 });
 
 const getAutoConnectDisplayText = () => {
-  if (!localAutoConnectContact.value) {
-    // Show remote number if in active call without auto-connect
-    if (activeCall.value) {
-      return getRemotePartyDisplayName(activeCall.value);
+  const callStatus = props.account.callStatus;
+  const isInCall = callStatus === 'In Call' || callStatus === 'Ringing';
+
+  // Active call: use account.callStatus as authority (call.state can lag behind)
+  if (isInCall && activeCall.value) {
+    // Ringing phase: direction-based text
+    if (callStatus === 'Ringing') {
+      return activeCall.value.direction === 'incoming' ? 'Incoming...' : 'Calling...';
     }
-    return ''; // Empty instead of "Off"
+    // Established: skip call.state check, go straight to remote party resolution
+    const call = activeCall.value as CallInfo;
+    if (call.remoteUri) {
+      const uri = call.remoteUri.replace(/^sip:/, '').toLowerCase();
+      const contact = props.contacts.find((c: any) => {
+        const contactUri = String(c.contact || '').replace(/^sip:/, '').toLowerCase();
+        return contactUri === uri || contactUri === uri.split('@')[0];
+      });
+      if (contact) return getContactDisplayName(contact as any);
+      const stripped = call.remoteUri.replace(/^sip:/, '');
+      const userMatch = stripped.match(/^([^@]+)@/);
+      return userMatch ? userMatch[1] : stripped;
+    }
+    if (call.peerName && call.peerName !== 'Unknown') return call.peerName.replace(/^sip:/, '');
+    return '';
   }
-  const contact = getContactByUri(localAutoConnectContact.value);
-  if (!contact) return '';
-  return getContactDisplayName(contact);
+  // In call but activeCall not yet in array — never show contact name, show generic status
+  if (isInCall) {
+    return callStatus === 'Ringing' ? 'Calling...' : 'In Call';
+  }
+
+  // Idle with auto-connect: show contact name + presence state
+  if (localAutoConnectContact.value) {
+    const contact = getContactByUri(localAutoConnectContact.value);
+    if (!contact) return '';
+    const name = getContactDisplayName(contact);
+    const presenceMap: Record<string, string> = { online: 'Online', busy: 'Busy', open: 'Online' };
+    const presenceLabel = presenceMap[contact.presence] ?? 'Offline';
+    return `${name} (${presenceLabel})`;
+  }
+
+  return '';
 };
 
 const autoConnectDisplayColor = computed(() => {
-  // Orange during ringing phase
-  if (props.account.callStatus === 'Ringing') {
-    return 'text-orange-400';
-  }
-  
-  // Green when showing remote number (no auto-connect + active call)
-  if (!localAutoConnectContact.value && activeCall.value && props.account.callStatus === 'In Call') {
-    return 'text-green-400';
-  }
-  
-  // When auto-connect is active, use contact presence colors
+  // Orange during ringing
+  if (props.account.callStatus === 'Ringing') return 'text-orange-400';
+
+  // Green for any active call (auto-connect or manual)
+  if (props.account.callStatus === 'In Call') return 'text-green-400';
+
+  // When auto-connect is configured and idle: use contact presence color
   if (localAutoConnectContact.value) {
     const contact = getContactByUri(localAutoConnectContact.value);
     if (contact) {
-      if (contact.presence === 'busy') return 'text-green-400'; // Connected
-      if (contact.presence === 'online') return 'text-blue-400'; // Online
-      return 'text-gray-400'; // Offline
+      if (contact.presence === 'busy') return 'text-green-400';
+      if (contact.presence === 'online') return 'text-blue-400';
+      return 'text-gray-400';
     }
   }
-  
-  // Gray for all other states
+
   return 'text-gray-400';
 });
 

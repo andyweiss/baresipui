@@ -875,10 +875,12 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           callId: jsonEvent.id
         };
         
-        // For outgoing calls baresip sometimes sends the local contact URI as peeruri.
-        // If the account has autoConnectContact set, that is the authoritative remote party.
+        // For outgoing calls baresip sometimes sends the local contact URI as peeruri (invalid).
+        // Fall back to autoConnectContact only if peerUri is missing or looks like the local account.
         const account = stateManager.getAccount(uri);
-        const effectivePeerUri = (isOutgoing && account?.autoConnectContact)
+        const peerUriIsLocal = peerUri && uri && peerUri.replace(/^sip:/, '').split('@')[0] === uri.replace(/^sip:/, '').split('@')[0];
+        const peerUriMissing = !peerUri || peerUri === uri || peerUriIsLocal;
+        const effectivePeerUri = (isOutgoing && peerUriMissing && account?.autoConnectContact)
           ? account.autoConnectContact
           : peerUri;
 
