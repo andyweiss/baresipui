@@ -4,25 +4,34 @@ Complete Docker-based project for monitoring and controlling Baresip SIP account
 
 ## Architecture
 
-- **Frontend**: Nuxt 3 + TypeScript + Tailwind CSS (Port 3000)
-- **Backend**: Node.js + Express + WebSocket + Prometheus (Port 4000)
+- **App**: Nuxt 3 + TypeScript + Tailwind CSS + Socket.IO (Port 3000)
 - **Baresip**: SIP softphone with TCP control interface (Port 4444)
-- **Prometheus**: Metrics collection (Port 9090)
+- **Communication**: TCP netstring protocol (App → Baresip), Socket.IO (App → Browser)
+- **Logging**: Shared volume — baresip stdout/stderr piped via `tee` to a log file, read by the app with `tail -F`
+
+```
+┌──────────┐  TCP:4444  ┌───────────┐  Socket.IO  ┌─────────┐
+│ Baresip  │◄──────────►│  Nuxt App │◄───────────►│ Browser │
+│          │            │  :3000    │             │         │
+│  stdout ─┼── tee ──►  /shared-logs/baresip.log  │         │
+│          │            │  tail -F ◄──────────────│         │
+└──────────┘            └───────────┘             └─────────┘
+```
 
 ## Quick Start
 
 ### 1. Configure SIP Accounts
 
-Edit `baresip-config/accounts` with your SIP credentials:
+Edit `baresip/config/accounts` with your SIP credentials:
 
 ```
 <sip:user1@sip.example.com>;auth_pass=password1
 <sip:user2@sip.example.com>;auth_pass=password2
 ```
 
-### 2. Configure Auto-Connect Contacts
+### 2. Configure Contacts
 
-Edit `baresip-config/contacts` with contacts to auto-connect:
+Edit `baresip/config/contacts` with contacts for presence monitoring and auto-connect:
 
 ```
 "Contact 1" <sip:contact1@sip.example.com>
@@ -31,181 +40,200 @@ Edit `baresip-config/contacts` with contacts to auto-connect:
 
 ### 3. Build and Start
 
+Using pre-built images:
 ```bash
-docker-compose build
-docker-compose up -d
+docker compose up -d
+```
+
+Building from source:
+```bash
+docker compose -f compose.build-from-source.yaml build
+docker compose -f compose.build-from-source.yaml up -d
 ```
 
 ### 4. Access
 
 - **Dashboard**: http://localhost:3000
 - **Logs**: http://localhost:3000/baresip-logs
-- **API**: http://localhost:4000
-- **Metrics**: http://localhost:4000/metrics
-- **Prometheus**: http://localhost:9090
+- **Health**: http://localhost:3000/api/health
 
 ## Features
 
 ### Dashboard
 - Real-time status for all SIP accounts
-- Registration status (Registered/Unregistered)
-- Call status (Idle/Ringing/In Call)
-- Auto-connect status per contact
-- Control buttons (Register, Call, Hangup)
+- Registration status (Registered/Configured/Unregistered)
+- Call status (Idle/Ringing/In Call) with error details
+- Auto-connect contact assignment per account
+- Call and Hangup buttons with dial modal
+- Call statistics (codec, jitter, packet loss, bitrate) via info button (planned)
+- Audio level meters (VU) per active call (planned)
+- Connection line visualization for active calls
 
-### Live Log Stream
-- All Baresip events in real-time
-- Auto-scroll functionality
-- Keyword highlighting (CALL, REGISTER, ERROR, etc.)
-- Timestamp for each event
+### Live Log Viewer
+- Combined log stream from container stdout and TCP socket events
+- Hierarchical log level filter (Debug shows all, Warnings shows warn+error, etc.)
+- Source filter (Baresip container / TCP Socket / System)
+- Account filter (search by SIP account number)
+- Free-text search across all log fields
+- Auto-scroll with manual scroll pause
+- Log history on page load (last 1000 entries, deduplicated and sorted)
 
 ### Auto-Connect
-- Monitors presence status of configured contacts
-- Automatically dials when contact comes online
-- Toggle on/off per contact via UI
-- Status tracking (Connecting/Connected/Failed)
+- Assign a contact to any registered SIP account
+- Monitors presence status of assigned contact
+- Automatically dials when contact comes online (presence: open/busy)
+- Shows contact name and presence state when idle
+- Reconnects automatically on call failure
 
-### Prometheus Metrics
+### Call History
+- Automatic logging of incoming calls
+- Stored persistently in `baresip/config/call-history.json`
 
-Available at `http://localhost:4000/metrics`:
+## Logging Architecture
 
-- `baresip_account_registered{account="<uri>"}` - Account registration status
-- `baresip_call_active{account="<uri>"}` - Active call indicator
-- `baresip_tcp_connected` - TCP connection to Baresip status
-- `baresip_events_total{type="<type>"}` - Total events by type
-- `baresip_last_event_timestamp_seconds` - Last event timestamp
-- `baresip_autoconnect_attempts_total{contact="<uri>"}` - Auto-connect attempts
-- `baresip_autoconnect_success_total{contact="<uri>"}` - Successful auto-connects
-- `baresip_autoconnect_failures_total{contact="<uri>"}` - Failed auto-connects
-- `baresip_contact_online{contact="<uri>"}` - Contact online status
+Logs come from two independent sources, unified into a single format:
 
-## API Endpoints
+| Source | Origin | Live Broadcast |
+|--------|--------|----------------|
+| **Container logs** | baresip stdout/stderr → `tee` → `/shared-logs/baresip.log` → `tail -F` | Yes, via stateManager |
+| **TCP socket events** | baresip TCP:4444 → parser → stateManager | Yes, via stateManager |
 
-### GET /health
-Health check and connection status
-
-### GET /metrics
-Prometheus metrics
-
-### GET /accounts
-List all SIP accounts with status
-
-### GET /contacts
-List all contacts with auto-connect status
-
-
-```
-
-### POST /autoconnect/:contact
-Toggle auto-connect for a contact
-```json
-{
-  "enabled": true
+All logs share a unified `LogEntry` format:
+```typescript
+interface LogEntry {
+  timestamp: number;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  source: string;      // 'baresip', 'tcp-socket', 'system', or module name
+  message: string;
+  accountUri?: string;
+  data?: any;
 }
 ```
 
+### Log Rotation
+- Log file: `/shared-logs/baresip.log`
+- Maximum size: 100 MB per file
+- Maximum files: 5 (baresip.log, baresip.log.1 through baresip.log.5)
+- Check interval: every 5 minutes
+- `tail -F` follows file renames automatically
+
+
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Health check (TCP connection status, account count) |
+| GET | `/api/accounts` | List all SIP accounts with status |
+| GET | `/api/contacts` | List all contacts with presence |
+| GET | `/api/baresip-logs` | Container logs (query: `limit`, `level`, `accountUri`) |
+| GET | `/api/logs` | State manager logs |
+| GET | `/api/call-history` | Call history entries |
+| POST | `/api/command` | Send command to baresip (`{ command, params }`) |
+| POST | `/api/autoconnect/assign` | Assign auto-connect contact (`{ account, contact }`) |
+| POST | `/api/logs/clear` | Clear all logs |
+
+## Socket.IO Events
+
+### Client → Server
+| Event | Description |
+|-------|-------------|
+| `subscribeLogs` | Join the logs room (receive live log updates + history) |
+| `unsubscribeLogs` | Leave the logs room |
+
+### Server → Client
+| Event | Description |
+|-------|-------------|
+| `init` | Initial state (accounts, contacts, calls, audio meters) |
+| `accountUpdate` | Single account status change |
+| `accountsUpdate` | All accounts update |
+| `contactsUpdate` | All contacts with presence |
+| `callAdded` / `callUpdated` / `callRemoved` | Call lifecycle |
+| `audioMeter` | Audio level update (volatile) |
+| `logHistory` | Historical logs on subscribe (up to 1000 entries) |
+| `logBatch` | Live log batch (every 500ms) |
+| `logsCleared` | Logs were cleared |
+| `presence` | Single contact presence change |
+
 ## Docker Services
 
-### backend
-- Connects to Baresip via TCP
-- Parses events and maintains state
-- WebSocket server for real-time updates
-- Prometheus metrics exporter
+### app (baresip-ui)
+- Nuxt 3 application with server-side Nitro API
+- Connects to baresip via TCP netstring protocol
+- Socket.IO server for real-time browser updates
+- Reads container logs from shared volume (read-only)
+- Log rotation management
 - Auto-reconnect with exponential backoff
 
-### frontend
-- Nuxt 3 application
-- WebSocket client for real-time updates
-- Dashboard and log viewer
-
 ### baresip
-- SIP softphone
-- TCP control interface on port 4444
-- Handles multiple SIP accounts
-
-### prometheus
-- Scrapes metrics from backend every 15s
-- Web UI on port 9090
+- SIP softphone with TCP control interface
+- Entrypoint wrapped with `tee` to pipe stdout/stderr to shared volume
+- `init: true` for proper signal handling (tini as PID 1)
+- Multiple SIP account support
+- Presence monitoring via SUBSCRIBE/NOTIFY
 
 ## Development
 
-### Local Development
-
-Backend:
-```bash
-cd backend
-npm install
-npm run dev
-```
-
-Frontend:
-```bash
-npm install
-npm run dev
-```
-
-### Logs
-
-View logs:
-```bash
-docker-compose logs -f
-docker-compose logs -f backend
-docker-compose logs -f frontend
-docker-compose logs -f baresip
-```
-
-### Stop Services
+### Build from Source
 
 ```bash
-docker-compose down
+docker compose -f compose.build-from-source.yaml build --no-cache
+docker compose -f compose.build-from-source.yaml up -d
 ```
 
-### Rebuild
+### View Logs
 
 ```bash
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
+# App logs
+docker logs -f baresip-ui
+
+# Baresip container logs
+docker logs -f baresip
+
+# Baresip log file (shared volume)
+docker exec baresip-ui cat /shared-logs/baresip.log | tail -100
 ```
+
+### Stop / Restart
+
+```bash
+docker compose -f compose.build-from-source.yaml down
+docker compose -f compose.build-from-source.yaml up -d
+```
+
+### Rebuild App Only
+
+```bash
+docker compose -f compose.build-from-source.yaml build --no-cache app
+docker compose -f compose.build-from-source.yaml up -d
+```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BARESIP_HOST` | `baresip` | Hostname of baresip container |
+| `BARESIP_PORT` | `4444` | TCP control port |
+| `BARESIP_LOG_FILE` | `/shared-logs/baresip.log` | Path to shared log file |
+| `DEBUG_TCP_BUS` | `false` | Enable raw TCP data logging |
 
 ## Troubleshooting
 
-### Baresip not connecting
-- Check SIP credentials in `baresip-config/accounts`
-- Check firewall rules for SIP ports (5060)
-- View Baresip logs: `docker-compose logs baresip`
+### Baresip not registering
+- Check SIP credentials in `baresip/config/accounts`
+- Check firewall rules for SIP port (5060/UDP)
+- View logs: `docker logs baresip` or use the Log Viewer page
 
-### Backend not connecting to Baresip
-- Ensure Baresip container is running
-- Check backend logs: `docker-compose logs backend`
-- Verify TCP interface: `docker-compose exec baresip netstat -tln | grep 4444`
+### App not connecting to Baresip
+- Ensure baresip container is running: `docker ps`
+- Check health: `curl http://localhost:3000/api/health`
+- Check app logs: `docker logs baresip-ui`
 
-### Frontend not receiving updates
-- Check WebSocket connection in browser console
-- Verify backend is running: `curl http://localhost:4000/health`
-- Check network tab for WebSocket errors
+### No live logs in browser
+- Open the Baresip Logs page (subscribes to log room automatically)
+- Check browser console for Socket.IO connection errors
+- Verify shared log file exists: `docker exec baresip ls -la /shared-logs/`
 
-## Configuration
-
-### Environment Variables
-
-Frontend (`.env`):
-```
-NUXT_PUBLIC_WS_URL=ws://localhost:4000
-NUXT_PUBLIC_API_URL=http://localhost:4000
-```
-
-Backend (docker-compose.yml):
-```
-BARESIP_HOST=baresip
-BARESIP_PORT=4444
-WS_PORT=4000
-```
-
-### Baresip Configuration
-
-Edit `baresip-config/config` for Baresip settings:
-- Audio devices
-- Network settings
-- Modules
-- SIP settings
+### Log file not created
+- Ensure the `shared-logs` volume is mounted in both containers
+- Check baresip entrypoint: `docker exec baresip ps aux` (should show `tee` process)
