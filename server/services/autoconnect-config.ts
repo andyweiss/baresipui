@@ -79,6 +79,13 @@ export class AutoConnectConfigManager {
   getAllConfigs(): AutoConnectConfig {
     return this.config;
   }
+
+  async removeAccount(accountUri: string): Promise<void> {
+    if (this.config.accounts[accountUri]) {
+      delete this.config.accounts[accountUri];
+      await this.save();
+    }
+  }
 }
 
 // Singleton instance

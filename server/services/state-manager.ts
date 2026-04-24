@@ -83,6 +83,14 @@ export class StateManager {
     this.accounts.set(String(uri).toLowerCase().trim(), account);
   }
 
+  removeAccount(uri: string): void {
+    if (!uri) return;
+    const key = String(uri).toLowerCase().trim();
+    if (this.accounts.delete(key)) {
+      this.broadcast({ type: 'accountsUpdate', accounts: this.getAccounts() });
+    }
+  }
+
   getContacts(): Contact[] {
     return Array.from(this.autoConnectConfig.entries()).map(([contact, config]) => ({
       contact,

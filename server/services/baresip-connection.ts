@@ -227,15 +227,10 @@ export class BaresipConnection {
     for (const [accountUri, config] of Object.entries(allConfigs.accounts)) {
       let account = stateManager.getAccount(accountUri);
       if (!account) {
-        // create account object if not existing
-        account = {
-          uri: accountUri,
-          registered: false,
-          callStatus: 'Idle',
-          autoConnectStatus: 'Off',
-          lastEvent: Date.now(),
-          configured: true
-        };
+        // Account no longer exists in baresip — remove stale entry from config
+        console.log(`Removing stale auto-connect config for unknown account: ${accountUri}`);
+        configManager.removeAccount(accountUri).catch(() => {});
+        continue;
       }
       if (config.autoConnectContact) {
         account.autoConnectContact = config.autoConnectContact;

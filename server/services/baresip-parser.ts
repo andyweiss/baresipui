@@ -281,6 +281,18 @@ function parseAccountStatusResponse(data: string, stateManager: StateManager): v
       checkAutoConnectForAccount(uri, stateManager);
     }
   }
+
+  // Remove accounts from state that no longer appear in this uastat response
+  const seenUris = new Set(blocks.map(block => {
+    const lines = block.split('\n').map(l => l.trim());
+    const uriMatch = lines[0].match(/^([^\s-]+) ---/);
+    return uriMatch ? `sip:${uriMatch[1]}`.toLowerCase() : `sip:${lines[0].split(' ')[0]}`.toLowerCase();
+  }));
+  for (const existingUri of stateManager.getAccounts().map(a => a.uri.toLowerCase())) {
+    if (!seenUris.has(existingUri)) {
+      stateManager.removeAccount(existingUri);
+    }
+  }
 }
 
 
