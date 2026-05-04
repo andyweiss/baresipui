@@ -1,5 +1,6 @@
 import type { StateManager } from './state-manager';
 import type { BaresipEvent, BaresipCommandResponse } from '~/types';
+import { dtmfToGpio, gpioToDtmf } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
 
 // Global queue to serialize auto-connect operations
@@ -932,12 +933,51 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           stateManager.updateCall(jsonEvent.id, {
             needsCodecInfo: true
           });
+          
+          // Retransmit all active outgoing GPIO states as DTMF when call connects
+          const gpioState = stateManager.getGpioState(uri);
+          const runtimeCfg = useRuntimeConfig();
+          const connection = getBaresipConnection(runtimeCfg.baresipHost, parseInt(runtimeCfg.baresipPort));
+          const activeDigits: string[] = [];
+          for (let i = 0; i < 6; i++) {
+            if (gpioState.gpioOut[i]) {
+              activeDigits.push(gpioToDtmf(i + 1, true));
+            }
+          }
+          if (activeDigits.length > 0) {
+            // Send each digit as short command (ctrl_tcp patch adds short command fallback)
+            const commands: Array<{command: string, params?: string}> = [
+              { command: 'uafind', params: uri }
+            ];
+            for (const digit of activeDigits) {
+              commands.push({ command: digit });
+            }
+            connection.sendCommandSequence(commands);
+            stateManager.addLog('info', 'parser', `Retransmitted ${activeDigits.length} active GPIO states as DTMF on call connect`, uri);
+          }
+        }
+      }
+    } else if (jsonEvent.type === 'CALL_DTMF_START' || jsonEvent.type === 'CALL_DTMF') {
+      // Incoming DTMF digit received from remote peer
+      const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
+      const digit = jsonEvent.param;
+      
+      if (uri && digit) {
+        const mapping = dtmfToGpio(digit);
+        if (mapping) {
+          stateManager.updateGpioIn(uri, mapping.gpioIndex, mapping.state);
+          stateManager.addLog('info', 'parser', `Received DTMF '${digit}' → GPIO ${mapping.gpioIndex} ${mapping.state ? 'ON' : 'OFF'}`, uri);
+        } else {
+          stateManager.addLog('warn', 'parser', `Received unknown DTMF digit '${digit}'`, uri);
         }
       }
     } else if (jsonEvent.type === 'CALL_CLOSED' || jsonEvent.type === 'CALL_END' || jsonEvent.type === 'CALL_TERMINATE') {
       const uri = jsonEvent.accountaor || jsonEvent.localuri || jsonEvent.local_uri;
       
       if (uri) {
+        // Clear incoming GPIO states when call ends
+        stateManager.clearGpioIn(uri);
+        
         // Check if this was an auto-connect call
         const account = stateManager.getAccount(uri);
         const wasAutoConnectCall = account && account.autoConnectContact;

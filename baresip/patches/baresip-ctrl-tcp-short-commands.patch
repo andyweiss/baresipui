@@ -1,0 +1,18 @@
+--- a/modules/ctrl_tcp/ctrl_tcp.c	2026-05-04 07:27:11.579615642 +0200
++++ b/modules/ctrl_tcp/ctrl_tcp.c	2026-05-04 07:31:02.744817640 +0200
+@@ -200,6 +200,15 @@
+ 			       buf,
+ 			       str_len(buf),
+ 			       &pf, NULL);
++
++	/* Fall back to short command processing (e.g. DTMF digits
++	 * 0-9, *, #) which are registered as single-char commands */
++	if (err == ENOTSUP && str_len(cmd) == 1) {
++		resp->pos = NETSTRING_HEADER_SIZE;
++		err = cmd_process(baresip_commands(), NULL,
++				  cmd[0], &pf, NULL);
++	}
++
+ 	if (err) {
+ 		warning("ctrl_tcp: error processing command (%m)\n", err);
+ 	}

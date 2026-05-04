@@ -1,4 +1,5 @@
-import type { Account, Contact, ContactConfig, CallInfo, AudioMeter, LogEntry } from '~/types';
+import type { Account, Contact, ContactConfig, CallInfo, AudioMeter, LogEntry, GpioState } from '~/types';
+import { createDefaultGpioState } from '~/types';
 
 export class StateManager {
   private accounts = new Map<string, Account>();
@@ -8,6 +9,7 @@ export class StateManager {
   private contactCallFailureTimestamp = new Map<string, number>(); // Timestamp when auto-connect call failed
   private activeCalls = new Map<string, CallInfo>(); // Track all active calls
   private audioMeters = new Map<string, AudioMeter>(); // Track audio levels per account
+  private gpioStates = new Map<string, GpioState>(); // Track GPIO state per account
   private socketClients = new Set<any>();
   private io: any = null; // Socket.IO server instance for room-based broadcasting
   private logs: LogEntry[] = [];
@@ -280,7 +282,8 @@ export class StateManager {
       contacts: this.getContacts(),
       baresipConnected: this.baresipConnected,
       calls: this.getCalls(),
-      audioMeters: this.getAllAudioMeters()
+      audioMeters: this.getAllAudioMeters(),
+      gpioStates: this.getAllGpioStates()
     };
   }
 
@@ -427,6 +430,39 @@ export class StateManager {
 
   getAllAudioMeters(): AudioMeter[] {
     return Array.from(this.audioMeters.values());
+  }
+
+  // GPIO State Management
+  getGpioState(accountUri: string): GpioState {
+    const key = accountUri.toLowerCase().trim();
+    let state = this.gpioStates.get(key);
+    if (!state) {
+      state = createDefaultGpioState(accountUri);
+      this.gpioStates.set(key, state);
+    }
+    return state;
+  }
+
+  updateGpioOut(accountUri: string, gpioIndex: number, on: boolean): void {
+    const state = this.getGpioState(accountUri);
+    state.gpioOut[gpioIndex - 1] = on;
+    this.broadcast({ type: 'gpioUpdate', data: state });
+  }
+
+  updateGpioIn(accountUri: string, gpioIndex: number, on: boolean): void {
+    const state = this.getGpioState(accountUri);
+    state.gpioIn[gpioIndex - 1] = on;
+    this.broadcast({ type: 'gpioUpdate', data: state });
+  }
+
+  clearGpioIn(accountUri: string): void {
+    const state = this.getGpioState(accountUri);
+    state.gpioIn = new Array(6).fill(false);
+    this.broadcast({ type: 'gpioUpdate', data: state });
+  }
+
+  getAllGpioStates(): GpioState[] {
+    return Array.from(this.gpioStates.values());
   }
 }
 

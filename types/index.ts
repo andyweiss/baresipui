@@ -133,3 +133,47 @@ export interface LogEntry {
   accountUri?: string;
   data?: any;
 }
+
+// GPIO / DTMF
+
+export interface GpioState {
+  accountUri: string;
+  gpioOut: boolean[]; // 6 outgoing GPIOs (user/ESP32 controlled, sends DTMF)
+  gpioIn: boolean[];  // 6 incoming GPIOs (received DTMF from remote peer)
+}
+
+/**
+ * DTMF-to-GPIO mapping:
+ *   Even index = GPIO off, Odd index = GPIO on
+ *   GPIO number = Math.floor(index / 2) + 1
+ *
+ * DTMF 0 = GPIO 1 off    DTMF 1 = GPIO 1 on
+ * DTMF 2 = GPIO 2 off    DTMF 3 = GPIO 2 on
+ * DTMF 4 = GPIO 3 off    DTMF 5 = GPIO 3 on
+ * DTMF 6 = GPIO 4 off    DTMF 7 = GPIO 4 on
+ * DTMF 8 = GPIO 5 off    DTMF 9 = GPIO 5 on
+ * DTMF * = GPIO 6 off    DTMF # = GPIO 6 on
+ */
+export const DTMF_DIGITS = ['0','1','2','3','4','5','6','7','8','9','*','#'] as const;
+
+/** Convert GPIO index (1-6) and state (on/off) to DTMF digit */
+export function gpioToDtmf(gpioIndex: number, state: boolean): string {
+  const dtmfIndex = (gpioIndex - 1) * 2 + (state ? 1 : 0);
+  return DTMF_DIGITS[dtmfIndex];
+}
+
+/** Convert DTMF digit to GPIO index (1-6) and state (on/off). Returns null for unknown digits. */
+export function dtmfToGpio(digit: string): { gpioIndex: number; state: boolean } | null {
+  const idx = DTMF_DIGITS.indexOf(digit as any);
+  if (idx === -1) return null;
+  return { gpioIndex: Math.floor(idx / 2) + 1, state: idx % 2 === 1 };
+}
+
+/** Create a default (all off) GPIO state for an account */
+export function createDefaultGpioState(accountUri: string): GpioState {
+  return {
+    accountUri,
+    gpioOut: new Array(6).fill(false),
+    gpioIn: new Array(6).fill(false),
+  };
+}

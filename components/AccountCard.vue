@@ -107,6 +107,25 @@
       Last update: {{ formatTimestamp(account.lastEvent) }}
     </div>
 
+    <!-- GPIO Button - Always visible -->
+    <button 
+      @click="showGpioModal = true"
+      class="absolute bottom-3 bg-gray-600 hover:bg-gray-500 text-white rounded-full p-1.5 shadow transition-all hover:scale-110 z-10"
+      :class="activeCall ? 'right-12' : 'right-3'"
+      title="GPIO Control"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- left terminal dot -->
+        <circle cx="4" cy="17" r="2" fill="currentColor" />
+        <!-- right terminal dot -->
+        <circle cx="20" cy="17" r="2" fill="currentColor" />
+        <!-- switch lever (open position) -->
+        <line x1="6" y1="17" x2="18" y2="7" />
+        <!-- wire from right dot -->
+        <line x1="18" y1="17" x2="20" y2="17" />
+      </svg>
+    </button>
+
     <!-- Call Stats Button - Bottom Right -->
     <button 
       v-if="activeCall"
@@ -135,23 +154,35 @@
       @close="showDialModal = false"
       @dial="handleDial"
     />
+
+    <!-- GPIO Modal -->
+    <GpioModal
+      :show="showGpioModal"
+      :account-uri="account.uri"
+      :gpio-state="gpioState"
+      @close="showGpioModal = false"
+      @toggle-gpio="(idx: number, state: boolean) => emit('toggleGpio', account.uri, idx, state)"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 
-import type { CallInfo } from '~/types';
+import type { CallInfo, GpioState } from '~/types';
+import { createDefaultGpioState } from '~/types';
 
 const props = defineProps({
   account: { type: Object, required: true },
   contacts: { type: Array, required: true },
   calls: { type: Array, required: true },
+  gpioState: { type: Object as () => GpioState, default: () => createDefaultGpioState('') },
 });
 
-const emit = defineEmits(['call', 'hangup', 'assignContact']);
+const emit = defineEmits(['call', 'hangup', 'assignContact', 'toggleGpio']);
 
 const showCallStats = ref(false);
 const showDialModal = ref(false);
+const showGpioModal = ref(false);
 
 // Local state for the select to prevent jumping back
 const localAutoConnectContact = ref(props.account.autoConnectContact || '');

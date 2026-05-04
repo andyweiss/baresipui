@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { io, Socket } from 'socket.io-client';
+import type { GpioState } from '~/types';
 
 export const useSocketIO = () => {
     function extractNumber(uri: string): number | null {
@@ -42,6 +43,7 @@ export const useSocketIO = () => {
   const accounts = ref<any[]>([]);
   const contacts = ref<any[]>([]);
   const calls = ref<any[]>([]);
+  const gpioStates = ref<any[]>([]);
 
   const connect = () => {
     socket.value = io({
@@ -121,6 +123,7 @@ export const useSocketIO = () => {
       mergeAndSortAccounts(data.accounts || []);
       contacts.value = data.contacts || [];
       calls.value = data.calls || [];
+      gpioStates.value = data.gpioStates || [];
       baresipConnected.value = data.baresipConnected ?? false;
       sendCommand('uastat');
     });
@@ -147,6 +150,19 @@ export const useSocketIO = () => {
       contacts.value = data.contacts || [];
     });
 
+    socket.value.on('gpioUpdate', (data: GpioState) => {
+      const idx = gpioStates.value.findIndex(
+        s => s.accountUri.toLowerCase() === data.accountUri.toLowerCase()
+      );
+      if (idx >= 0) {
+        gpioStates.value[idx] = data;
+      } else {
+        gpioStates.value.push(data);
+      }
+      // Trigger reactivity
+      gpioStates.value = [...gpioStates.value];
+    });
+
     socket.value.on('error', (error: any) => {
       console.error('Socket.IO Error:', error);
     });
@@ -162,6 +178,20 @@ export const useSocketIO = () => {
       return response;
     } catch (err) {
       console.error('Error sending command:', err);
+      throw err;
+    }
+  };
+
+  const toggleGpio = async (accountUri: string, gpioIndex: number, state: boolean) => {
+    try {
+      const response = await fetch('/api/gpio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountUri, gpioIndex, state })
+      }).then(r => r.json());
+      return response;
+    } catch (err) {
+      console.error('Error toggling GPIO:', err);
       throw err;
     }
   };
@@ -197,7 +227,9 @@ export const useSocketIO = () => {
     accounts,
     contacts,
     calls,
+    gpioStates,
     sendCommand,
-    toggleAutoConnect
+    toggleAutoConnect,
+    toggleGpio
   };
 };

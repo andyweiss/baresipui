@@ -118,9 +118,11 @@
             :account="account"
             :contacts="contacts"
             :calls="calls"
+            :gpio-state="gpioStates.find((s: any) => s.accountUri.toLowerCase() === account.uri.toLowerCase())"
             @call="handleCall"
             @hangup="handleHangup"
             @assignContact="handleAssignContact"
+            @toggle-gpio="handleToggleGpio"
           />
         </div>
       </section>
@@ -162,7 +164,7 @@
 import { useSocketIO } from '@/composables/useSocketIO';
 
 // Use Socket.IO instead of WebSocket
-const { connected, accounts, contacts, calls, sendCommand } = useSocketIO();
+const { connected, accounts, contacts, calls, gpioStates, sendCommand, toggleGpio } = useSocketIO();
 
 // Track already-recorded call IDs to avoid duplicates
 const recordedCallIds = new Set<string>();
@@ -262,6 +264,14 @@ const reloadConfig = async () => {
     await sendCommand('regall');
   } catch (err: any) {
     alert('Error reloading config: ' + (err?.message || err));
+  }
+};
+
+const handleToggleGpio = async (accountUri: string, gpioIndex: number, state: boolean) => {
+  try {
+    await toggleGpio(accountUri, gpioIndex, state);
+  } catch (err: any) {
+    console.error('Error toggling GPIO:', err);
   }
 };
 </script>
