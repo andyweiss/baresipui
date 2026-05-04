@@ -37,17 +37,26 @@ export default defineEventHandler(async (event) => {
     const config = useRuntimeConfig();
     const connection = getBaresipConnection(config.baresipHost, parseInt(config.baresipPort as string));
 
-    // Select the correct account then send the DTMF digit as short command
-    // (ctrl_tcp patch adds short command fallback via cmd_process)
-    connection.sendCommandSequence([
-      { command: 'uafind', params: accountUri },
-      { command: digit }
-    ]);
+    // Only send DTMF if the account currently has an active call.
+    // Without an active call, baresip ignores uafind and falls back to
+    // the last active UA — sending DTMF to the wrong account.
+    const account = stateManager.getAccount(accountUri);
+    const hasActiveCall = account?.callId &&
+      (account.callStatus === 'In Call' || account.callStatus === 'Ringing');
 
-    // Update outgoing GPIO state
+    if (hasActiveCall) {
+      connection.sendCommandSequence([
+        { command: 'uafind', params: accountUri },
+        { command: digit }
+      ]);
+      stateManager.addLog('info', 'tcp-socket', `GPIO ${gpioIndex} ${state ? 'ON' : 'OFF'} → DTMF ${digit}`, accountUri);
+    } else {
+      stateManager.addLog('debug', 'tcp-socket', `GPIO ${gpioIndex} ${state ? 'ON' : 'OFF'} saved (no active call, DTMF not sent)`, accountUri);
+    }
+
+    // Always update the GPIO state — it represents desired output state
+    // and will be retransmitted when a call is established (CALL_RTPESTAB)
     stateManager.updateGpioOut(accountUri, gpioIndex, state);
-
-    stateManager.addLog('info', 'tcp-socket', `GPIO ${gpioIndex} ${state ? 'ON' : 'OFF'} → DTMF ${digit}`, accountUri);
 
     return {
       success: true,
@@ -55,6 +64,7 @@ export default defineEventHandler(async (event) => {
       gpioIndex,
       state,
       digit,
+      dtmfSent: !!hasActiveCall,
       timestamp: Date.now()
     };
   } catch (err: any) {
