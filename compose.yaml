@@ -62,4 +62,3 @@ volumes:
 networks:
   baresip-network:
     driver: bridge
-    driver: bridge
