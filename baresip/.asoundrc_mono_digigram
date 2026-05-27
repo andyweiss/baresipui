@@ -1,0 +1,1262 @@
+# ALSA configuration for Digigram RAVENNA / ALPAES67 (64 channels)
+# Exposes:
+#  - pcm.ravenna_shared_out : shared playback (dmix)
+#  - pcm.ravenna_shared_in  : shared capture  (dsnoop)
+#  - pcm.in_ch1..64         : mono capture devices
+#  - pcm.out_ch1..64        : mono playback devices
+
+pcm.ravenna_shared_out {
+    type dmix
+    ipc_key 0x999999
+    slave {
+        pcm "hw:CARD=ALPAES6764,DEV=0"
+        channels 64
+        rate 48000
+        format S32_LE
+        period_time 128
+        buffer_time 512
+        periods 4
+    }
+}
+
+pcm.ravenna_shared_in {
+    type dsnoop
+    ipc_key 0x888888
+    slave {
+        pcm "hw:CARD=ALPAES6764,DEV=0"
+        channels 64
+        rate 48000
+        format S32_LE
+        period_time 128
+        buffer_time 512
+        periods 4
+    }
+}
+
+pcm_slave.ravenna_in_64 {
+    pcm "ravenna_shared_in"
+    channels 64
+    format S32_LE
+}
+
+pcm_slave.ravenna_out_64 {
+    pcm "ravenna_shared_out"
+    channels 64
+    format S32_LE
+}
+
+pcm.in_ch1 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.0  1.0
+    }
+}
+
+pcm.out_ch1 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.0  1.0
+        }
+    }
+}
+
+pcm.in_ch2 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.1  1.0
+    }
+}
+
+pcm.out_ch2 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.1  1.0
+        }
+    }
+}
+
+pcm.in_ch3 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.2  1.0
+    }
+}
+
+pcm.out_ch3 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.2  1.0
+        }
+    }
+}
+
+pcm.in_ch4 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.3  1.0
+    }
+}
+
+pcm.out_ch4 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.3  1.0
+        }
+    }
+}
+
+pcm.in_ch5 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.4  1.0
+    }
+}
+
+pcm.out_ch5 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.4  1.0
+        }
+    }
+}
+
+pcm.in_ch6 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.5  1.0
+    }
+}
+
+pcm.out_ch6 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.5  1.0
+        }
+    }
+}
+
+pcm.in_ch7 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.6  1.0
+    }
+}
+
+pcm.out_ch7 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.6  1.0
+        }
+    }
+}
+
+pcm.in_ch8 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.7  1.0
+    }
+}
+
+pcm.out_ch8 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.7  1.0
+        }
+    }
+}
+
+pcm.in_ch9 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.8  1.0
+    }
+}
+
+pcm.out_ch9 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.8  1.0
+        }
+    }
+}
+
+pcm.in_ch10 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.9  1.0
+    }
+}
+
+pcm.out_ch10 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.9  1.0
+        }
+    }
+}
+
+pcm.in_ch11 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.10  1.0
+    }
+}
+
+pcm.out_ch11 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.10  1.0
+        }
+    }
+}
+
+pcm.in_ch12 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.11  1.0
+    }
+}
+
+pcm.out_ch12 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.11  1.0
+        }
+    }
+}
+
+pcm.in_ch13 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.12  1.0
+    }
+}
+
+pcm.out_ch13 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.12  1.0
+        }
+    }
+}
+
+pcm.in_ch14 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.13  1.0
+    }
+}
+
+pcm.out_ch14 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.13  1.0
+        }
+    }
+}
+
+pcm.in_ch15 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.14  1.0
+    }
+}
+
+pcm.out_ch15 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.14  1.0
+        }
+    }
+}
+
+pcm.in_ch16 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.15  1.0
+    }
+}
+
+pcm.out_ch16 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.15  1.0
+        }
+    }
+}
+
+pcm.in_ch17 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.16  1.0
+    }
+}
+
+pcm.out_ch17 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.16  1.0
+        }
+    }
+}
+
+pcm.in_ch18 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.17  1.0
+    }
+}
+
+pcm.out_ch18 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.17  1.0
+        }
+    }
+}
+
+pcm.in_ch19 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.18  1.0
+    }
+}
+
+pcm.out_ch19 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.18  1.0
+        }
+    }
+}
+
+pcm.in_ch20 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.19  1.0
+    }
+}
+
+pcm.out_ch20 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.19  1.0
+        }
+    }
+}
+
+pcm.in_ch21 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.20  1.0
+    }
+}
+
+pcm.out_ch21 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.20  1.0
+        }
+    }
+}
+
+pcm.in_ch22 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.21  1.0
+    }
+}
+
+pcm.out_ch22 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.21  1.0
+        }
+    }
+}
+
+pcm.in_ch23 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.22  1.0
+    }
+}
+
+pcm.out_ch23 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.22  1.0
+        }
+    }
+}
+
+pcm.in_ch24 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.23  1.0
+    }
+}
+
+pcm.out_ch24 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.23  1.0
+        }
+    }
+}
+
+pcm.in_ch25 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.24  1.0
+    }
+}
+
+pcm.out_ch25 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.24  1.0
+        }
+    }
+}
+
+pcm.in_ch26 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.25  1.0
+    }
+}
+
+pcm.out_ch26 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.25  1.0
+        }
+    }
+}
+
+pcm.in_ch27 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.26  1.0
+    }
+}
+
+pcm.out_ch27 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.26  1.0
+        }
+    }
+}
+
+pcm.in_ch28 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.27  1.0
+    }
+}
+
+pcm.out_ch28 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.27  1.0
+        }
+    }
+}
+
+pcm.in_ch29 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.28  1.0
+    }
+}
+
+pcm.out_ch29 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.28  1.0
+        }
+    }
+}
+
+pcm.in_ch30 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.29  1.0
+    }
+}
+
+pcm.out_ch30 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.29  1.0
+        }
+    }
+}
+
+pcm.in_ch31 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.30  1.0
+    }
+}
+
+pcm.out_ch31 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.30  1.0
+        }
+    }
+}
+
+pcm.in_ch32 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.31  1.0
+    }
+}
+
+pcm.out_ch32 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.31  1.0
+        }
+    }
+}
+
+pcm.in_ch33 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.32  1.0
+    }
+}
+
+pcm.out_ch33 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.32  1.0
+        }
+    }
+}
+
+pcm.in_ch34 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.33  1.0
+    }
+}
+
+pcm.out_ch34 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.33  1.0
+        }
+    }
+}
+
+pcm.in_ch35 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.34  1.0
+    }
+}
+
+pcm.out_ch35 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.34  1.0
+        }
+    }
+}
+
+pcm.in_ch36 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.35  1.0
+    }
+}
+
+pcm.out_ch36 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.35  1.0
+        }
+    }
+}
+
+pcm.in_ch37 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.36  1.0
+    }
+}
+
+pcm.out_ch37 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.36  1.0
+        }
+    }
+}
+
+pcm.in_ch38 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.37  1.0
+    }
+}
+
+pcm.out_ch38 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.37  1.0
+        }
+    }
+}
+
+pcm.in_ch39 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.38  1.0
+    }
+}
+
+pcm.out_ch39 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.38  1.0
+        }
+    }
+}
+
+pcm.in_ch40 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.39  1.0
+    }
+}
+
+pcm.out_ch40 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.39  1.0
+        }
+    }
+}
+
+pcm.in_ch41 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.40  1.0
+    }
+}
+
+pcm.out_ch41 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.40  1.0
+        }
+    }
+}
+
+pcm.in_ch42 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.41  1.0
+    }
+}
+
+pcm.out_ch42 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.41  1.0
+        }
+    }
+}
+
+pcm.in_ch43 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.42  1.0
+    }
+}
+
+pcm.out_ch43 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.42  1.0
+        }
+    }
+}
+
+pcm.in_ch44 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.43  1.0
+    }
+}
+
+pcm.out_ch44 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.43  1.0
+        }
+    }
+}
+
+pcm.in_ch45 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.44  1.0
+    }
+}
+
+pcm.out_ch45 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.44  1.0
+        }
+    }
+}
+
+pcm.in_ch46 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.45  1.0
+    }
+}
+
+pcm.out_ch46 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.45  1.0
+        }
+    }
+}
+
+pcm.in_ch47 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.46  1.0
+    }
+}
+
+pcm.out_ch47 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.46  1.0
+        }
+    }
+}
+
+pcm.in_ch48 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.47  1.0
+    }
+}
+
+pcm.out_ch48 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.47  1.0
+        }
+    }
+}
+
+pcm.in_ch49 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.48  1.0
+    }
+}
+
+pcm.out_ch49 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.48  1.0
+        }
+    }
+}
+
+pcm.in_ch50 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.49  1.0
+    }
+}
+
+pcm.out_ch50 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.49  1.0
+        }
+    }
+}
+
+pcm.in_ch51 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.50  1.0
+    }
+}
+
+pcm.out_ch51 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.50  1.0
+        }
+    }
+}
+
+pcm.in_ch52 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.51  1.0
+    }
+}
+
+pcm.out_ch52 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.51  1.0
+        }
+    }
+}
+
+pcm.in_ch53 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.52  1.0
+    }
+}
+
+pcm.out_ch53 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.52  1.0
+        }
+    }
+}
+
+pcm.in_ch54 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.53  1.0
+    }
+}
+
+pcm.out_ch54 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.53  1.0
+        }
+    }
+}
+
+pcm.in_ch55 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.54  1.0
+    }
+}
+
+pcm.out_ch55 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.54  1.0
+        }
+    }
+}
+
+pcm.in_ch56 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.55  1.0
+    }
+}
+
+pcm.out_ch56 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.55  1.0
+        }
+    }
+}
+
+pcm.in_ch57 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.56  1.0
+    }
+}
+
+pcm.out_ch57 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.56  1.0
+        }
+    }
+}
+
+pcm.in_ch58 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.57  1.0
+    }
+}
+
+pcm.out_ch58 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.57  1.0
+        }
+    }
+}
+
+pcm.in_ch59 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.58  1.0
+    }
+}
+
+pcm.out_ch59 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.58  1.0
+        }
+    }
+}
+
+pcm.in_ch60 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.59  1.0
+    }
+}
+
+pcm.out_ch60 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.59  1.0
+        }
+    }
+}
+
+pcm.in_ch61 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.60  1.0
+    }
+}
+
+pcm.out_ch61 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.60  1.0
+        }
+    }
+}
+
+pcm.in_ch62 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.61  1.0
+    }
+}
+
+pcm.out_ch62 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.61  1.0
+        }
+    }
+}
+
+pcm.in_ch63 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.62  1.0
+    }
+}
+
+pcm.out_ch63 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.62  1.0
+        }
+    }
+}
+
+pcm.in_ch64 {
+    type route
+    slave ravenna_in_64
+    ttable {
+        0.63  1.0
+    }
+}
+
+pcm.out_ch64 {
+    type plug
+    slave.pcm {
+        type route
+        slave ravenna_out_64
+        ttable {
+            0.63  1.0
+        }
+    }
+}
