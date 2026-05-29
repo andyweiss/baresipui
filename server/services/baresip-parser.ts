@@ -1,5 +1,5 @@
 import type { StateManager } from './state-manager';
-import type { BaresipEvent, BaresipCommandResponse } from '~/types';
+import type { BaresipEvent, BaresipCommandResponse, CallInfo } from '~/types';
 import { dtmfToGpio, gpioToDtmf } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
 
@@ -575,29 +575,29 @@ function parseGetRtcpStatsResponse(data: string, stateManager: StateManager): vo
       if (!call) continue;
       
       // Update RX stats
-      if (!call.audioRxStats) {
-        call.audioRxStats = {
-          packets: 0, lost: 0, bitrate_kbps: 0, dropout: false,
-          dropout_total: 0, rtp_rx_errors: 0, jitter: 0
-        };
-      }
-      call.audioRxStats.packets = stats.rtp_rx_packets ?? 0;
-      call.audioRxStats.lost = stats.rtcp_lost_rx ?? 0;
-      call.audioRxStats.bitrate_kbps = stats.rx_bitrate_kbps ?? 0;
-      call.audioRxStats.dropout = stats.rx_dropout ?? false;
-      call.audioRxStats.dropout_total = stats.rx_dropout_total ?? 0;
-      call.audioRxStats.jitter = stats.rtcp_jitter_rx_ms ?? 0;
+      const updates: Partial<CallInfo> = {};
+      updates.audioRxStats = {
+        packets: stats.rtp_rx_packets ?? 0,
+        packetsLost: stats.rtcp_lost_rx ?? 0,
+        jitter: stats.rtcp_jitter_rx_ms ?? 0,
+        rtt: stats.rtcp_rtt_ms,
+        bitrate_kbps: stats.rx_bitrate_kbps ?? 0,
+        dropout: stats.rx_dropout ?? false,
+        dropout_total: stats.rx_dropout_total ?? 0,
+        rtp_rx_errors: stats.rtp_rx_errors ?? 0,
+      };
       
       // Update TX stats
-      if (!call.audioTxStats) {
-        call.audioTxStats = { packets: 0, lost: 0, bitrate_kbps: 0, jitter: 0 };
-      }
-      call.audioTxStats.packets = stats.rtp_tx_packets ?? 0;
-      call.audioTxStats.lost = stats.rtcp_lost_tx ?? 0;
-      call.audioTxStats.bitrate_kbps = stats.tx_bitrate_kbps ?? 0;
-      call.audioTxStats.jitter = stats.rtcp_jitter_tx_ms ?? 0;
+      updates.audioTxStats = {
+        packets: stats.rtp_tx_packets ?? 0,
+        packetsLost: stats.rtcp_lost_tx ?? 0,
+        jitter: stats.rtcp_jitter_tx_ms ?? 0,
+        bitrate_kbps: stats.tx_bitrate_kbps ?? 0,
+        rtp_tx_errors: stats.rtp_tx_errors ?? 0,
+      };
 
-      stateManager.broadcast({ type: 'callUpdated', data: call });
+      stateManager.updateCall(callId, updates);
+      stateManager.broadcast({ type: 'callUpdated', data: { ...call, ...updates } });
     }
   } catch (error) {
     // Silently ignore parse errors
@@ -1079,87 +1079,10 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   }
 }
 
-function parseRtcpSummaryLine(line: string, stateManager: StateManager): void {
-  // Parse RTCP stats from rtcpstats_periodic module
-  // NEW JSON Format: RTCP_STATS: {...full JSON...}
-  // SHORT Format: rtcpstats_periodic: call_id=xxx rx_packets=123 tx_packets=456 rx_bitrate_kbps=0 tx_bitrate_kbps=1 rx_dropout=false rx_dropout_total=0
-  // OLD Format: "RTCP_STATS: call_id=xxx;media=audio;packets_rx=123;..."
-  
-  if (!line.includes('RTCP') && !line.includes('rtcpstats')) return;
-  
-  // Try JSON format first
-  if (line.includes('RTCP_STATS:')) {
-    const jsonMatch = line.match(/RTCP_STATS:\s*(\{.+\})/);
-    if (jsonMatch) {
-      try {
-        const stats = JSON.parse(jsonMatch[1]);
-        const callId = stats.call_id;
-        if (!callId) return;
-        
-        const updates: any = {};
-        updates.audioRxStats = {
-          packets: stats.rtp_rx_packets ?? 0,
-          packetsLost: stats.rtcp_lost_rx ?? 0,
-          jitter: stats.rtcp_jitter_rx_ms ?? 0,
-          rtt: stats.rtcp_rtt_ms ?? 0,
-          bitrate_kbps: stats.rx_bitrate_kbps ?? 0,
-          dropout: stats.rx_dropout ?? false,
-          dropout_total: stats.rx_dropout_total ?? 0,
-          rtp_rx_errors: stats.rtp_rx_errors ?? 0,
-          rtcp_packets: stats.rtcp_rx_packets ?? 0,
-        };
-        updates.audioTxStats = {
-          packets: stats.rtp_tx_packets ?? 0,
-          packetsLost: stats.rtcp_lost_tx ?? 0,
-          jitter: stats.rtcp_jitter_tx_ms ?? 0,
-          bitrate_kbps: stats.tx_bitrate_kbps ?? 0,
-          rtp_tx_errors: stats.rtp_tx_errors ?? 0,
-          rtcp_packets: stats.rtcp_tx_packets ?? 0,
-        };
-        
-        stateManager.updateCall(callId, updates);
-        return;
-      } catch (e) {
-        // Failed to parse JSON format, try short format
-      }
-    }
-  }
-  
-  // Try short format: rtcpstats_periodic: call_id=xxx rx_packets=123 tx_packets=456...
-  if (line.includes('rtcpstats_periodic:')) {
-    const callIdMatch = line.match(/call_id=([a-f0-9]+)/);
-    const rxPacketsMatch = line.match(/rx_packets=(\d+)/);
-    const txPacketsMatch = line.match(/tx_packets=(\d+)/);
-    const rxBitrateMatch = line.match(/rx_bitrate_kbps=(\d+)/);
-    const txBitrateMatch = line.match(/tx_bitrate_kbps=(\d+)/);
-    const rxDropoutMatch = line.match(/rx_dropout=(true|false)/);
-    const rxDropoutTotalMatch = line.match(/rx_dropout_total=(\d+)/);
-    
-    if (callIdMatch) {
-      const callId = callIdMatch[1];
-      const updates: any = {};
-      
-      updates.audioRxStats = {
-        packets: rxPacketsMatch ? parseInt(rxPacketsMatch[1]) : 0,
-        packetsLost: 0,
-        jitter: 0,
-        bitrate_kbps: rxBitrateMatch ? parseInt(rxBitrateMatch[1]) : 0,
-        dropout: rxDropoutMatch ? rxDropoutMatch[1] === 'true' : false,
-        dropout_total: rxDropoutTotalMatch ? parseInt(rxDropoutTotalMatch[1]) : 0,
-      };
-      
-      updates.audioTxStats = {
-        packets: txPacketsMatch ? parseInt(txPacketsMatch[1]) : 0,
-        packetsLost: 0,
-        jitter: 0,
-        bitrate_kbps: txBitrateMatch ? parseInt(txBitrateMatch[1]) : 0,
-      };
-      
-      stateManager.updateCall(callId, updates);
-      return;
-    }
-  }
-}
+// parseRtcpSummaryLine — REMOVED
+// rtcpstats_periodic text log lines are not used for state updates.
+// All RTCP stats come via the getrtcpstats command response
+// (parsed in handleCommandResponse → parseGetRtcpStatsResponse).
 
 /**
  * Creates a LogEntry object from a text line
@@ -1234,15 +1157,9 @@ function handleTextLine(line: string, stateManager: StateManager): void {
     return; // Silently ignore audio statistics
   }
 
-  // Parse RTCP/RTP statistics (from rtcpsummary or rtcpstats_periodic modules)
-  if (line.includes('RTCP') || line.includes('rtcp') || line.includes('rtcpstats')) {
-    parseRtcpSummaryLine(line, stateManager);
-    return; // Important: return after parsing RTCP to avoid duplicate processing
-  }
-
-  // Parse getrtcpstats JSON response (JSON array or objects with call_id field)
-  if (line.includes('call_id') && (line.includes('[') || line.includes('{') || line.includes('rtp_rx_packets'))) {
-    parseGetRtcpStatsResponse(line, stateManager);
+  // RTCP stats are handled via getrtcpstats command responses (not text lines).
+  // Skip rtcp-related text lines to avoid false-positive parsing.
+  if (line.includes('RTCP_STATS:') || line.includes('rtcpstats_cmd:') || line.includes('rtcpstats_periodic:')) {
     return;
   }
 

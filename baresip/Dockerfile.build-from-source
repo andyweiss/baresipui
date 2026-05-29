@@ -82,6 +82,8 @@ RUN rm -rf modules/presence
 
 # Copy custom modules (presence, notifier, publisher, subscriber)
 COPY modules/ modules/presence/
+# Remove rtcpstats_cmd from presence dir (copied along as subdirectory, but is a separate module)
+RUN rm -rf modules/presence/rtcpstats_cmd
 
 # Copy rtcpstats_periodic module
 COPY rtcpstats_periodic.c modules/rtcpstats_periodic/module.c
@@ -94,6 +96,10 @@ if(STATIC)\n\
 else()\n\
   add_library(${PROJECT_NAME} MODULE ${SRCS})\n\
 endif()' > modules/rtcpstats_periodic/CMakeLists.txt
+
+# Copy rtcpstats_cmd module (was nested inside presence/, needs its own top-level dir)
+COPY modules/rtcpstats_cmd/rtcpstats_cmd.c modules/rtcpstats_cmd/rtcpstats_cmd.c
+COPY modules/rtcpstats_cmd/CMakeLists.txt modules/rtcpstats_cmd/CMakeLists.txt
 
 # Apply any additional patches
 COPY patches/baresip-*.patch ./

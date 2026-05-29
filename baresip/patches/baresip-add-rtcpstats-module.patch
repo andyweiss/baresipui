@@ -1,9 +1,10 @@
 --- a/cmake/modules.cmake
 +++ b/cmake/modules.cmake
-@@ -68,6 +68,7 @@ set(MODULES
+@@ -68,6 +68,8 @@ set(MODULES
    presence
    pulse
    rtcpsummary
++  rtcpstats_cmd
 +  rtcpstats_periodic
    sdl
    selfview

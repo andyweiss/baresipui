@@ -1,19 +1,14 @@
 #include <re.h>
 #include <baresip.h>
-#include <re.h>
-#include <baresip.h>
 
 /**
  * @file rtcpstats_periodic.c Periodic RTCP stats module
  * Output RTCP stats every 2 seconds during active calls
- *
- * Modified from original rtcpsummary.c
+ * and a final summary when a call ends.
  */
-#include <re.h>
-#include <baresip.h>
 
 struct rtcpstats_call {
-	struct le le;	
+	struct le le;
 	struct call *call;
 	struct tmr tmr;
 };
@@ -52,17 +47,11 @@ static void print_rtcp_stats_line(const struct call *call, const struct stream *
 }
 
 static void tmr_handler(void *arg)
-	
 {
-		info("RTCP_STATS: TEST DEBUG LINE\n");
 	struct rtcpstats_call *rc = arg;
 	const struct stream *s;
 	struct le *le;
 
-	info("RTCP_STATS: tmr_handler called for call %s\n", call_id(rc->call));
-	int stream_count = 0;
-	for (le = call_streaml(rc->call)->head; le; le = le->next) stream_count++;
-	info("RTCP_STATS: call %s has %d streams\n", call_id(rc->call), stream_count);
 	/* Print stats for all streams in this call */
 	for (le = call_streaml(rc->call)->head; le; le = le->next) {
 		s = le->data;

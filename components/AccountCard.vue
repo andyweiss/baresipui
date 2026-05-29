@@ -110,8 +110,7 @@
     <!-- GPIO Button - Always visible -->
     <button 
       @click="showGpioModal = true"
-      class="absolute bottom-3 bg-gray-600 hover:bg-gray-500 text-white rounded-full p-1.5 shadow transition-all hover:scale-110 z-10"
-      :class="activeCall ? 'right-12' : 'right-3'"
+      class="absolute bottom-3 right-12 bg-gray-600 hover:bg-gray-500 text-white rounded-full p-1.5 shadow transition-all hover:scale-110 z-10"
       title="GPIO Control"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -128,7 +127,6 @@
 
     <!-- Call Stats Button - Bottom Right -->
     <button 
-      v-if="activeCall"
       @click="showCallStats = true"
       class="absolute bottom-3 right-3 bg-gray-600 hover:bg-gray-500 text-white rounded-full p-1.5 shadow transition-all hover:scale-110 z-10"
       title="Call statistics"
@@ -140,7 +138,6 @@
 
     <!-- Call Information Modal -->
     <CallInformationModal 
-      v-if="activeCall"
       :show="showCallStats"
       :call="activeCall"
       @close="showCallStats = false"
