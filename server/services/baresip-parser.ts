@@ -484,25 +484,8 @@ function parseCallStatResponse(data: string, stateManager: StateManager): void {
   // Build updates object
   const updates = buildCodecUpdates(localCodecs, remoteCodecs);
 
-  // Parse jitter buffer — two formats:
-  // Format 1: "jitter buffer: current=20ms min=10ms max=100ms"
-  // Format 2: "jbuf: n=3/10 cur=20 min=0 max=200"
-  const jbuf1 = data.match(/jitter\s+buffer:\s*current[=:\s]+(\d+)\s*ms\s+min[=:\s]+(\d+)\s*ms\s+max[=:\s]+(\d+)\s*ms/i);
-  const jbuf2 = data.match(/jbuf:\s*(?:n=(\d+)\/\d+\s+)?cur[=:\s]+(\d+)\s+min[=:\s]+(\d+)\s+max[=:\s]+(\d+)/i);
-  if (jbuf1) {
-    updates.jitterBuffer = {
-      current: parseInt(jbuf1[1]),
-      min: parseInt(jbuf1[2]),
-      max: parseInt(jbuf1[3])
-    };
-  } else if (jbuf2) {
-    updates.jitterBuffer = {
-      packets: jbuf2[1] ? parseInt(jbuf2[1]) : undefined,
-      current: parseInt(jbuf2[2]),
-      min: parseInt(jbuf2[3]),
-      max: parseInt(jbuf2[4])
-    };
-  }
+  // Jitter buffer delay now comes from getrtcpstats (audio_jb_current_value),
+  // not from callstat text output.
 
   // Parse inline RTCP_STATS (may appear in callstat response)
   const rtcpMatch = data.match(/RTCP_STATS:\s*(\{[^\n]+\})/);
@@ -595,6 +578,13 @@ function parseGetRtcpStatsResponse(data: string, stateManager: StateManager): vo
         bitrate_kbps: stats.tx_bitrate_kbps ?? 0,
         rtp_tx_errors: stats.rtp_tx_errors ?? 0,
       };
+
+      // Jitter buffer delay (from audio_jb_current_value)
+      if (stats.jbuf_delay_ms !== undefined) {
+        updates.jitterBuffer = {
+          current: stats.jbuf_delay_ms ?? 0,
+        };
+      }
 
       stateManager.updateCall(callId, updates);
       stateManager.broadcast({ type: 'callUpdated', data: { ...call, ...updates } });

@@ -195,21 +195,13 @@
           </div>
         </div>
 
-        <!-- Jitter Buffer Statistics -->
+        <!-- Jitter Buffer -->
         <div v-if="call && call.jitterBuffer" class="bg-gray-900 rounded p-3 mt-2">
           <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Jitter Buffer</p>
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span class="text-gray-500">Current:</span>
+              <span class="text-gray-500">Delay:</span>
               <span class="text-white ml-1">{{ call.jitterBuffer.current }} ms</span>
-            </div>
-            <div>
-              <span class="text-gray-500">Range:</span>
-              <span class="text-white ml-1">{{ call.jitterBuffer.min }}-{{ call.jitterBuffer.max }} ms</span>
-            </div>
-            <div v-if="call.jitterBuffer.packets !== undefined">
-              <span class="text-gray-500">Packets:</span>
-              <span class="text-white ml-1">{{ call.jitterBuffer.packets }}</span>
             </div>
           </div>
         </div>

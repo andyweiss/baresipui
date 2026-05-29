@@ -98,6 +98,12 @@ static int cmd_getrtcpstats(struct re_printf *pf, void *arg)
 			const struct rtcp_stats *rtcp = stream_rtcp_stats(s);
 			if (!rtcp) continue;
 
+			/* Audio jitter buffer delay (aubuf in audio module) */
+			uint64_t audio_jb_ms = 0;
+			struct audio *au = call_audio(rc->call);
+			if (au)
+				audio_jb_ms = audio_jb_current_value(au);
+
 			uint32_t rx_packets = stream_metric_get_rx_n_packets(s);
 			uint32_t tx_packets = stream_metric_get_tx_n_packets(s);
 			uint32_t rx_bytes   = stream_metric_get_rx_n_bytes(s);
@@ -146,8 +152,8 @@ static int cmd_getrtcpstats(struct re_printf *pf, void *arg)
 				"\"rtp_rx_errors\":%u,"
 				"\"rtp_tx_errors\":%u,"
 				"\"rx_dropout\":%s,"
-				"\"rx_dropout_total\":%llu"
-				"}",
+				"\"rx_dropout_total\":%llu,"
+				"\"jbuf_delay_ms\":%llu",
 				call_id(rc->call),
 				rx_packets, tx_packets,
 				rx_bitrate_kbps, tx_bitrate_kbps,
@@ -158,7 +164,10 @@ static int cmd_getrtcpstats(struct re_printf *pf, void *arg)
 				1.0 * rtcp->rtt / 1000,
 				rx_errors, tx_errors,
 				rx_dropout ? "true" : "false",
-				(unsigned long long)rc->dropout_counter);
+				(unsigned long long)rc->dropout_counter,
+				(unsigned long long)audio_jb_ms);
+
+			re_hprintf(pf, "}");
 
 			/* Update tracking for next query */
 			rc->last_rx_packets = rx_packets;

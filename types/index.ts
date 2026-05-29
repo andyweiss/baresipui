@@ -74,10 +74,7 @@ export interface CallInfo {
     rtcp_packets?: number;
   };
   jitterBuffer?: {
-    current: number;    // ms
-    min: number;        // ms
-    max: number;        // ms
-    packets?: number;
+    current: number;    // ms - current aubuf delay
   };
 }
 
