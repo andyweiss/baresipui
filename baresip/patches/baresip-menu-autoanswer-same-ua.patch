@@ -1,0 +1,17 @@
+--- a/modules/menu/menu.c
++++ b/modules/menu/menu.c
+@@ -453,7 +453,12 @@ static int menu_autoanwser_call(struct call *call)
+ 		return EINVAL;
+ 
+ 	outgoing = menu_find_call(outgoing_call_test, call);
+-	if (outgoing) {
++	/* Only cancel outgoing calls on the SAME UA (account).
++	 * This prevents cancelling calls from other accounts when
++	 * multiple accounts are on the same baresip instance and
++	 * one account calls another (call loops back via SIP proxy).
++	 */
++	if (outgoing && call_get_ua(outgoing) == call_get_ua(call)) {
+ 		call_hangup(outgoing, 0, NULL);
+ 		bevent_call_emit(BEVENT_CALL_CLOSED, outgoing,
+ 				 "Outgoing call cancelled due to auto answer");
+
