@@ -1,5 +1,64 @@
 <template>
-  <div class="bg-gray-800 rounded-lg shadow-lg p-6 border-l-4 relative" :class="borderColor">
+  <div class="bg-gray-800 rounded-lg shadow-lg py-6 pl-6 pr-[4.5rem] border-l-4 relative" :class="borderColor">
+    <!-- VU Meters — vertical bars on right side (only visible during call) -->
+    <div v-if="hasActiveCall && audioMeter" class="absolute top-3 right-3 bottom-12 flex flex-col items-center gap-0.5 z-10">
+      <!-- TX group -->
+      <div class="flex gap-0.5 flex-1 min-h-0">
+        <div class="flex flex-col items-center gap-0.5 flex-1">
+          <span class="text-[7px] text-gray-500 leading-none">L</span>
+          <div class="flex-1 w-2"><VuMeterBar :level="audioMeter?.txL ?? -96" vertical :show-scale="hasActiveCall && !!audioMeter" /></div>
+        </div>
+        <div class="flex flex-col items-center gap-0.5 flex-1">
+          <span class="text-[7px] text-gray-500 leading-none">R</span>
+          <div class="flex-1 w-2"><VuMeterBar :level="audioMeter?.txR ?? -96" vertical :show-scale="hasActiveCall && !!audioMeter" /></div>
+        </div>
+        <!-- Scale labels (only during call) -->
+        <div v-if="hasActiveCall && audioMeter" class="flex flex-col gap-0.5">
+          <span class="text-[7px] leading-none invisible">·</span>
+          <div class="flex-1 relative w-5">
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 95%; transform: translateY(50%)">-3</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 85%; transform: translateY(50%)">-9</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 70%; transform: translateY(50%)">-18</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 50%; transform: translateY(50%)">-30</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 30%; transform: translateY(50%)">-42</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 10%; transform: translateY(50%)">-54</span>
+          </div>
+        </div>
+      </div>
+      <!-- TX label centered under the two bars -->
+      <div class="flex">
+        <div class="w-2"></div><div class="w-0.5"></div><div class="w-2"></div>
+        <div class="flex items-center justify-center" style="width: calc(0.5rem + 4px);">
+        </div>
+      </div>
+      <span class="text-[8px] text-gray-500 uppercase leading-none" style="margin-right: auto; padding-left: 1px;">TX</span>
+      <!-- RX group -->
+      <div class="flex gap-0.5 flex-1 min-h-0">
+        <div class="flex flex-col items-center gap-0.5 flex-1">
+          <span class="text-[7px] text-gray-500 leading-none">L</span>
+          <div class="flex-1 w-2"><VuMeterBar :level="audioMeter?.rxL ?? -96" vertical :show-scale="hasActiveCall && !!audioMeter" /></div>
+        </div>
+        <div class="flex flex-col items-center gap-0.5 flex-1">
+          <span class="text-[7px] text-gray-500 leading-none">R</span>
+          <div class="flex-1 w-2"><VuMeterBar :level="audioMeter?.rxR ?? -96" vertical :show-scale="hasActiveCall && !!audioMeter" /></div>
+        </div>
+        <!-- Scale labels (only during call) -->
+        <div v-if="hasActiveCall && audioMeter" class="flex flex-col gap-0.5">
+          <span class="text-[7px] leading-none invisible">·</span>
+          <div class="flex-1 relative w-5">
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 95%; transform: translateY(50%)">-3</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 85%; transform: translateY(50%)">-9</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 70%; transform: translateY(50%)">-18</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 50%; transform: translateY(50%)">-30</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 30%; transform: translateY(50%)">-42</span>
+            <span class="absolute left-0.5 text-[7px] text-gray-500 leading-none whitespace-nowrap" style="bottom: 10%; transform: translateY(50%)">-54</span>
+          </div>
+        </div>
+      </div>
+      <!-- RX label centered under the two bars -->
+      <span class="text-[8px] text-gray-500 uppercase leading-none" style="margin-right: auto; padding-left: 1px;">RX</span>
+    </div>
+
     <div class="flex items-start justify-between mb-4">
       <div class="flex-1">
         <h3 class="text-lg font-semibold text-white mb-1">{{ account.displayName || accountName }}</h3>
@@ -102,7 +161,6 @@
       </div>
     </div>
 
-
     <div class="mt-3 text-xs text-gray-500">
       Last update: {{ formatTimestamp(account.lastEvent) }}
     </div>
@@ -165,7 +223,7 @@
 
 <script setup lang="ts">
 
-import type { CallInfo, GpioState } from '~/types';
+import type { CallInfo, GpioState, AudioMeter } from '~/types';
 import { createDefaultGpioState } from '~/types';
 
 const props = defineProps({
@@ -173,6 +231,7 @@ const props = defineProps({
   contacts: { type: Array, required: true },
   calls: { type: Array, required: true },
   gpioState: { type: Object as () => GpioState, default: () => createDefaultGpioState('') },
+  audioMeter: { type: Object as () => AudioMeter | undefined, default: undefined },
 });
 
 const emit = defineEmits(['call', 'hangup', 'assignContact', 'toggleGpio']);
@@ -210,8 +269,6 @@ const activeCall = computed(() => {
 const hasActiveCall = computed(() => {
   return !!activeCall.value;
 });
-
-
 
 const handleContactChange = async (event: Event) => {
   const target = event.target as HTMLSelectElement;

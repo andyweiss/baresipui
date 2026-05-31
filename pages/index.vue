@@ -119,6 +119,7 @@
             :contacts="contacts"
             :calls="calls"
             :gpio-state="gpioStates.find((s: any) => s.accountUri.toLowerCase() === account.uri.toLowerCase())"
+            :audio-meter="audioMeters[account.uri.toLowerCase()]"
             @call="handleCall"
             @hangup="handleHangup"
             @assignContact="handleAssignContact"
@@ -164,7 +165,7 @@
 import { useSocketIO } from '@/composables/useSocketIO';
 
 // Use Socket.IO instead of WebSocket
-const { connected, accounts, contacts, calls, gpioStates, sendCommand, toggleGpio } = useSocketIO();
+const { connected, accounts, contacts, calls, gpioStates, audioMeters, sendCommand, toggleGpio } = useSocketIO();
 
 // Track already-recorded call IDs to avoid duplicates
 const recordedCallIds = new Set<string>();

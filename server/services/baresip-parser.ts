@@ -714,13 +714,68 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
   }
 }
 
+/**
+ * Handle VU meter events from vumeter_stereo module.
+ * Accumulates TX and RX levels per account into a single AudioMeter update.
+ *
+ * Wire format: param = "{\"l\":-18.2,\"r\":-17.8}"
+ */
+const vuAccumulator = new Map<string, { txL: number; txR: number; rxL: number; rxR: number }>();
+
+function handleVuMeterEvent(jsonEvent: BaresipEvent, stateManager: StateManager, timestamp: number): void {
+  const accountUri = jsonEvent.accountaor;
+  if (!accountUri) return;
+
+  // Parse JSON from param — starts with '{' directly from bevent_call_emit
+  const param = jsonEvent.param || '';
+  const braceIdx = param.indexOf('{');
+  if (braceIdx < 0) return;
+  const jsonStr = param.substring(braceIdx);
+
+  let levels: { l: number; r: number };
+  try {
+    levels = JSON.parse(jsonStr);
+  } catch {
+    return;
+  }
+
+  // Get or create accumulator for this account
+  let acc = vuAccumulator.get(accountUri);
+  if (!acc) {
+    acc = { txL: -96, txR: -96, rxL: -96, rxR: -96 };
+    vuAccumulator.set(accountUri, acc);
+  }
+
+  // Update the relevant direction
+  if (jsonEvent.type === 'VU_TX_REPORT') {
+    acc.txL = levels.l;
+    acc.txR = levels.r;
+  } else {
+    acc.rxL = levels.l;
+    acc.rxR = levels.r;
+  }
+
+  // Send combined meter update
+  stateManager.updateAudioMeter({
+    accountUri,
+    txL: acc.txL,
+    txR: acc.txR,
+    rxL: acc.rxL,
+    rxR: acc.rxR,
+    timestamp
+  });
+}
+
 function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): void {
   const timestamp = Date.now();
 
-  // Add log entry (skip VU_TX_REPORT and VU_RX_REPORT to avoid clutter)
-  if (jsonEvent.type !== 'VU_TX_REPORT' && jsonEvent.type !== 'VU_RX_REPORT') {
-    stateManager.addLog('info', 'tcp-socket', `${jsonEvent.class}:${jsonEvent.type}`, undefined, jsonEvent);
+  // Handle VU meter events (high-frequency, skip logging)
+  if (jsonEvent.type === 'VU_TX_REPORT' || jsonEvent.type === 'VU_RX_REPORT') {
+    handleVuMeterEvent(jsonEvent, stateManager, timestamp);
+    return;
   }
+
+  stateManager.addLog('info', 'tcp-socket', `${jsonEvent.class}:${jsonEvent.type}`, undefined, jsonEvent);
 
   if (jsonEvent.event && jsonEvent.class === 'ua') {
     if (jsonEvent.type === 'REGISTER_OK') {

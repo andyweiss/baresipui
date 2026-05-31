@@ -1,6 +1,6 @@
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, onMounted, onUnmounted } from 'vue';
 import { io, Socket } from 'socket.io-client';
-import type { GpioState } from '~/types';
+import type { GpioState, AudioMeter } from '~/types';
 
 export const useSocketIO = () => {
     function extractNumber(uri: string): number | null {
@@ -44,6 +44,7 @@ export const useSocketIO = () => {
   const contacts = ref<any[]>([]);
   const calls = ref<any[]>([]);
   const gpioStates = ref<any[]>([]);
+  const audioMeters = reactive<Record<string, AudioMeter>>({});
 
   const connect = () => {
     socket.value = io({
@@ -124,6 +125,12 @@ export const useSocketIO = () => {
       contacts.value = data.contacts || [];
       calls.value = data.calls || [];
       gpioStates.value = data.gpioStates || [];
+      // Populate audioMeters from init data
+      if (data.audioMeters) {
+        for (const m of data.audioMeters) {
+          audioMeters[m.accountUri.toLowerCase()] = m;
+        }
+      }
       baresipConnected.value = data.baresipConnected ?? false;
       sendCommand('uastat');
     });
@@ -161,6 +168,10 @@ export const useSocketIO = () => {
       }
       // Trigger reactivity
       gpioStates.value = [...gpioStates.value];
+    });
+
+    socket.value.on('audioMeter', (data: AudioMeter) => {
+      audioMeters[data.accountUri.toLowerCase()] = data;
     });
 
     socket.value.on('error', (error: any) => {
@@ -228,6 +239,7 @@ export const useSocketIO = () => {
     contacts,
     calls,
     gpioStates,
+    audioMeters,
     sendCommand,
     toggleAutoConnect,
     toggleGpio

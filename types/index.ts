@@ -80,8 +80,10 @@ export interface CallInfo {
 
 export interface AudioMeter {
   accountUri: string;
-  inputLevel: number;  // dB
-  outputLevel: number; // dB
+  txL: number;   // dBFS (negative, e.g. -18.2)
+  txR: number;   // dBFS
+  rxL: number;   // dBFS
+  rxR: number;   // dBFS
   timestamp: number;
 }
 

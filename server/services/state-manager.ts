@@ -409,14 +409,17 @@ export class StateManager {
   }
 
   // Audio Meter Management
+  private audioMeterLastBroadcast = new Map<string, number>();
+
   updateAudioMeter(meter: AudioMeter): void {
     this.audioMeters.set(meter.accountUri, meter);
-    
-    // Broadcast audio meters (throttled, only every 100ms per account)
+
+    // Throttle broadcasts to max ~7/s per account (150ms interval)
+    // Client-side PPM smoothing interpolates between updates at 60fps
     const now = Date.now();
-    const lastUpdate = this.audioMeters.get(meter.accountUri)?.timestamp || 0;
-    
-    if (now - lastUpdate > 100) {
+    const lastBroadcast = this.audioMeterLastBroadcast.get(meter.accountUri) || 0;
+    if (now - lastBroadcast >= 150) {
+      this.audioMeterLastBroadcast.set(meter.accountUri, now);
       this.broadcast({
         type: 'audioMeter',
         data: meter
