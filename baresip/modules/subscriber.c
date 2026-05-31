@@ -441,28 +441,3 @@ void subscriber_close_all(void)
 	}
 }
 
-
-/* Get presence subscriber by contact URI */
-static struct presence *get_presence_by_contact(const char *uri)
-{
-	struct le *le;
-
-	for (le = presencel.head; le; le = le->next) {
-		struct presence *pres = le->data;
-		const char *contact_uri_str = contact_uri(pres->contact);
-
-		if (0 == str_casecmp(contact_uri_str, uri)) {
-			return pres;
-		}
-	}
-
-	return NULL;
-}
-
-
-/* Get last NOTIFY timestamp for a contact (not currently used, but kept for potential future use) */
-static time_t subscriber_get_last_notify_time(const char *uri)
-{
-	struct presence *pres = get_presence_by_contact(uri);
-	return pres ? pres->last_notify_time : 0;
-}

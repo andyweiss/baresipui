@@ -73,24 +73,12 @@ static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 	else if (ev == BEVENT_CALL_INCOMING || ev == BEVENT_CALL_ESTABLISHED) {
 		/* Set status to CLOSED (busy) when call is active */
 		
-		/* Auto-accept incoming calls
-		 * 
-		 * NOTE: This is a workaround for baresip's behavior where answermode=auto
-		 * only works for the first incoming call. When one account already has an
-		 * active call, subsequent calls to other accounts are not auto-answered.
-		 * 
-		 * We manually call call_answer() here to ensure all incoming calls are
-		 * accepted regardless of other active calls.
-		 * 
-		 * TODO: Find a more elegant solution, possibly by:
-		 * - Configuring baresip to handle multiple concurrent auto-answered calls
+		/* Auto-answer is handled by answermode=auto in the account config.
+		 * Do NOT call call_answer() here - it causes a race condition when
+		 * calling between accounts on the same baresip instance:
+		 * The manual answer triggers before the SIP proxy processes the
+		 * outgoing INVITE, causing a CANCEL and immediate call teardown.
 		 */
-		if (ev == BEVENT_CALL_INCOMING) {
-			struct call *call = bevent_get_call(event);
-			if (call) {
-				call_answer(call, 200, VIDMODE_OFF);
-			}
-		}
 		
 		ua_presence_status_set(ua, PRESENCE_CLOSED);
 		notifier_update_status(ua);
