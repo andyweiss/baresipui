@@ -2,6 +2,7 @@ import type { StateManager } from './state-manager';
 import type { BaresipEvent, BaresipCommandResponse, CallInfo } from '~/types';
 import { dtmfToGpio, gpioToDtmf } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
+import { recordRegistrationEvent, recordCallStarted, recordCallEnded } from './prometheus';
 
 // Global queue to serialize auto-connect operations
 let autoConnectQueue: Array<() => void> = [];
@@ -786,7 +787,8 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           registered: true,
           registrationError: undefined
         });
-        
+        recordRegistrationEvent(uri, 'ok');
+
         // Ensure account is in state and broadcast update
         if (account) {
           stateManager.broadcast({
@@ -816,6 +818,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           registrationError: errorStatus,
           lastRegistrationAttempt: timestamp
         });
+        recordRegistrationEvent(uri, 'fail');
         
         // Broadcast updated account data to ensure UI updates
         const account = stateManager.getAccount(uri);
@@ -895,16 +898,18 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           // New call (no prior CALL_INCOMING/CALL_OUTGOING event seen)
           // Detect direction from param field (baresip includes "incoming" in param for incoming calls)
           const isIncoming = jsonEvent.param?.toLowerCase().indexOf('incoming') !== -1;
+          const newCallDirection = isIncoming ? 'incoming' : 'outgoing';
           stateManager.addCall({
             callId: jsonEvent.id,
             localUri: uri,
             remoteUri: peerUri || 'unknown',
             peerName: peerName || peerUri?.split('@')[0]?.replace(/^sip:/, '') || 'Unknown',
             state: 'Established',
-            direction: isIncoming ? 'incoming' : 'outgoing',
+            direction: newCallDirection,
             startTime: isIncoming ? Date.now() - 1000 : Date.now(),
             answerTime: Date.now()
           });
+          recordCallStarted(uri, newCallDirection);
         }
         
         // Only set autoConnectStatus if this account has auto-connect configured
@@ -955,15 +960,17 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
           });
         } else {
           // Create new call
+          const callDirection = jsonEvent.direction || (jsonEvent.type === 'CALL_INCOMING' ? 'incoming' : 'outgoing');
           stateManager.addCall({
             callId: jsonEvent.id,
             localUri: uri,
             remoteUri: effectivePeerUri || 'unknown',
             peerName: peerName || effectivePeerUri?.split('@')[0]?.replace(/^sip:/, '') || 'Unknown',
             state: jsonEvent.type === 'CALL_RTPESTAB' ? 'Established' : 'Ringing',
-            direction: jsonEvent.direction || (jsonEvent.type === 'CALL_INCOMING' ? 'incoming' : 'outgoing'),
+            direction: callDirection,
             startTime: Date.now()
           });
+          recordCallStarted(uri, callDirection as 'incoming' | 'outgoing');
         }
         
         // Check if this is an auto-connect call
@@ -1032,12 +1039,14 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         if (jsonEvent.id) {
           const call = stateManager.getCall(jsonEvent.id);
           if (call) {
+            const durationMs = Date.now() - call.startTime;
             stateManager.updateCall(jsonEvent.id, {
               state: 'Closing',
               endTime: Date.now(),
-              duration: Date.now() - call.startTime
+              duration: durationMs
             });
-            
+            recordCallEnded(call.localUri, call.direction, durationMs);
+
             // Remove after short delay to allow UI to show final state
             setTimeout(() => {
               stateManager.removeCall(jsonEvent.id);
