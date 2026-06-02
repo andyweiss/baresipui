@@ -105,11 +105,24 @@ COPY modules/rtcpstats_cmd/CMakeLists.txt modules/rtcpstats_cmd/CMakeLists.txt
 COPY modules/vumeter_stereo/vumeter_stereo.c modules/vumeter_stereo/vumeter_stereo.c
 COPY modules/vumeter_stereo/CMakeLists.txt modules/vumeter_stereo/CMakeLists.txt
 
-# Apply any additional patches
+# Register custom modules in baresip cmake module list.
+# Uses sed so this stays robust even when baresip changes cmake/modules.cmake.
+# Idempotent: skips if modules are already listed (e.g. on rebuild).
+RUN grep -q 'vumeter_stereo' cmake/modules.cmake || \
+    sed -i '/rtcpsummary/a\  rtcpstats_cmd\n  rtcpstats_periodic\n  vumeter_stereo' cmake/modules.cmake && \
+    grep 'vumeter_stereo' cmake/modules.cmake || \
+    { echo "ERROR: could not register custom modules in cmake/modules.cmake"; exit 1; }
+
+# Apply any additional patches (baresip-add-rtcpstats-module.patch no longer needed;
+# custom module registration is handled by the sed command above)
 COPY patches/baresip-*.patch ./
 RUN for p in baresip-*.patch; do \
-    echo "=== Applying patch: $p ===" && \
-    [ -f "$p" ] && patch -p1 < "$p"; \
+    if [ -f "$p" ]; then \
+        echo "=== Applying baresip patch: $p ===" && \
+        patch -p1 < "$p" && \
+        echo "=== Patch $p applied successfully ===" || \
+        (echo "=== ERROR: Patch $p FAILED ===" && exit 1); \
+    fi \
 done
 
 # Build baresip
