@@ -41,13 +41,8 @@ services:
       - 10000-10500:10000-10500/udp
     command:
       - "/entrypoint.sh baresip -f /config 2>&1 | tee /shared-logs/baresip.log"
-    stdin_open: true
-    tty: true
-    security_opt:
-      - seccomp=unconfined
     devices:
       - /dev/snd:/dev/snd
-      - /dev/tty:/dev/tty
     group_add:
       - audio
     ulimits:
