@@ -3,7 +3,24 @@ import { stateManager } from './state-manager';
 
 export const registry = new Registry();
 
+function sipUser(uri: string): string {
+  return uri.replace(/^sip:/, '').split('@')[0] || uri;
+}
+
 // --- Gauges (populated from stateManager on each scrape) ---
+
+new Gauge({
+  name: 'baresip_account_info',
+  help: 'SIP account metadata (always 1, use group_left to join display_name)',
+  labelNames: ['account', 'display_name'] as const,
+  registers: [registry],
+  collect() {
+    this.reset();
+    for (const account of stateManager.getAccounts()) {
+      this.set({ account: sipUser(account.uri), display_name: account.displayName ?? '' }, 1);
+    }
+  }
+});
 
 new Gauge({
   name: 'baresip_account_registered',
@@ -13,7 +30,7 @@ new Gauge({
   collect() {
     this.reset();
     for (const account of stateManager.getAccounts()) {
-      this.set({ account: account.uri }, account.registered ? 1 : 0);
+      this.set({ account: sipUser(account.uri) }, account.registered ? 1 : 0);
     }
   }
 });
@@ -36,7 +53,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.jitter !== undefined) {
-        this.set({ account: call.localUri }, call.audioRxStats.jitter);
+        this.set({ account: sipUser(call.localUri) }, call.audioRxStats.jitter);
       }
     }
   }
@@ -51,7 +68,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioTxStats?.jitter !== undefined) {
-        this.set({ account: call.localUri }, call.audioTxStats.jitter);
+        this.set({ account: sipUser(call.localUri) }, call.audioTxStats.jitter);
       }
     }
   }
@@ -66,7 +83,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.rtt !== undefined) {
-        this.set({ account: call.localUri }, call.audioRxStats.rtt);
+        this.set({ account: sipUser(call.localUri) }, call.audioRxStats.rtt);
       }
     }
   }
@@ -81,7 +98,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.packetsLost !== undefined) {
-        this.set({ account: call.localUri }, call.audioRxStats.packetsLost);
+        this.set({ account: sipUser(call.localUri) }, call.audioRxStats.packetsLost);
       }
     }
   }
@@ -96,7 +113,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioTxStats?.packetsLost !== undefined) {
-        this.set({ account: call.localUri }, call.audioTxStats.packetsLost);
+        this.set({ account: sipUser(call.localUri) }, call.audioTxStats.packetsLost);
       }
     }
   }
@@ -111,7 +128,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.bitrate_kbps !== undefined) {
-        this.set({ account: call.localUri }, call.audioRxStats.bitrate_kbps);
+        this.set({ account: sipUser(call.localUri) }, call.audioRxStats.bitrate_kbps);
       }
     }
   }
@@ -126,7 +143,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioTxStats?.bitrate_kbps !== undefined) {
-        this.set({ account: call.localUri }, call.audioTxStats.bitrate_kbps);
+        this.set({ account: sipUser(call.localUri) }, call.audioTxStats.bitrate_kbps);
       }
     }
   }
@@ -141,7 +158,7 @@ new Gauge({
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.jitterBuffer?.current !== undefined) {
-        this.set({ account: call.localUri }, call.jitterBuffer.current);
+        this.set({ account: sipUser(call.localUri) }, call.jitterBuffer.current);
       }
     }
   }
@@ -150,8 +167,8 @@ new Gauge({
 // --- Counters (incremented by event handlers in baresip-parser.ts) ---
 
 const registrationCounter = new Counter({
-  name: 'baresip_registration_changes_total',
-  help: 'Total SIP registration state changes',
+  name: 'baresip_registration_updates_total',
+  help: 'Total SIP registration updates (re-registrations and state changes)',
   labelNames: ['account', 'result'] as const,
   registers: [registry]
 });
@@ -168,20 +185,20 @@ const callsCounter = new Counter({
 const callDurationHistogram = new Histogram({
   name: 'baresip_call_duration_seconds',
   help: 'SIP call duration in seconds (from call start to close)',
-  labelNames: ['account', 'direction'] as const,
+  labelNames: ['account'] as const,
   // Buckets: 1min, 5min, 30min, 1h, 4h, 12h, 1d, 3d, 1w
   buckets: [60, 300, 1800, 3600, 14400, 43200, 86400, 259200, 604800],
   registers: [registry]
 });
 
 export function recordRegistrationEvent(account: string, result: 'ok' | 'fail'): void {
-  registrationCounter.inc({ account, result });
+  registrationCounter.inc({ account: sipUser(account), result });
 }
 
 export function recordCallStarted(account: string, direction: 'incoming' | 'outgoing'): void {
-  callsCounter.inc({ account, direction });
+  callsCounter.inc({ account: sipUser(account), direction });
 }
 
-export function recordCallEnded(account: string, direction: 'incoming' | 'outgoing', durationMs: number): void {
-  callDurationHistogram.observe({ account, direction }, durationMs / 1000);
+export function recordCallEnded(account: string, _direction: string, durationMs: number): void {
+  callDurationHistogram.observe({ account: sipUser(account) }, durationMs / 1000);
 }

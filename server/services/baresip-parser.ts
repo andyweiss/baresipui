@@ -679,7 +679,7 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
         remoteUri,
         peerName: remoteUri.split('@')[0].replace('sip:', ''),
         state: callState === 'ESTABLISHED' ? 'Established' : 'Ringing',
-        direction: callDirection,
+        direction: existingCall?.direction ?? callDirection,
         startTime: existingCall?.startTime || Date.now(),
         answerTime: callState === 'ESTABLISHED' ? (existingCall?.answerTime || Date.now()) : undefined
       };
