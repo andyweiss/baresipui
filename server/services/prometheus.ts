@@ -7,7 +7,7 @@ export const registry = new Registry();
 
 new Gauge({
   name: 'baresip_account_registered',
-  help: 'SIP account registration status (1 = registered, 0 = not)',
+  help: 'SIP account registration status (1 = registered, 0 = unregistered)',
   labelNames: ['account'] as const,
   registers: [registry],
   collect() {
@@ -30,13 +30,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_jitter_rx_ms',
   help: 'RTCP receive jitter in milliseconds',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.jitter !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.audioRxStats.jitter);
+        this.set({ account: call.localUri }, call.audioRxStats.jitter);
       }
     }
   }
@@ -45,13 +45,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_jitter_tx_ms',
   help: 'RTCP transmit jitter in milliseconds',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioTxStats?.jitter !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.audioTxStats.jitter);
+        this.set({ account: call.localUri }, call.audioTxStats.jitter);
       }
     }
   }
@@ -60,13 +60,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_rtt_ms',
   help: 'RTCP round-trip time in milliseconds',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.rtt !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.audioRxStats.rtt);
+        this.set({ account: call.localUri }, call.audioRxStats.rtt);
       }
     }
   }
@@ -75,13 +75,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_lost_rx_packets',
   help: 'RTCP cumulative receive packets lost',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.packetsLost !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.audioRxStats.packetsLost);
+        this.set({ account: call.localUri }, call.audioRxStats.packetsLost);
       }
     }
   }
@@ -90,13 +90,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_lost_tx_packets',
   help: 'RTCP cumulative transmit packets lost',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioTxStats?.packetsLost !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.audioTxStats.packetsLost);
+        this.set({ account: call.localUri }, call.audioTxStats.packetsLost);
       }
     }
   }
@@ -105,13 +105,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_rx_bitrate_kbps',
   help: 'RTCP receive bitrate in kbps',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioRxStats?.bitrate_kbps !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.audioRxStats.bitrate_kbps);
+        this.set({ account: call.localUri }, call.audioRxStats.bitrate_kbps);
       }
     }
   }
@@ -120,13 +120,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_tx_bitrate_kbps',
   help: 'RTCP transmit bitrate in kbps',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.audioTxStats?.bitrate_kbps !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.audioTxStats.bitrate_kbps);
+        this.set({ account: call.localUri }, call.audioTxStats.bitrate_kbps);
       }
     }
   }
@@ -135,13 +135,13 @@ new Gauge({
 new Gauge({
   name: 'baresip_rtcp_jbuf_delay_ms',
   help: 'Jitter buffer current delay in milliseconds',
-  labelNames: ['call_id', 'account'] as const,
+  labelNames: ['account'] as const,
   registers: [registry],
   collect() {
     this.reset();
     for (const call of stateManager.getCalls()) {
       if (call.jitterBuffer?.current !== undefined) {
-        this.set({ call_id: call.callId, account: call.localUri }, call.jitterBuffer.current);
+        this.set({ account: call.localUri }, call.jitterBuffer.current);
       }
     }
   }
