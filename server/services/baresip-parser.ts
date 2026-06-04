@@ -2,7 +2,7 @@ import type { StateManager } from './state-manager';
 import type { BaresipEvent, BaresipCommandResponse, CallInfo } from '~/types';
 import { dtmfToGpio, gpioToDtmf } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
-import { recordRegistrationEvent, recordCallStarted, recordCallEnded } from './prometheus';
+import { recordRegistrationEvent, recordCallStarted, recordCallEnded, recordAlsaError } from './prometheus';
 
 // Global queue to serialize auto-connect operations
 let autoConnectQueue: Array<() => void> = [];
@@ -909,7 +909,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
             startTime: isIncoming ? Date.now() - 1000 : Date.now(),
             answerTime: Date.now()
           });
-          recordCallStarted(uri, newCallDirection);
+          recordCallStarted(uri, newCallDirection, peerUri || '');
         }
         
         // Only set autoConnectStatus if this account has auto-connect configured
@@ -970,7 +970,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
             direction: callDirection,
             startTime: Date.now()
           });
-          recordCallStarted(uri, callDirection as 'incoming' | 'outgoing');
+          recordCallStarted(uri, callDirection, effectivePeerUri || '');
         }
         
         // Check if this is an auto-connect call
@@ -1045,7 +1045,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
               endTime: Date.now(),
               duration: durationMs
             });
-            recordCallEnded(call.localUri, call.direction, durationMs);
+            recordCallEnded(call.localUri, call.direction, durationMs, call.remoteUri);
 
             // Remove after short delay to allow UI to show final state
             setTimeout(() => {
@@ -1276,6 +1276,10 @@ function handleTextLine(line: string, stateManager: StateManager): void {
   // Create a log entry from text line (stored via addLog, sent only to log subscribers)
   const logEntry = createLogEntryFromLine(line, timestamp);
   stateManager.addLog(logEntry.level || 'info', logEntry.source || 'baresip', logEntry.message, logEntry.accountUri);
+
+  if (logEntry.source === 'alsa' && logEntry.level === 'error') {
+    recordAlsaError(logEntry.message);
+  }
 
   // Text-based presence parsing (from baresip modules that don't use JSON events)
   // PRESENCE_EVENT is handled above; these catch other text-format presence lines
