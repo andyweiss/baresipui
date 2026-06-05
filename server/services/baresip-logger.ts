@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
-import { stat, rename, unlink } from 'fs/promises';
+import { stat, copyFile, truncate } from 'fs/promises';
 import type { StateManager } from './state-manager';
 import type { LogEntry } from '~/types';
 
@@ -7,8 +7,7 @@ import type { LogEntry } from '~/types';
 export type { LogEntry };
 
 const LOG_FILE = process.env.BARESIP_LOG_FILE || '/shared-logs/baresip.log';
-const LOG_MAX_SIZE = 100 * 1024 * 1024; // 100 MB
-const LOG_MAX_FILES = 5;
+const LOG_MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 const LOG_ROTATION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 export class BaresipLogger {
@@ -18,7 +17,7 @@ export class BaresipLogger {
   private maxBufferSize = 1000;
   private pendingLogLine = ''; // Buffer for multi-line logs
   private flushTimer: NodeJS.Timeout | null = null; // Timer for flushing pending logs
-  private rotationTimer: NodeJS.Timeout | null = null;
+  private rotationTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(stateManager: StateManager) {
     this.stateManager = stateManager;
@@ -26,8 +25,6 @@ export class BaresipLogger {
 
   start(): void {
     try {
-      // Read baresip container logs from shared volume file using tail -F
-      // -F follows by name (handles rotation/truncate), -n 100 shows last 100 lines
       this.logProcess = spawn('tail', ['-F', '-n', '100', LOG_FILE], {
         stdio: ['ignore', 'pipe', 'pipe']
       });
@@ -55,7 +52,7 @@ export class BaresipLogger {
         }
       });
 
-      this.addAndBroadcast('info', 'system', `Started monitoring log file: ${LOG_FILE}`);
+      this.addAndBroadcast('info', 'system', `Monitoring ${LOG_FILE}`);
 
       // Start periodic log rotation check
       this.rotationTimer = setInterval(() => {
@@ -337,38 +334,19 @@ export class BaresipLogger {
     this.addAndBroadcast(level, source, message, accountUri);
   }
 
-  /**
-   * Log rotation: rotate baresip.log when it exceeds LOG_MAX_SIZE.
-   * Keeps up to LOG_MAX_FILES rotated files (baresip.log.1 through baresip.log.5).
-   * tail -F follows by name and handles rotation automatically.
-   */
   private async rotateIfNeeded(): Promise<void> {
     try {
       const stats = await stat(LOG_FILE);
       if (stats.size < LOG_MAX_SIZE) return;
 
-      console.log(`Log rotation: ${LOG_FILE} is ${(stats.size / 1024 / 1024).toFixed(1)} MB, rotating...`);
+      const sizeMB = (stats.size / 1024 / 1024).toFixed(1);
+      // copytruncate: copy first, then truncate the original to 0.
+      // tee keeps writing to the same inode — no interruption.
+      await copyFile(LOG_FILE, `${LOG_FILE}.1`);
+      await truncate(LOG_FILE, 0);
 
-      // Delete oldest file if it exists
-      const oldestFile = `${LOG_FILE}.${LOG_MAX_FILES}`;
-      try { await unlink(oldestFile); } catch {}
-
-      // Shift existing rotated files: .4 -> .5, .3 -> .4, etc.
-      for (let i = LOG_MAX_FILES - 1; i >= 1; i--) {
-        const src = `${LOG_FILE}.${i}`;
-        const dst = `${LOG_FILE}.${i + 1}`;
-        try { await rename(src, dst); } catch {}
-      }
-
-      // Rotate current file: baresip.log -> baresip.log.1
-      await rename(LOG_FILE, `${LOG_FILE}.1`);
-
-      // The tee process in the baresip container will recreate baresip.log automatically
-      // tail -F will detect the new file and continue following it
-
-      this.addAndBroadcast('info', 'system', `Log file rotated (was ${(stats.size / 1024 / 1024).toFixed(1)} MB)`);
+      this.addAndBroadcast('info', 'system', `Log rotated (was ${sizeMB} MB)`);
     } catch (err: any) {
-      // File might not exist yet (container not started)
       if (err.code !== 'ENOENT') {
         console.error('Log rotation error:', err.message);
       }
