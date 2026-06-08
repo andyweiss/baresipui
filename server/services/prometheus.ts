@@ -202,11 +202,11 @@ export function recordRegistrationEvent(account: string, result: 'ok' | 'fail'):
   registrationCounter.inc({ account: sipUser(account), result });
 }
 
-export function recordCallStarted(account: string, _direction: string, remoteUri: string): void {
+export function recordCallStarted(account: string, remoteUri: string): void {
   callsCounter.inc({ account: sipUser(account), remote: sipUser(remoteUri) });
 }
 
-export function recordCallEnded(account: string, _direction: string, durationMs: number, remoteUri: string): void {
+export function recordCallEnded(account: string, durationMs: number, remoteUri: string): void {
   callDurationHistogram.observe({ account: sipUser(account), remote: sipUser(remoteUri) }, durationMs / 1000);
 }
 

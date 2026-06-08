@@ -1,5 +1,6 @@
 import type { Account, Contact, ContactConfig, CallInfo, AudioMeter, LogEntry, GpioState } from '~/types';
 import { createDefaultGpioState } from '~/types';
+import { accountSortFn } from '~/utils/account-sorting';
 
 export class StateManager {
   private accounts = new Map<string, Account>();
@@ -41,29 +42,7 @@ export class StateManager {
     // 1. Clone accounts (autoConnectContact stays as stored)
     const accounts = Array.from(this.accounts.values()).map(acc => ({ ...acc }));
 
-    // 2. Stable sort: numeric by SIP number, then lexicographic by URI
-    function extractNumber(uri: string): number | null {
-      if (!uri) return null;
-      const match = uri.replace(/^sip:/, '').match(/(\d+)/);
-      if (match) {
-        const n = parseInt(match[1].replace(/^0+/, ''), 10);
-        return isNaN(n) ? null : n;
-      }
-      return null;
-    }
-    accounts.sort((a, b) => {
-      const nA = extractNumber(a.uri);
-      const nB = extractNumber(b.uri);
-      if (nA !== null && nB !== null) {
-        if (nA !== nB) return nA - nB;
-        return (a.uri || '').localeCompare(b.uri || '');
-      } else if (nA !== null) {
-        return -1;
-      } else if (nB !== null) {
-        return 1;
-      }
-      return (a.uri || '').localeCompare(b.uri || '');
-    });
+    accounts.sort(accountSortFn);
     return accounts;
   }
 

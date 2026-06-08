@@ -206,11 +206,6 @@ export class BaresipLogger {
       return;
     }
     
-    // Skip rtcpstats_periodic (handled via TCP socket)
-    if (line.includes('rtcpstats_periodic:') && line.includes('call_id=')) {
-      return;
-    }
-    
     const entry = this.parseLogLine(line, stream);
     
     // Skip entries with empty messages

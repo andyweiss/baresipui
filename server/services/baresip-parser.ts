@@ -170,9 +170,7 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
       }
     }
     
-    if (typeof stateManager.setBaresipInfo === 'function') {
-      stateManager.setBaresipInfo({ version, uptime, started });
-    }
+    stateManager.setBaresipInfo({ version, uptime, started });
   }
 }
 
@@ -879,12 +877,11 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         // Check if call already exists (e.g. from CALL_INCOMING/CALL_OUTGOING event)
         const existingCall = stateManager.getCall(jsonEvent.id);
         
-        // For outgoing calls: baresip sometimes sends the local contact URI as peeruri.
-        // If we already have a valid remoteUri from CALL_OUTGOING, keep it.
-        const isOutgoingCall = existingCall?.direction === 'outgoing';
-        const peerUri = (isOutgoingCall && existingCall?.remoteUri)
+        // For outgoing calls baresip sometimes sends the local contact URI as peeruri —
+        // keep the remoteUri we already captured from CALL_OUTGOING.
+        const peerUri = existingCall?.direction === 'outgoing' && existingCall.remoteUri
           ? existingCall.remoteUri
-          : (rawPeerUri || existingCall?.remoteUri);
+          : rawPeerUri || existingCall?.remoteUri;
         
         if (existingCall) {
           // Merge: update existing call, preserve direction and startTime
@@ -909,7 +906,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
             startTime: isIncoming ? Date.now() - 1000 : Date.now(),
             answerTime: Date.now()
           });
-          recordCallStarted(uri, newCallDirection, peerUri || '');
+          recordCallStarted(uri, peerUri || '');
         }
         
         // Only set autoConnectStatus if this account has auto-connect configured
@@ -970,7 +967,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
             direction: callDirection,
             startTime: Date.now()
           });
-          recordCallStarted(uri, callDirection, effectivePeerUri || '');
+          recordCallStarted(uri, effectivePeerUri || '');
         }
         
         // Check if this is an auto-connect call
@@ -1045,7 +1042,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
               endTime: Date.now(),
               duration: durationMs
             });
-            recordCallEnded(call.localUri, call.direction, durationMs, call.remoteUri);
+            recordCallEnded(call.localUri, durationMs, call.remoteUri);
 
             // Remove after short delay to allow UI to show final state
             setTimeout(() => {
@@ -1133,11 +1130,6 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
   }
 }
 
-// parseRtcpSummaryLine — REMOVED
-// rtcpstats_periodic text log lines are not used for state updates.
-// All RTCP stats come via the getrtcpstats command response
-// (parsed in handleCommandResponse → parseGetRtcpStatsResponse).
-
 /**
  * Creates a LogEntry object from a text line
  */
@@ -1213,64 +1205,8 @@ function handleTextLine(line: string, stateManager: StateManager): void {
 
   // RTCP stats are handled via getrtcpstats command responses (not text lines).
   // Skip rtcp-related text lines to avoid false-positive parsing.
-  if (line.includes('RTCP_STATS:') || line.includes('rtcpstats_cmd:') || line.includes('rtcpstats_periodic:')) {
+  if (line.includes('RTCP_STATS:') || line.includes('rtcpstats_cmd:')) {
     return;
-  }
-
-  // Handle PRESENCE_EVENT messages from enhanced_presence module
-  // Handles both JSON format: PRESENCE_EVENT: {"contact":"sip:user@domain","status":"online"}
-  // and colon-delimited format: PRESENCE_EVENT:sip:user@domain:online
-  if (line.indexOf('PRESENCE_EVENT:') !== -1) {
-    let contact: string | null = null;
-    let mappedStatus = 'unknown';
-    
-    // Try JSON format first
-    const jsonStart = line.indexOf('{');
-    if (jsonStart !== -1) {
-      try {
-        const presenceEvent = JSON.parse(line.substring(jsonStart));
-        if (presenceEvent.contact && presenceEvent.status) {
-          contact = presenceEvent.contact;
-          if (!contact!.startsWith('sip:')) contact = 'sip:' + contact;
-          contact = contact!.toLowerCase().trim();
-          const status = presenceEvent.status.toLowerCase().trim();
-          if (status === 'online' || status === 'open') mappedStatus = 'online';
-          else if (status === 'offline' || status === 'closed') mappedStatus = 'offline';
-          else if (status === 'busy') mappedStatus = 'busy';
-          else if (status === 'away') mappedStatus = 'away';
-        }
-      } catch (e) { /* ignore JSON parse errors */ }
-    }
-    
-    // Fallback: colon-delimited format PRESENCE_EVENT:sip:user@domain:status
-    // Can't use simple split(':') because sip: contains a colon
-    if (!contact) {
-      const eventMatch = line.match(/PRESENCE_EVENT:\s*(sip:[^@]+@[^:]+):(\w+)/i);
-      if (eventMatch) {
-        contact = eventMatch[1].toLowerCase().trim();
-        const status = eventMatch[2].toLowerCase().trim();
-        if (status === 'online' || status === 'open') mappedStatus = 'online';
-        else if (status === 'offline' || status === 'closed') mappedStatus = 'offline';
-        else if (status === 'busy') mappedStatus = 'busy';
-        else if (status === 'away') mappedStatus = 'away';
-      }
-    }
-    
-    if (contact) {
-      stateManager.setContactPresence(contact, mappedStatus, true);
-
-      stateManager.broadcast({
-        type: 'presence',
-        timestamp,
-        contact,
-        status: mappedStatus
-      });
-
-      if (mappedStatus === 'online') {
-        checkAutoConnectForContact(contact, stateManager);
-      }
-    }
-    return; // Don't process PRESENCE_EVENT lines further (prevents double-processing & spurious account creation)
   }
 
   // Create a log entry from text line (stored via addLog, sent only to log subscribers)

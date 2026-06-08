@@ -85,18 +85,6 @@ COPY modules/ modules/presence/
 # Remove rtcpstats_cmd from presence dir (copied along as subdirectory, but is a separate module)
 RUN rm -rf modules/presence/rtcpstats_cmd modules/presence/vumeter_stereo
 
-# Copy rtcpstats_periodic module
-COPY rtcpstats_periodic.c modules/rtcpstats_periodic/module.c
-RUN echo 'project(rtcpstats_periodic)\n\
-list(APPEND MODULES_DETECTED ${PROJECT_NAME})\n\
-set(MODULES_DETECTED ${MODULES_DETECTED} PARENT_SCOPE)\n\
-set(SRCS module.c)\n\
-if(STATIC)\n\
-  add_library(${PROJECT_NAME} OBJECT ${SRCS})\n\
-else()\n\
-  add_library(${PROJECT_NAME} MODULE ${SRCS})\n\
-endif()' > modules/rtcpstats_periodic/CMakeLists.txt
-
 # Copy rtcpstats_cmd module (was nested inside presence/, needs its own top-level dir)
 COPY modules/rtcpstats_cmd/rtcpstats_cmd.c modules/rtcpstats_cmd/rtcpstats_cmd.c
 COPY modules/rtcpstats_cmd/CMakeLists.txt modules/rtcpstats_cmd/CMakeLists.txt
@@ -109,7 +97,7 @@ COPY modules/vumeter_stereo/CMakeLists.txt modules/vumeter_stereo/CMakeLists.txt
 # Uses sed so this stays robust even when baresip changes cmake/modules.cmake.
 # Idempotent: skips if modules are already listed (e.g. on rebuild).
 RUN grep -q 'vumeter_stereo' cmake/modules.cmake || \
-    sed -i '/rtcpsummary/a\  rtcpstats_cmd\n  rtcpstats_periodic\n  vumeter_stereo' cmake/modules.cmake && \
+    sed -i '/rtcpsummary/a\  rtcpstats_cmd\n  vumeter_stereo' cmake/modules.cmake && \
     grep 'vumeter_stereo' cmake/modules.cmake || \
     { echo "ERROR: could not register custom modules in cmake/modules.cmake"; exit 1; }
 

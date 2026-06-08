@@ -1,31 +1,9 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue';
 import { io, Socket } from 'socket.io-client';
 import type { GpioState, AudioMeter } from '~/types';
+import { accountSortFn } from '~/utils/account-sorting';
 
 export const useSocketIO = () => {
-    function extractNumber(uri: string): number | null {
-      if (!uri) return null;
-      const match = uri.replace(/^sip:/, '').match(/(\d+)/);
-      if (match) {
-        const n = parseInt(match[1].replace(/^0+/, ''), 10);
-        return isNaN(n) ? null : n;
-      }
-      return null;
-    }
-    function accountSortFn(a: any, b: any) {
-      const nA = extractNumber(a.uri);
-      const nB = extractNumber(b.uri);
-      if (nA !== null && nB !== null) {
-        if (nA !== nB) return nA - nB;
-        return (a.uri || '').localeCompare(b.uri || '');
-      } else if (nA !== null) {
-        return -1;
-      } else if (nB !== null) {
-        return 1;
-      }
-      return (a.uri || '').localeCompare(b.uri || '');
-    }
-
     function mergeAndSortAccounts(incoming: any[]) {
       for (const acc of incoming) {
         const idx = accounts.value.findIndex(a => a.uri === acc.uri);
