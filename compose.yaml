@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
-      - shared-logs:/shared-logs:ro
+      - shared-logs:/shared-logs
     networks:
       - baresip-network
     healthcheck:
