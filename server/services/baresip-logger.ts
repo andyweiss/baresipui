@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { stat, copyFile, truncate } from 'fs/promises';
 import type { StateManager } from './state-manager';
 import type { LogEntry } from '~/types';
+import { recordAlsaError } from './prometheus';
 
 // Re-export LogEntry so existing imports still work
 export type { LogEntry };
@@ -207,12 +208,21 @@ export class BaresipLogger {
     }
     
     const entry = this.parseLogLine(line, stream);
-    
+
     // Skip entries with empty messages
     if (!entry.message || entry.message.length < 2) {
       return;
     }
-    
+
+    // Detect ALSA errors — check both parsed fields and raw line for ALSA context
+    const rawLower = line.toLowerCase();
+    const msgLower = entry.message.toLowerCase();
+    const hasAlsa = entry.source.toLowerCase() === 'alsa' || msgLower.includes('alsa') || rawLower.includes('alsa');
+    const isAlsaError = entry.level === 'error' || msgLower.includes('could not open') || rawLower.includes('could not open');
+    if (hasAlsa && isAlsaError) {
+      recordAlsaError(entry.message);
+    }
+
     // Store in local buffer for historical retrieval
     this.logBuffer.push(entry);
     if (this.logBuffer.length > this.maxBufferSize) {

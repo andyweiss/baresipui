@@ -1213,7 +1213,10 @@ function handleTextLine(line: string, stateManager: StateManager): void {
   const logEntry = createLogEntryFromLine(line, timestamp);
   stateManager.addLog(logEntry.level || 'info', logEntry.source || 'baresip', logEntry.message, logEntry.accountUri);
 
-  if (logEntry.source === 'alsa' && logEntry.level === 'error') {
+  const isAlsaSource = logEntry.source.toLowerCase() === 'alsa';
+  const messageHasAlsa = logEntry.message.toLowerCase().includes('alsa');
+  const isAlsaError = logEntry.level === 'error' || logEntry.message.includes('could not open');
+  if ((isAlsaSource || messageHasAlsa) && isAlsaError) {
     recordAlsaError(logEntry.message);
   }
 
