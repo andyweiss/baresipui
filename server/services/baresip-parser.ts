@@ -1035,7 +1035,7 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
         // Remove call from tracking
         if (jsonEvent.id) {
           const call = stateManager.getCall(jsonEvent.id);
-          if (call) {
+          if (call && call.state !== 'Closing') {
             const durationMs = Date.now() - call.startTime;
             stateManager.updateCall(jsonEvent.id, {
               state: 'Closing',
