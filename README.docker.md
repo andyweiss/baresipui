@@ -56,6 +56,7 @@ docker compose -f compose.build-from-source.yaml up -d
 - **Dashboard**: http://localhost:3000
 - **Logs**: http://localhost:3000/baresip-logs
 - **Health**: http://localhost:3000/api/health
+- **Metrics**: http://localhost:3000/Metrics
 
 ## Features
 
@@ -65,9 +66,10 @@ docker compose -f compose.build-from-source.yaml up -d
 - Call status (Idle/Ringing/In Call) with error details
 - Auto-connect contact assignment per account
 - Call and Hangup buttons with dial modal
-- Call statistics (codec, jitter, packet loss, bitrate) via info button (planned)
-- Audio level meters (VU) per active call (planned)
+- Call statistics (codec, jitter, packet loss, bitrate) via info button
+- Audio level meters (PPM) per active call 
 - Connection line visualization for active calls
+- Prometheus Metrics 
 
 ### Live Log Viewer
 - Combined log stream from container stdout and TCP socket events

@@ -32,12 +32,10 @@ export class BaresipConnection {
     // Load auto-connect config before connecting
     const configManager = getAutoConnectConfigManager();
     await configManager.load();
-    console.log('Auto-connect config loaded');
 
     this.client = new net.Socket();
 
     this.client.connect(this.port, this.host, () => {
-      console.log(`Connected to Baresip at ${this.host}:${this.port}`);
       this.reconnectAttempts = 0;
       stateManager.setBaresipConnected(true);
 
@@ -115,7 +113,6 @@ export class BaresipConnection {
     });
 
     this.client.on('close', () => {
-      console.log('Baresip connection closed');
       stateManager.setBaresipConnected(false);
       
       // Log TCP disconnect
@@ -223,12 +220,9 @@ export class BaresipConnection {
   private applySavedConfigs(): void {
     const configManager = getAutoConnectConfigManager();
     const allConfigs = configManager.getAllConfigs();
-    console.log('Applying saved auto-connect configs...');
     for (const [accountUri, config] of Object.entries(allConfigs.accounts)) {
       let account = stateManager.getAccount(accountUri);
       if (!account) {
-        // Account no longer exists in baresip — remove stale entry from config
-        console.log(`Removing stale auto-connect config for unknown account: ${accountUri}`);
         configManager.removeAccount(accountUri).catch(() => {});
         continue;
       }
@@ -236,7 +230,6 @@ export class BaresipConnection {
         account.autoConnectContact = config.autoConnectContact;
       }
       stateManager.setAccount(accountUri, account);
-      console.log(`Applied config for ${accountUri}: contact=${config.autoConnectContact}, enabled=${config.enabled}`);
       // Broadcast account update
       stateManager.broadcast({
         type: 'accountStatus',
@@ -277,8 +270,6 @@ export class BaresipConnection {
           // Logger might not be available
         }
       }
-    } else {
-      console.log(`Cannot send command - client not connected: ${command}`);
     }
   }
 
@@ -290,8 +281,6 @@ export class BaresipConnection {
 
     const delay = this.BASE_RECONNECT_DELAY * Math.pow(2, this.reconnectAttempts);
     this.reconnectAttempts++;
-
-    console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     setTimeout(() => this.connect(), delay);
   }
 

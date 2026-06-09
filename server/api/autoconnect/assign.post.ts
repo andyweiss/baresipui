@@ -26,8 +26,6 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  console.log(`Assigning contact ${contact || 'none'} to account ${account}`);
-
   const configManager = getAutoConnectConfigManager();
 
   // Get account
@@ -52,19 +50,13 @@ export default defineEventHandler(async (event) => {
   
   stateManager.setAccount(account, accountData);
 
-  console.log(`Broadcasting account update for ${account}:`, accountData);
-
   // Broadcast update
   stateManager.broadcast({
     type: 'accountStatus',
     data: accountData
   });
 
-  console.log(`Contact ${contact || 'none'} assigned to account ${account}`);
-
-  // Trigger auto-connect check immediately if a contact was assigned
   if (contact) {
-    console.log(`Triggering auto-connect check for newly assigned account ${account}`);
     checkAutoConnectForAccount(account, stateManager);
   }
 

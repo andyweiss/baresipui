@@ -6,10 +6,6 @@ import { setBaresipLogger } from '../utils/logger';
 export default defineNitroPlugin((nitroApp) => {
   const config = useRuntimeConfig();
 
-  console.log('Initializing Baresip connection...');
-  console.log(`Baresip host: ${config.baresipHost}`);
-  console.log(`Baresip port: ${config.baresipPort}`);
-
   const connection = getBaresipConnection(
     config.baresipHost,
     parseInt(config.baresipPort as string)
@@ -23,6 +19,4 @@ export default defineNitroPlugin((nitroApp) => {
   
   // Start streaming logs from shared volume
   baresipLogger.start();
-
-  console.log('Baresip plugin initialized with logger');
 });

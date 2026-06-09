@@ -22,10 +22,8 @@ export class AutoConnectConfigManager {
     try {
       const data = await fs.readFile(this.configPath, 'utf-8');
       this.config = JSON.parse(data);
-      console.log(`Loaded auto-connect config from ${this.configPath}:`, this.config);
     } catch (err: any) {
       if (err.code === 'ENOENT') {
-        console.log(`Auto-connect config file not found, creating new one at ${this.configPath}`);
         this.config = { accounts: {} };
         await this.save();
       } else {
@@ -40,7 +38,6 @@ export class AutoConnectConfigManager {
       const dir = path.dirname(this.configPath);
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2), 'utf-8');
-      console.log(`Saved auto-connect config to ${this.configPath}`);
     } catch (err) {
       console.error(`Failed to save auto-connect config:`, err);
     }

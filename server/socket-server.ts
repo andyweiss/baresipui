@@ -6,12 +6,9 @@ let isInitialized = false;
 
 export function initSocketIO(httpServer: any) {
   if (isInitialized) {
-    console.log('⚠️ Socket.IO already initialized');
     return io;
   }
 
-  console.log('🚀 Initializing Socket.IO on Nuxt HTTP server...');
-  
   io = new SocketIOServer(httpServer, {
     cors: {
       origin: '*',
@@ -24,19 +21,13 @@ export function initSocketIO(httpServer: any) {
   });
 
   io.on('connection', (socket) => {
-    console.log('✅ Socket.IO: Client connected:', socket.id);
-    
-    // Send initial data
     const initData = stateManager.getInitData();
-    
     socket.emit('message', initData);
-    console.log('📤 Socket.IO: Sent init data to client:', socket.id);
 
     // Store socket for broadcasting
     stateManager.addSocketClient(socket);
 
-    socket.on('disconnect', (reason) => {
-      console.log('❌ Socket.IO: Client disconnected:', socket.id, 'Reason:', reason);
+    socket.on('disconnect', (_reason) => {
       stateManager.removeSocketClient(socket);
     });
 
@@ -44,9 +35,7 @@ export function initSocketIO(httpServer: any) {
       console.error('❌ Socket.IO: Socket error:', socket.id, error);
     });
 
-    socket.on('command', async (data) => {
-      console.log('📨 Socket.IO: Received command from client:', data);
-    });
+    socket.on('command', async (_data) => {});
   });
 
   io.engine.on('connection_error', (err) => {
@@ -54,8 +43,6 @@ export function initSocketIO(httpServer: any) {
   });
 
   isInitialized = true;
-  console.log('✅ Socket.IO initialized on Nuxt port (same as HTTP server)');
-  
   return io;
 }
 

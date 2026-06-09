@@ -26,8 +26,6 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  console.log(`Received command from frontend: ${command}${params ? ' with params: ' + params : ''}`);
-
   try {
     const config = useRuntimeConfig();
     const connection = getBaresipConnection(config.baresipHost, parseInt(config.baresipPort));
@@ -70,7 +68,6 @@ export default defineEventHandler(async (event) => {
       // Guard: only send hangup if account actually has an active call
       const account = stateManager.getAccount(accountUri);
       if (!account || (account.callStatus !== 'In Call' && account.callStatus !== 'Ringing')) {
-        console.log(`Hangup ignored for ${accountUri}: no active call (status: ${account?.callStatus || 'unknown'})`);
         return { success: true, command, params, timestamp: Date.now(), ignored: true, reason: 'no active call' };
       }
       // Use serialized command sequence to prevent uafind race conditions

@@ -22,7 +22,6 @@ function initSocketIO(httpServer: any) {
   });
 
   io.on('connection', (socket) => {
-    console.log(`Socket.IO: client connected (${socket.id})`);
     // Send both dedicated 'init' event AND wrapped 'message' for compatibility
     const initData = stateManager.getInitData();
     socket.emit('init', initData);
@@ -30,8 +29,7 @@ function initSocketIO(httpServer: any) {
     // Store socket for broadcasting
     stateManager.addSocketClient(socket);
 
-    socket.on('disconnect', (reason) => {
-      console.log(`Socket.IO: client disconnected (${socket.id}), reason: ${reason}`);
+    socket.on('disconnect', (_reason) => {
       stateManager.removeSocketClient(socket);
     });
 
@@ -74,8 +72,6 @@ function initSocketIO(httpServer: any) {
   io.engine.on('connection_error', (err) => {
     console.error('Socket.IO Engine: Connection error:', err);
   });
-
-  console.log('Socket.IO: server initialized');
 
   // Give stateManager access to io for room-based broadcasting
   stateManager.setIO(io);

@@ -87,7 +87,6 @@ export class StateManager {
   setBaresipConnected(connected: boolean): void {
     if (this.baresipConnected !== connected) {
       this.baresipConnected = connected;
-      console.log(`🔌 Baresip connection status changed: ${connected ? 'CONNECTED' : 'DISCONNECTED'}`);
       this.broadcast({
         type: 'baresipStatus',
         data: { connected }
@@ -322,8 +321,6 @@ export class StateManager {
   // Call Management
   addCall(call: CallInfo): void {
     this.activeCalls.set(call.callId, call);
-    console.log(`📞 Call added: ${call.callId} (${call.localUri} -> ${call.remoteUri})`);
-    
     this.broadcast({
       type: 'callAdded',
       data: call
@@ -365,8 +362,6 @@ export class StateManager {
     const call = this.activeCalls.get(callId);
     if (call) {
       this.activeCalls.delete(callId);
-      console.log(`📞 Call removed: ${callId}`);
-      
       this.broadcast({
         type: 'callRemoved',
         data: { callId, call }
