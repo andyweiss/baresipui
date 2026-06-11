@@ -187,6 +187,12 @@ const alsaErrorCounter = new Counter({
   registers: [registry]
 });
 
+const jbufDropCounter = new Counter({
+  name: 'baresip_jbuf_drops_total',
+  help: 'Total jitter buffer frame drops (old frames discarded due to overflow)',
+  registers: [registry]
+});
+
 // --- Histogram (observed when a call ends) ---
 
 const callDurationHistogram = new Histogram({
@@ -208,6 +214,10 @@ export function recordCallStarted(account: string, remoteUri: string): void {
 
 export function recordCallEnded(account: string, durationMs: number, remoteUri: string): void {
   callDurationHistogram.observe({ account: sipUser(account), remote: sipUser(remoteUri) }, durationMs / 1000);
+}
+
+export function recordJbufDrop(): void {
+  jbufDropCounter.inc();
 }
 
 export function recordAlsaError(message: string): void {

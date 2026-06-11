@@ -2,7 +2,7 @@ import type { StateManager } from './state-manager';
 import type { BaresipEvent, BaresipCommandResponse, CallInfo } from '~/types';
 import { dtmfToGpio, gpioToDtmf } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
-import { recordRegistrationEvent, recordCallStarted, recordCallEnded, recordAlsaError } from './prometheus';
+import { recordRegistrationEvent, recordCallStarted, recordCallEnded, recordAlsaError, recordJbufDrop } from './prometheus';
 
 // Global queue to serialize auto-connect operations
 let autoConnectQueue: Array<() => void> = [];
@@ -1218,6 +1218,10 @@ function handleTextLine(line: string, stateManager: StateManager): void {
   const isAlsaError = logEntry.level === 'error' || logEntry.message.includes('could not open');
   if ((isAlsaSource || messageHasAlsa) && isAlsaError) {
     recordAlsaError(logEntry.message);
+  }
+
+  if (logEntry.source === 'jbuf' && logEntry.message.includes('drop') && logEntry.message.includes('old frame')) {
+    recordJbufDrop();
   }
 
   // Text-based presence parsing (from baresip modules that don't use JSON events)
