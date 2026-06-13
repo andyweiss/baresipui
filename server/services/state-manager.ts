@@ -441,6 +441,21 @@ export class StateManager {
   getAllGpioStates(): GpioState[] {
     return Array.from(this.gpioStates.values());
   }
+
+  // --- Jitter buffer drop broadcasting (batched) ---
+  private jbufDropBuffer = 0;
+  private jbufDropBroadcastTimer: any = null;
+
+  notifyJbufDrop(): void {
+    this.jbufDropBuffer++;
+    if (!this.jbufDropBroadcastTimer) {
+      this.jbufDropBroadcastTimer = setTimeout(() => {
+        this.broadcast({ type: 'jbufDrops', count: this.jbufDropBuffer });
+        this.jbufDropBuffer = 0;
+        this.jbufDropBroadcastTimer = null;
+      }, 1000);
+    }
+  }
 }
 
 export const stateManager = new StateManager();

@@ -155,7 +155,16 @@
 
       <!-- Settings Tab -->
       <section v-show="activeTab === 'settings'">
-        <SettingsPanel ref="settingsPanelRef" :reloadConfig="reloadConfig" :sendCommand="sendCommand" />
+        <SettingsPanel
+          ref="settingsPanelRef"
+          :reloadConfig="reloadConfig"
+          :sendCommand="sendCommand"
+          :restartAllCalls="restartAllCalls"
+          :isRestartingCalls="isRestartingCalls"
+          v-model:autoRestartOnJbuf="autoRestartOnJbuf"
+          v-model:jbufThreshold="jbufThreshold"
+          :jbufDropRate="jbufDropRate"
+        />
       </section>
     </main>
   </div>
@@ -165,7 +174,68 @@
 import { useSocketIO } from '@/composables/useSocketIO';
 
 // Use Socket.IO instead of WebSocket
-const { connected, accounts, contacts, calls, gpioStates, audioMeters, sendCommand, toggleGpio } = useSocketIO();
+const { connected, accounts, contacts, calls, gpioStates, audioMeters, jbufDropRate, sendCommand, toggleGpio } = useSocketIO();
+
+// --- Jitter-buffer auto-restart settings (persisted in localStorage) ---
+const autoRestartOnJbuf = ref(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('autoRestartOnJbuf') === 'true' : false
+);
+const jbufThreshold = ref(
+  typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('jbufThreshold') || '20', 10) : 20
+);
+watch(autoRestartOnJbuf, v => localStorage.setItem('autoRestartOnJbuf', String(v)));
+watch(jbufThreshold, v => localStorage.setItem('jbufThreshold', String(v)));
+
+let lastAutoRestartTime = 0;
+watch(jbufDropRate, rate => {
+  if (
+    autoRestartOnJbuf.value &&
+    rate >= jbufThreshold.value &&
+    !isRestartingCalls.value &&
+    calls.value.some(c => c.direction === 'outgoing' && c.state !== 'Closing') &&
+    Date.now() - lastAutoRestartTime > 30_000
+  ) {
+    lastAutoRestartTime = Date.now();
+    restartAllCalls();
+  }
+});
+
+const isRestartingCalls = ref(false);
+
+const restartAllCalls = async () => {
+  if (isRestartingCalls.value) return;
+  isRestartingCalls.value = true;
+  try {
+    const outgoingToRedial = calls.value
+      .filter(c => c.direction === 'outgoing' && c.state !== 'Closing')
+      .map(c => ({ accountUri: c.localUri, remoteUri: c.remoteUri, displayName: c.peerName }));
+
+    const callIdsToWatch = new Set<string>(
+      calls.value.filter(c => c.state !== 'Closing').map(c => c.callId)
+    );
+
+    const activeAccountUris = [...new Set<string>(
+      calls.value.filter(c => c.state !== 'Closing').map(c => c.localUri)
+    )];
+
+    await Promise.all(activeAccountUris.map(uri => handleHangup(uri)));
+
+    if (outgoingToRedial.length === 0) return;
+
+    // Poll until all hung-up calls are gone from state (max 3s)
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      if (!calls.value.some(c => callIdsToWatch.has(c.callId))) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    await Promise.all(outgoingToRedial.map(call => handleCall(call.accountUri, call.remoteUri, call.displayName)));
+  } catch (err: any) {
+    alert('Error restarting calls: ' + (err?.message || err));
+  } finally {
+    isRestartingCalls.value = false;
+  }
+};
 
 // Track already-recorded call IDs to avoid duplicates
 const recordedCallIds = new Set<string>();
