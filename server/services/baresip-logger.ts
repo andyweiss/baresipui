@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { stat, copyFile, truncate } from 'fs/promises';
 import type { StateManager } from './state-manager';
 import type { LogEntry } from '~/types';
-import { recordAlsaError } from './prometheus';
+import { recordAlsaError, recordJbufDrop } from './prometheus';
 
 // Re-export LogEntry so existing imports still work
 export type { LogEntry };
@@ -221,6 +221,11 @@ export class BaresipLogger {
     const isAlsaError = entry.level === 'error' || msgLower.includes('could not open') || rawLower.includes('could not open');
     if (hasAlsa && isAlsaError) {
       recordAlsaError(entry.message);
+    }
+
+    // Detect jitter buffer drops
+    if (entry.source.toLowerCase() === 'jbuf' && entry.message.includes('drop') && entry.message.includes('old frame')) {
+      recordJbufDrop();
     }
 
     // Store in local buffer for historical retrieval
