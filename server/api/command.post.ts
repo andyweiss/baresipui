@@ -65,12 +65,18 @@ export default defineEventHandler(async (event) => {
       if (!accountUri) {
         throw createError({ statusCode: 400, message: 'accountUri required' });
       }
-      // Guard: only send hangup if account actually has an active call
+      // Guard: only send hangup if account actually has an active call.
+      // Check both callStatus and the activeCalls list (handles multi-call edge cases).
       const account = stateManager.getAccount(accountUri);
-      if (!account || (account.callStatus !== 'In Call' && account.callStatus !== 'Ringing')) {
+      const hasActiveCalls = stateManager.getCalls().some(
+        c => c.localUri === accountUri && c.state !== 'Closing' && c.state !== 'Closed'
+      );
+      if (!account || (!hasActiveCalls && account.callStatus !== 'In Call' && account.callStatus !== 'Ringing')) {
         return { success: true, command, params, timestamp: Date.now(), ignored: true, reason: 'no active call' };
       }
-      // Use serialized command sequence to prevent uafind race conditions
+      // Use serialized command sequence to prevent uafind race conditions.
+      // baresip hangs up the currently active call for the selected account.
+      // For multi-call cleanup the user can press Hangup repeatedly.
       connection.sendCommandSequence([
         { command: 'uafind', params: accountUri, token },
         { command: 'hangup', token }

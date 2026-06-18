@@ -8,14 +8,22 @@ import { recordRegistrationEvent, recordCallStarted, recordCallEnded, recordAlsa
 let autoConnectQueue: Array<() => void> = [];
 let isProcessingAutoConnect = false;
 
+// Deduplication: track which account URIs are already in the queue to prevent double-dial
+const queuedAccountUris = new Set<string>();
+
+// Per-account cooldown: prevent dialing the same account more than once per second
+// (backup guard in case queue deduplication is bypassed by rapid state changes)
+const lastDialTime = new Map<string, number>();
+const DIAL_COOLDOWN_MS = 1500;
+
 function processAutoConnectQueue() {
   if (isProcessingAutoConnect || autoConnectQueue.length === 0) {
     return;
   }
-  
+
   isProcessingAutoConnect = true;
   const next = autoConnectQueue.shift();
-  
+
   if (next) {
     next();
     // Wait for the operation to complete before processing next
@@ -929,9 +937,33 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
       // not the remote party's name. Only use it for incoming calls.
       const isOutgoing = jsonEvent.type === 'CALL_OUTGOING' || jsonEvent.direction === 'outgoing';
       const peerName = isOutgoing ? null : (jsonEvent.peerdisplayname || jsonEvent.peername);
-      
+
       if (uri && jsonEvent.id) {
-        const updates: any = { 
+        // Duplicate call guard: if this account already has a different active outgoing call,
+        // a new CALL_OUTGOING means baresip fired its own redial while we already reconnected.
+        // Add the duplicate to state briefly (so the UI can show it), then hang it up.
+        // The UI will display the second row with the hangup modal until baresip confirms closure.
+        if (isOutgoing && !stateManager.getCall(jsonEvent.id)) {
+          const existingActiveCalls = stateManager.getCallsByAccount(uri)
+            .filter(c => c.state !== 'Closing' && c.state !== 'Closed' && c.callId !== jsonEvent.id);
+          if (existingActiveCalls.length > 0) {
+            const runtimeCfgDup = useRuntimeConfig();
+            const connDup = getBaresipConnection(runtimeCfgDup.baresipHost, parseInt(runtimeCfgDup.baresipPort));
+            stateManager.addLog('warn', 'autoconnect',
+              `Duplicate CALL_OUTGOING for ${uri} while ${existingActiveCalls.length} call(s) already active — will hang up duplicate ${jsonEvent.id}`, uri);
+            // Let the call fall through to normal tracking below so the UI sees it,
+            // then schedule an immediate hangup. The CALL_CLOSED event will clean up state.
+            setTimeout(() => {
+              connDup.sendCommandSequence([
+                { command: 'uafind', params: uri },
+                { command: 'hangup' }
+              ]);
+            }, 200);
+            // Fall through — do NOT return here
+          }
+        }
+
+        const updates: any = {
           callStatus: jsonEvent.type === 'CALL_RTPESTAB' ? 'In Call' : 'Ringing',
           callId: jsonEvent.id
         };
@@ -1249,48 +1281,75 @@ function handleTextLine(line: string, stateManager: StateManager): void {
 function attemptAutoConnect(contact: string, stateManager: StateManager): void {
   // Find all accounts that have this contact configured for auto-connect
   const accounts = stateManager.getAccounts();
-  
+
   for (const account of accounts) {
-    // Check if account has active call or is ringing (don't check callStatus === 'Idle')
+    // Check if account has active call or is ringing
     const hasActiveCall = account.callId || account.callStatus === 'In Call' || account.callStatus === 'Ringing';
-    
+
     if (account.autoConnectContact === contact && account.registered && !hasActiveCall) {
       // Check if contact is online (not busy - we want only one call per contact)
       const contactPresence = stateManager.getContactPresence(contact);
-      if (contactPresence === 'online') {
-        // Add to queue to prevent race conditions with uafind
-        autoConnectQueue.push(() => {
-          // Double-check status before executing (might have changed while in queue)
-          const currentAccount = stateManager.getAccount(account.uri);
-          const currentlyBusy = currentAccount && (currentAccount.callId || currentAccount.callStatus === 'In Call' || currentAccount.callStatus === 'Ringing');
-          
-          if (!currentAccount || currentlyBusy) {
-            return;
-          }
-          
-          const runtimeConfig = useRuntimeConfig();
-          const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
-          
-          // Use serialized command sequence to prevent uafind race conditions
-          // (e.g. codec info fetch could interleave and change active UA)
-          // No delay needed - TCP ordering guarantees sequential processing
-          connection.sendCommandSequence([
-            { command: 'uafind', params: account.uri },
-            { command: 'dial', params: contact }
-          ]);
-          
-          // All status updates happen through baresip events:
-          // CALL_OUTGOING -> callStatus: 'Ringing', autoConnectStatus: 'Connecting'
-          // CALL_ESTABLISHED -> callStatus: 'In Call', autoConnectStatus: 'Connected'
-          // CALL_CLOSED -> callStatus: 'Idle', autoConnectStatus: 'Off' -> triggers reconnect
-        });
-        
-        // Start processing queue
-        processAutoConnectQueue();
-        
-        // Only queue one account per contact at a time
+      if (contactPresence !== 'online') continue;
+
+      // Guard 1: cooldown – don't dial the same account twice within DIAL_COOLDOWN_MS
+      const lastDial = lastDialTime.get(account.uri) || 0;
+      if (Date.now() - lastDial < DIAL_COOLDOWN_MS) {
+        stateManager.addLog('debug', 'autoconnect', `Skipping dial for ${account.uri} – cooldown active`, account.uri);
         break;
       }
+
+      // Guard 2: deduplication – skip if this account is already waiting in the queue
+      if (queuedAccountUris.has(account.uri)) {
+        stateManager.addLog('debug', 'autoconnect', `Skipping dial for ${account.uri} – already queued`, account.uri);
+        break;
+      }
+
+      queuedAccountUris.add(account.uri);
+
+      // Add to queue to prevent race conditions with uafind
+      autoConnectQueue.push(() => {
+        // Remove from queued set so future attempts can proceed
+        queuedAccountUris.delete(account.uri);
+
+        // Guard 3: re-check state at execution time (might have changed while queued)
+        const currentAccount = stateManager.getAccount(account.uri);
+        // Also check the calls array – callId may not be set yet if CALL_OUTGOING hasn't arrived
+        const activeCalls = stateManager.getCallsByAccount(account.uri);
+        const hasActiveCallNow = activeCalls.some(c => c.state !== 'Closing' && c.state !== 'Closed');
+        const currentlyBusy = !currentAccount ||
+          currentAccount.callId ||
+          currentAccount.callStatus === 'In Call' ||
+          currentAccount.callStatus === 'Ringing' ||
+          hasActiveCallNow;
+
+        if (currentlyBusy) {
+          stateManager.addLog('debug', 'autoconnect', `Skipping dial for ${account.uri} – busy at execution time`, account.uri);
+          return;
+        }
+
+        lastDialTime.set(account.uri, Date.now());
+
+        const runtimeConfig = useRuntimeConfig();
+        const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
+
+        // Use serialized command sequence to prevent uafind race conditions
+        // (e.g. codec info fetch could interleave and change active UA)
+        connection.sendCommandSequence([
+          { command: 'uafind', params: account.uri },
+          { command: 'dial', params: contact }
+        ]);
+
+        // All status updates happen through baresip events:
+        // CALL_OUTGOING -> callStatus: 'Ringing', autoConnectStatus: 'Connecting'
+        // CALL_ESTABLISHED -> callStatus: 'In Call', autoConnectStatus: 'Connected'
+        // CALL_CLOSED -> callStatus: 'Idle', autoConnectStatus: 'Off' -> triggers reconnect
+      });
+
+      // Start processing queue
+      processAutoConnectQueue();
+
+      // Only queue one account per contact at a time
+      break;
     }
   }
 }

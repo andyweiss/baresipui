@@ -12,6 +12,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./baresip/config:/config
+      - ./baresip/.asoundrc:/config/.asoundrc:ro
       - shared-logs:/shared-logs
     networks:
       - baresip-network

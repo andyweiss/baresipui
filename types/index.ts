@@ -153,6 +153,29 @@ export interface GpioState {
  * DTMF 8 = GPIO 5 off    DTMF 9 = GPIO 5 on
  * DTMF * = GPIO 6 off    DTMF # = GPIO 6 on
  */
+// ---- File-based config entries (used by CRUD management UI) ----
+
+export interface ContactFileEntry {
+  name: string
+  uri: string                          // sip:user@domain
+  presence: 'none' | 'p2p'
+  access?: 'allow' | 'block'
+}
+
+export interface AccountFileEntry {
+  name: string
+  uri: string                          // sip:user@domain
+  enabled: boolean                     // false = line commented out with #
+  transport: 'udp' | 'tcp' | 'tls'
+  auth_pass: string
+  answermode: 'manual' | 'early' | 'auto'
+  regint: number
+  audio_source: string                 // e.g. "alsa,in_ch1"
+  audio_player: string                 // e.g. "alsa,out_ch1"
+  pubint: number
+  inreq_allowed: boolean
+}
+
 export const DTMF_DIGITS = ['0','1','2','3','4','5','6','7','8','9','*','#'] as const;
 
 /** Convert GPIO index (1-6) and state (on/off) to DTMF digit */

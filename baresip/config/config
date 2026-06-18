@@ -235,8 +235,8 @@ video_selfview          window # {window,pip}
 #selfview_size          64x64
 
 # Menu
-redial_attempts         20 # Num or <inf>
-redial_delay            30 # Delay in seconds
+redial_attempts         0  # Disabled: reconnect is managed by baresipui autoconnect logic
+redial_delay            30 # Delay in seconds (unused when redial_attempts=0)
 #ringback_disabled      no
 #statmode_default       off
 #menu_clean_number      no

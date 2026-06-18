@@ -107,28 +107,12 @@
       <!-- Account Management Section -->
       <div class="border-b border-gray-700 pb-6">
         <h3 class="text-lg font-semibold text-white mb-4">Account Management</h3>
-        <div class="space-y-4">
-          <div class="p-4 bg-gray-700 rounded-lg">
-            <h4 class="text-white font-medium mb-2">Add New Account</h4>
-            <p class="text-sm text-gray-400 mb-4">Create a new SIP account</p>
-            <div class="text-sm text-gray-500">
-              This feature is available in a future update, please edit config files manually for now
-            </div>
-          </div>
-        </div>
+        <AccountsManager />
       </div>
-      <!-- Concatct Management Section -->
+      <!-- Contact Management Section -->
       <div class="border-b border-gray-700 pb-6">
         <h3 class="text-lg font-semibold text-white mb-4">Contact Management</h3>
-        <div class="space-y-4">
-          <div class="p-4 bg-gray-700 rounded-lg">
-            <h4 class="text-white font-medium mb-2">Add New Contact</h4>
-            <p class="text-sm text-gray-400 mb-4">Create a new contact</p>
-            <div class="text-sm text-gray-500">
-              This feature is available in a future update, please edit config files manually for now
-            </div>
-          </div>
-        </div>
+        <ContactsManager />
       </div>
       <!-- Audio Codec Settings -->
       <div class="border-b border-gray-700 pb-6">

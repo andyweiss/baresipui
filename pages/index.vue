@@ -317,12 +317,12 @@ const handleCall = async (accountUri: string, target: string, displayName?: stri
 
 const pendingHangups = new Set<string>();
 
-const handleHangup = async (accountUri: string) => {
+const handleHangup = async (accountUri: string, callId?: string) => {
   // Guard against rapid double-clicks: skip if hangup already in flight for this account
   if (pendingHangups.has(accountUri)) return;
   pendingHangups.add(accountUri);
   try {
-    await sendCommand('hangup', { accountUri });
+    await sendCommand('hangup', { accountUri, ...(callId ? { callId } : {}) });
   } catch (err: any) {
     alert('Error hanging up: ' + (err?.message || err));
   } finally {

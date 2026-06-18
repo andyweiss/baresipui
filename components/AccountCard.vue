@@ -74,38 +74,63 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-4 mb-4 relative">
+    <div class="grid grid-cols-2 gap-4 mb-1 relative">
       <div class="relative">
         <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Call Status</p>
-        <div class="flex items-center gap-2">
-          <div>
-            <p class="text-sm font-medium" :class="callStatusColor">{{ account.callStatus || 'Idle' }}</p>
-          </div>
-        </div>
-      </div>
-      
-      <div class="relative">
-        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Connected To</p>
-        <p class="text-sm font-medium" :class="autoConnectDisplayColor">
-          {{ getAutoConnectDisplayText() }}
+        <p class="text-sm font-medium"
+           :class="activeCalls.length > 0 ? callStatusColorForCall(activeCalls[0]) : callStatusColor">
+          {{ activeCalls.length > 0 ? extraCallStateLabel(activeCalls[0]) : (account.callStatus || 'Idle') }}
         </p>
       </div>
-      
-      <!-- Connection line with arrows in the gap between columns -->
-      <div v-if="showConnectionLine" 
+
+      <div class="relative">
+        <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Connected To</p>
+        <p class="text-sm font-medium"
+           :class="activeCalls.length > 0 ? callStatusColorForCall(activeCalls[0]) : autoConnectDisplayColor">
+          {{ activeCalls.length > 0 ? getRemotePartyDisplayName(activeCalls[0]) : getAutoConnectDisplayText() }}
+        </p>
+      </div>
+
+      <!-- Connection line with arrows in the gap between columns (first/primary call) -->
+      <div v-if="showConnectionLine"
            class="absolute top-[70%] flex items-center pointer-events-none" style="width: 5.5rem; left: calc(50% - 5.5rem);">
-        <!-- Left arrow ◀ -->
         <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
           <path d="M 0 5 L 10 0 L 10 10 Z"/>
         </svg>
-        <!-- Connecting line -->
         <div class="flex-1 h-px bg-green-400"></div>
-        <!-- Right arrow ▶  -->
         <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
           <path d="M 10 5 L 0 0 L 0 10 Z"/>
         </svg>
       </div>
     </div>
+
+    <!-- Extra calls (2nd, 3rd, …): same layout as primary, no labels, green -->
+    <div
+      v-for="call in activeCalls.slice(1)"
+      :key="call.callId"
+      class="grid grid-cols-2 gap-4 mt-2 relative"
+    >
+      <div>
+        <p class="text-sm font-medium text-green-400">{{ extraCallStateLabel(call) }}</p>
+      </div>
+
+      <div>
+        <p class="text-sm font-medium text-green-400">{{ getRemotePartyDisplayName(call) }}</p>
+      </div>
+
+      <!-- Connection line (green) between the two columns -->
+      <div class="absolute top-1/2 -translate-y-1/2 flex items-center pointer-events-none" style="width: 5.5rem; left: calc(50% - 5.5rem);">
+        <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
+          <path d="M 0 5 L 10 0 L 10 10 Z"/>
+        </svg>
+        <div class="flex-1 h-px bg-green-400"></div>
+        <svg class="w-2 h-2 text-green-400 flex-shrink-0" viewBox="0 0 10 10" fill="currentColor">
+          <path d="M 10 5 L 0 0 L 0 10 Z"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="mb-3"></div>
 
     <div v-if="account.registrationError && !account.registered" class="mb-4 p-2 bg-red-900/30 border border-red-700 rounded">
       <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Registration Status</p>
@@ -152,7 +177,7 @@
           Call
         </button>
         <button
-          @click="$emit('hangup', account.uri)"
+          @click="handleHangupClick"
           :disabled="!account.registered || !hasActiveCall"
           :class="hangupButtonClass"
         >
@@ -218,6 +243,42 @@
       @close="showGpioModal = false"
       @toggle-gpio="(idx: number, state: boolean) => emit('toggleGpio', account.uri, idx, state)"
     />
+
+    <!-- Hangup Selection Modal (only shown when multiple active calls) -->
+    <Teleport to="body">
+      <div
+        v-if="showHangupModal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+        @click.self="showHangupModal = false"
+      >
+        <div class="bg-gray-800 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl border border-gray-700">
+          <h3 class="text-base font-semibold text-white mb-1">Anruf beenden</h3>
+          <p class="text-xs text-gray-400 mb-4">Wähle den Anruf, der beendet werden soll:</p>
+          <div class="space-y-2">
+            <button
+              v-for="call in activeCalls"
+              :key="call.callId"
+              @click="handleHangupCall(call)"
+              class="w-full text-left px-4 py-3 bg-gray-700 hover:bg-red-900/60 border border-gray-600 hover:border-red-700 rounded-lg transition flex items-center justify-between group"
+            >
+              <div>
+                <p class="text-sm font-medium text-white">{{ getRemotePartyDisplayName(call) }}</p>
+                <p class="text-xs text-gray-400 mt-0.5">
+                  {{ call.direction === 'incoming' ? 'Eingehend' : 'Ausgehend' }} · {{ extraCallStateLabel(call) }}
+                </p>
+              </div>
+              <span class="text-xs font-medium text-red-400 group-hover:text-red-300">Beenden</span>
+            </button>
+          </div>
+          <button
+            @click="showHangupModal = false"
+            class="mt-4 w-full px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition text-sm"
+          >
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -239,6 +300,7 @@ const emit = defineEmits(['call', 'hangup', 'assignContact', 'toggleGpio']);
 const showCallStats = ref(false);
 const showDialModal = ref(false);
 const showGpioModal = ref(false);
+const showHangupModal = ref(false);
 
 // Local state for the select to prevent jumping back
 const localAutoConnectContact = ref(props.account.autoConnectContact || '');
@@ -247,6 +309,24 @@ const localAutoConnectContact = ref(props.account.autoConnectContact || '');
 watch(() => props.account.autoConnectContact, (newValue) => {
   localAutoConnectContact.value = newValue || '';
 }, { immediate: true });
+
+const activeCalls = computed(() => {
+  const accountUri = String(props.account?.uri ?? '').toLowerCase().trim();
+  if (!accountUri) return [];
+  const calls = (props.calls as any[]).filter(call =>
+    call.localUri && String(call.localUri).toLowerCase().trim() === accountUri &&
+    call.state !== 'Closing' && call.state !== 'Closed'
+  );
+  // Primary call (account.callId) always first so row-1 matches getAutoConnectDisplayText()
+  if (props.account.callId) {
+    calls.sort((a: any, b: any) => {
+      if (a.callId === props.account.callId) return -1;
+      if (b.callId === props.account.callId) return 1;
+      return 0;
+    });
+  }
+  return calls;
+});
 
 const activeCall = computed(() => {
   if (!props.account?.uri) return undefined;
@@ -267,7 +347,7 @@ const activeCall = computed(() => {
 
 // button and modal visibility according to active call
 const hasActiveCall = computed(() => {
-  return !!activeCall.value;
+  return activeCalls.value.length > 0;
 });
 
 const handleContactChange = async (event: Event) => {
@@ -483,13 +563,40 @@ const autoConnectDisplayColor = computed(() => {
 });
 
 const showConnectionLine = computed(() => {
-  // Show line whenever account is In Call (auto-connect or manual)
+  if (activeCalls.value.length > 0) {
+    return activeCalls.value[0].state === 'Established';
+  }
   return props.account.callStatus === 'In Call';
 });
 
 const formatTimestamp = (timestamp: number) => {
   if (!timestamp) return 'N/A';
   return new Date(timestamp).toLocaleTimeString();
+};
+
+const extraCallStateLabel = (call: CallInfo): string => {
+  if (call.state === 'Established') return 'In Call';
+  if (call.state === 'Ringing') return call.direction === 'incoming' ? 'Incoming...' : 'Ringing...';
+  return call.state ?? 'In Call';
+};
+
+const callStatusColorForCall = (call: CallInfo): string => {
+  if (call.state === 'Established') return 'text-green-400';
+  if (call.state === 'Ringing') return 'text-orange-400';
+  return 'text-red-400';
+};
+
+const handleHangupClick = () => {
+  if (activeCalls.value.length > 1) {
+    showHangupModal.value = true;
+  } else {
+    emit('hangup', props.account.uri);
+  }
+};
+
+const handleHangupCall = (call: CallInfo) => {
+  showHangupModal.value = false;
+  emit('hangup', props.account.uri, call.callId);
 };
 
 const handleDial = (target: string, displayName?: string) => {
