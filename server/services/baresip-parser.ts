@@ -1308,9 +1308,6 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
 
       // Add to queue to prevent race conditions with uafind
       autoConnectQueue.push(() => {
-        // Remove from queued set so future attempts can proceed
-        queuedAccountUris.delete(account.uri);
-
         // Guard 3: re-check state at execution time (might have changed while queued)
         const currentAccount = stateManager.getAccount(account.uri);
         // Also check the calls array – callId may not be set yet if CALL_OUTGOING hasn't arrived
@@ -1323,26 +1320,57 @@ function attemptAutoConnect(contact: string, stateManager: StateManager): void {
           hasActiveCallNow;
 
         if (currentlyBusy) {
+          queuedAccountUris.delete(account.uri);
           stateManager.addLog('debug', 'autoconnect', `Skipping dial for ${account.uri} – busy at execution time`, account.uri);
           return;
         }
 
-        lastDialTime.set(account.uri, Date.now());
+        const AUTOCONNECT_DIAL_DELAY_MS = 10_000;
+        stateManager.addLog('info', 'autoconnect', `Scheduling dial for ${account.uri} in ${AUTOCONNECT_DIAL_DELAY_MS / 1000}s`, account.uri);
 
-        const runtimeConfig = useRuntimeConfig();
-        const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
+        // Delay dial to give baresip time to fully release the previous call's audio resources
+        // (ALSA teardown, RTP teardown, jitter buffer flush). queuedAccountUris is cleared
+        // inside this callback so the account stays locked for the entire wait period.
+        setTimeout(() => {
+          queuedAccountUris.delete(account.uri);
 
-        // Use serialized command sequence to prevent uafind race conditions
-        // (e.g. codec info fetch could interleave and change active UA)
-        connection.sendCommandSequence([
-          { command: 'uafind', params: account.uri },
-          { command: 'dial', params: contact }
-        ]);
+          // Re-check state after delay — account may now be busy or contact may have gone offline
+          const accountNow = stateManager.getAccount(account.uri);
+          const activeCallsNow = stateManager.getCallsByAccount(account.uri);
+          const hasActiveNow = activeCallsNow.some(c => c.state !== 'Closing' && c.state !== 'Closed');
+          const stillBusy = !accountNow ||
+            accountNow.callId ||
+            accountNow.callStatus === 'In Call' ||
+            accountNow.callStatus === 'Ringing' ||
+            hasActiveNow;
 
-        // All status updates happen through baresip events:
-        // CALL_OUTGOING -> callStatus: 'Ringing', autoConnectStatus: 'Connecting'
-        // CALL_ESTABLISHED -> callStatus: 'In Call', autoConnectStatus: 'Connected'
-        // CALL_CLOSED -> callStatus: 'Idle', autoConnectStatus: 'Off' -> triggers reconnect
+          if (stillBusy) {
+            stateManager.addLog('debug', 'autoconnect', `Skipping delayed dial for ${account.uri} – state changed during delay`, account.uri);
+            return;
+          }
+
+          const currentPresence = stateManager.getContactPresence(contact);
+          if (currentPresence !== 'online') {
+            stateManager.addLog('debug', 'autoconnect', `Skipping delayed dial for ${account.uri} – contact ${contact} went offline during delay`, account.uri);
+            return;
+          }
+
+          lastDialTime.set(account.uri, Date.now());
+
+          const runtimeConfig = useRuntimeConfig();
+          const connection = getBaresipConnection(runtimeConfig.baresipHost, parseInt(runtimeConfig.baresipPort));
+
+          // Use serialized command sequence to prevent uafind race conditions
+          connection.sendCommandSequence([
+            { command: 'uafind', params: account.uri },
+            { command: 'dial', params: contact }
+          ]);
+
+          // All status updates happen through baresip events:
+          // CALL_OUTGOING -> callStatus: 'Ringing', autoConnectStatus: 'Connecting'
+          // CALL_ESTABLISHED -> callStatus: 'In Call', autoConnectStatus: 'Connected'
+          // CALL_CLOSED -> callStatus: 'Idle', autoConnectStatus: 'Off' -> triggers reconnect
+        }, AUTOCONNECT_DIAL_DELAY_MS);
       });
 
       // Start processing queue
