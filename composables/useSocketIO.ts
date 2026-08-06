@@ -47,11 +47,6 @@ export const useSocketIO = () => {
     }
   }
 
-  // Jitter buffer drop rate: drops counted in a 10s rolling window
-  const JBUF_WINDOW_MS = 10_000;
-  const jbufDropWindow: { time: number; count: number }[] = [];
-  const jbufDropRate = ref(0);
-
   const connect = () => {
     socket.value = io({
       path: '/socket.io/',
@@ -205,16 +200,6 @@ export const useSocketIO = () => {
       audioMeters[data.accountUri.toLowerCase()] = data;
     });
 
-    socket.value.on('jbufDrops', (data: { count: number }) => {
-      const now = Date.now();
-      jbufDropWindow.push({ time: now, count: data.count });
-      // Evict entries older than the window
-      while (jbufDropWindow.length && now - jbufDropWindow[0].time >= JBUF_WINDOW_MS) {
-        jbufDropWindow.shift();
-      }
-      jbufDropRate.value = jbufDropWindow.reduce((s, e) => s + e.count, 0);
-    });
-
     socket.value.on('error', (error: any) => {
       console.error('Socket.IO Error:', error);
     });
@@ -283,7 +268,6 @@ export const useSocketIO = () => {
     audioMeters,
     talktomeBridgeGlobalStatus,
     talktomeBridgeStatuses,
-    jbufDropRate,
     sendCommand,
     toggleAutoConnect,
     toggleGpio
