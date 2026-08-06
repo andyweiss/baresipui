@@ -1,0 +1,308 @@
+--- a/src/audio.c
++++ b/src/audio.c
+@@ -12,6 +12,7 @@
+ #include <time.h>
+ #include <re.h>
+ #include <re_atomic.h>
++#include <re_sha.h>
+ #include <rem.h>
+ #include <baresip.h>
+ #include "core.h"
+@@ -665,6 +665,34 @@
+ }
+ 
+ 
++static int account_audio_device(char **devicep, const char *module,
++				const char *device, const char *callid)
++{
++	static const char hex[] = "0123456789abcdef";
++	uint8_t digest[SHA256_DIGEST_SIZE];
++	char identity[SHA256_DIGEST_SIZE * 2 + 1];
++	size_t i;
++
++	if (!devicep || !str_isset(module) || !str_isset(device))
++		return EINVAL;
++
++	if (str_cmp(module, "mediasoup"))
++		return str_dup(devicep, device);
++
++	if (!str_isset(callid) || strchr(device, '|'))
++		return EINVAL;
++
++	sha256((const uint8_t *)callid, str_len(callid), digest);
++	for (i = 0; i < RE_ARRAY_SIZE(digest); ++i) {
++		identity[2 * i] = hex[digest[i] >> 4];
++		identity[2 * i + 1] = hex[digest[i] & 0x0f];
++	}
++	identity[sizeof(identity) - 1] = '\0';
++
++	return re_sdprintf(devicep, "%s|%s", device, identity);
++}
++
++
+ /**
+  * Allocate an audio stream
+  *
+@@ -673,6 +701,7 @@
+  * @param stream_prm Stream parameters
+  * @param cfg        Global configuration
+  * @param acc        User-Agent account
++ * @param callid     Stable call identity (optional)
+  * @param sdp_sess   SDP Session
+  * @param mnat       Media NAT (optional)
+  * @param mnat_sess  Media NAT session (optional)
+@@ -688,18 +717,20 @@
+  *
+  * @return 0 if success, otherwise errorcode
+  */
+-int audio_alloc(struct audio **ap, struct list *streaml,
+-		const struct stream_param *stream_prm,
+-		const struct config *cfg,
+-		struct account *acc, struct sdp_session *sdp_sess,
+-		const struct mnat *mnat, struct mnat_sess *mnat_sess,
+-		const struct menc *menc, struct menc_sess *menc_sess,
+-		uint32_t ptime, const struct list *aucodecl, bool offerer,
+-		audio_event_h *eventh, audio_level_h *levelh,
+-		audio_err_h *errh, void *arg)
++int audio_alloc_call(struct audio **ap, struct list *streaml,
++		     const struct stream_param *stream_prm,
++		     const struct config *cfg,
++		     struct account *acc, const char *callid,
++		     struct sdp_session *sdp_sess,
++		     const struct mnat *mnat, struct mnat_sess *mnat_sess,
++		     const struct menc *menc, struct menc_sess *menc_sess,
++		     uint32_t ptime, const struct list *aucodecl, bool offerer,
++		     audio_event_h *eventh, audio_level_h *levelh,
++		     audio_err_h *errh, void *arg)
+ {
+ 	struct audio *a;
+ 	struct autx *tx;
++	char *play_device = NULL;
+ 	struct le *le;
+ 	uint32_t minptime = ptime;
+ 	int err;
+@@ -788,7 +819,10 @@
+ 	if (acc && acc->ausrc_mod) {
+ 
+ 		tx->module = mem_ref(acc->ausrc_mod);
+-		tx->device = mem_ref(acc->ausrc_dev);
++		err = account_audio_device(&tx->device, acc->ausrc_mod,
++					   acc->ausrc_dev, callid);
++		if (err)
++			goto out;
+ 
+ 		info("audio: using account specific source: (%s,%s)\n",
+ 		     tx->module, tx->device);
+@@ -805,13 +839,18 @@
+ 	tx->marker = true;
+ 
+ 	if (acc && acc->auplay_mod) {
++		err = account_audio_device(&play_device, acc->auplay_mod,
++					   acc->auplay_dev, callid);
++		if (err)
++			goto out;
++
+ 		err  = aurecv_set_module(a->aur, acc->auplay_mod);
+-		err |= aurecv_set_device(a->aur, acc->auplay_dev);
++		err |= aurecv_set_device(a->aur, play_device);
+ 		if (err)
+ 			goto out;
+ 
+ 		info("audio: using account specific player: (%s,%s)\n",
+-		     acc->auplay_mod, acc->auplay_dev);
++		     acc->auplay_mod, play_device);
+ 	}
+ 	else {
+ 		err  = aurecv_set_module(a->aur, a->cfg.play_mod);
+@@ -830,6 +869,7 @@
+ 	a->arg     = arg;
+ 
+  out:
++	mem_deref(play_device);
+ 	if (err)
+ 		mem_deref(a);
+ 	else
+@@ -839,6 +879,23 @@
+ }
+ 
+ 
++int audio_alloc(struct audio **ap, struct list *streaml,
++		const struct stream_param *stream_prm,
++		const struct config *cfg,
++		struct account *acc, struct sdp_session *sdp_sess,
++		const struct mnat *mnat, struct mnat_sess *mnat_sess,
++		const struct menc *menc, struct menc_sess *menc_sess,
++		uint32_t ptime, const struct list *aucodecl, bool offerer,
++		audio_event_h *eventh, audio_level_h *levelh,
++		audio_err_h *errh, void *arg)
++{
++	return audio_alloc_call(ap, streaml, stream_prm, cfg, acc, NULL,
++				sdp_sess, mnat, mnat_sess, menc, menc_sess,
++				ptime, aucodecl, offerer, eventh, levelh,
++				errh, arg);
++}
++
++
+ int audio_enable_level(struct audio *au)
+ {
+ 	if (!au)
+--- a/src/core.h
++++ b/src/core.h
+@@ -104,6 +104,16 @@
+ int  audio_send_digit(struct audio *a, char key);
+ void audio_sdp_attr_decode(struct audio *a);
+ int  audio_enable_level(struct audio *au);
++int  audio_alloc_call(struct audio **ap, struct list *streaml,
++		      const struct stream_param *stream_prm,
++		      const struct config *cfg,
++		      struct account *acc, const char *callid,
++		      struct sdp_session *sdp_sess,
++		      const struct mnat *mnat, struct mnat_sess *mnat_sess,
++		      const struct menc *menc, struct menc_sess *menc_sess,
++		      uint32_t ptime, const struct list *aucodecl, bool offerer,
++		      audio_event_h *eventh, audio_level_h *levelh,
++		      audio_err_h *errh, void *arg);
+ 
+ 
+ /*
+--- a/src/call.c
++++ b/src/call.c
+@@ -750,13 +750,13 @@
+ 	strm_prm.rtcp_mux = call->acc->rtcp_mux;
+ 
+ 	/* Audio stream */
+-	err = audio_alloc(&call->audio, &call->streaml, &strm_prm,
+-			  call->cfg, acc, call->sdp,
+-			  acc->mnat, call->mnats, acc->menc, call->mencs,
+-			  acc->ptime, account_aucodecl(call->acc),
+-			  !call->got_offer,
+-			  audio_event_handler, audio_level_handler,
+-			  audio_error_handler, call);
++	err = audio_alloc_call(&call->audio, &call->streaml, &strm_prm,
++			       call->cfg, acc, call->id, call->sdp,
++			       acc->mnat, call->mnats, acc->menc, call->mencs,
++			       acc->ptime, account_aucodecl(call->acc),
++			       !call->got_offer,
++			       audio_event_handler, audio_level_handler,
++			       audio_error_handler, call);
+ 	if (err)
+ 		return err;
+ 
+@@ -2325,41 +2325,46 @@
+ /**
+  * Find a call given the value of a Replaces header
+  *
+  * @param calls   List of calls
+  * @param hdr     Value of Replaces header
++ * @param skip    Call to skip
+  *
+  * @return Call object if found, NULL if not found
+  */
+ static struct call *call_find_replaces(const struct list *calls,
+-				       const struct pl *hdr)
++				       const struct pl *hdr,
++				       const struct call *skip)
+ {
+ 	struct le *le;
+ 	struct sip_msg msg = { 0 };
+ 	struct call *ret = NULL;
+ 
+ 	if (!calls || !pl_isset(hdr))
+ 		return NULL;
+ 
+ 	msg.req = true;
+ 	msg.callid.p = hdr->p;
+ 	msg.callid.l = hdr->l;
+ 
+ 	if (pl_strchr(&msg.callid, ';')) {
+ 		msg.callid.l = (size_t)(pl_strchr(&msg.callid, ';')
+ 				- msg.callid.p);
+ 	}
+ 
+ 	if (!pl_isset(&msg.callid))
+ 		return NULL;
+ 
+ 	(void)re_regex(hdr->p, hdr->l, ";to-tag=[^; ]+", &msg.to.tag);
+ 	(void)re_regex(hdr->p, hdr->l, ";from-tag=[^; ]+", &msg.from.tag);
+ 
+ 	for (le = list_head(calls); le; le = le->next) {
+ 		struct call *call = le->data;
+ 
++		if (call == skip)
++			continue;
++
+ 		if (pl_isset(&msg.from.tag) && pl_isset(&msg.to.tag) &&
+ 		    sip_dialog_cmp(sipsess_dialog(call->sess), &msg)) {
+ 			ret = call;
+ 			break;
+ 		}
+@@ -2389,6 +2394,10 @@
+ 		return EINVAL;
+ 
+ 	call->outgoing = false;
++	err = pl_strdup(&call->id, &msg->callid);
++	if (err)
++		return err;
++
+ 	if (pl_isset(&msg->from.dname)) {
+ 		err = pl_strdup(&call->peer_name, &msg->from.dname);
+ 		if (err)
+@@ -2451,7 +2460,7 @@
+ 	hdr = sip_msg_hdr(msg, SIP_HDR_REPLACES);
+ 	if (hdr && pl_isset(&hdr->val)) {
+ 		struct call *rcall = call_find_replaces(ua_calls(call->ua),
+-							&hdr->val);
++							&hdr->val, call);
+ 		if (!rcall) {
+ 			info("call: Replaces header present, but could not "
+ 				"find matching call %r\n", &hdr->val);
+@@ -2488,11 +2497,6 @@
+ 		return err;
+ 	}
+ 
+-	err = str_dup(&call->id,
+-		      sip_dialog_callid(sipsess_dialog(call->sess)));
+-	if (err)
+-		return err;
+-
+ 	set_state(call, CALL_STATE_INCOMING);
+ 
+ 	err = sipsess_set_prack_handler(call->sess, prack_handler);
+--- a/src/module.c
++++ b/src/module.c
+@@ -313,8 +313,17 @@
+ 	append_extension(filename, sizeof(filename), name);
+ 
+ 	mod = mod_find(filename);
+ 	if (mod) {
++		const struct mod_export *me = mod_export(mod);
++
++		if (me &&
++		    0 == str_casecmp(me->name, "mediasoup_bridge")) {
++			warning("module: refusing to unload restart-required "
++				"module %s\n", me->name);
++			return;
++		}
++
+ 		info("unloading module: %s\n", filename);
+ 		mem_deref(mod);
+ 		return;
+ 	}
+--- a/src/baresip.c
++++ b/src/baresip.c
+@@ -68,7 +68,14 @@
+ static int rmmod_handler(struct re_printf *pf, void *arg)
+ {
+        const struct cmd_arg *carg = arg;
+-       (void)pf;
++
++       if (!str_casecmp(carg->prm, "mediasoup_bridge") ||
++           !str_casecmp(carg->prm, "mediasoup_bridge" MOD_EXT)) {
++	       return re_hprintf(
++		       pf,
++		       "rmmod: ERROR: mediasoup_bridge is restart-required "
++		       "and cannot be unloaded at runtime\n");
++       }
+ 
+        module_unload(carg->prm);
+ 

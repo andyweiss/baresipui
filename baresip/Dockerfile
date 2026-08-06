@@ -1,6 +1,5 @@
-# Supported patched source build for baresip and mediasoup_bridge.
-# The core patch and bridge module are built as one compatibility unit.
-# Based on official baresip Docker setup from github.com/baresip/docker
+# Supported default image: build baresip and mediasoup_bridge together.
+# Keep this build aligned with Dockerfile.build-from-source.
 
 # ============================================================
 # Stage 1: Build libre (re library - SIP/RTP core)
@@ -25,15 +24,12 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     patch \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone libre
+# Clone and patch libre
 RUN git clone -b ${RE_VERSION} --depth=1 https://github.com/baresip/re.git
 
 WORKDIR /root/re
 
-# Copy patches directory (for re-specific patches)
 COPY patches/ ./patches/
-
-# Apply re patches if they exist
 RUN set -eu; \
     for p in patches/re-*.patch; do \
         [ -f "$p" ] || continue; \
@@ -42,7 +38,6 @@ RUN set -eu; \
         echo "=== Patch $p applied successfully ==="; \
     done
 
-# Build libre
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_FLAGS="-g" \
@@ -55,14 +50,13 @@ RUN cmake -B build \
 
 
 # ============================================================
-# Stage 2: Build patched baresip core and custom modules
+# Stage 2: Build patched baresip core and all custom modules
 # ============================================================
 FROM libre-builder AS baresip-builder
 
 ARG BARESIP_VERSION=main
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install baresip build dependencies
 RUN apt-get update && apt-get install -y \
     libopus-dev \
     libasound2-dev \
@@ -73,8 +67,8 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /root/
 
-# Clone baresip
-RUN git clone -b ${BARESIP_VERSION} --depth=1 https://github.com/baresip/baresip.git
+RUN git clone -b ${BARESIP_VERSION} --depth=1 \
+    https://github.com/baresip/baresip.git
 
 WORKDIR /root/baresip
 
@@ -85,14 +79,11 @@ COPY modules/presence.c modules/subscriber.c modules/notifier.c \
      modules/publisher.c modules/presence.h modules/CMakeLists.txt \
      modules/presence/
 
-# Copy each additional module to its own upstream module directory. The bridge
-# is always compiled and installed; runtime activation is handled by insmod.
 COPY modules/rtcpstats_cmd/ modules/rtcpstats_cmd/
 COPY modules/vumeter_stereo/ modules/vumeter_stereo/
 COPY modules/mediasoup_bridge/ modules/mediasoup_bridge/
 
-# Apply any additional patches (baresip-add-rtcpstats-module.patch no longer needed;
-# custom module registration is handled by EXTRA_MODULES below)
+# The mediasoup patch changes the core and module as one compatibility unit.
 COPY patches/baresip-*.patch ./
 RUN set -eu; \
     for p in baresip-*.patch; do \
@@ -102,7 +93,6 @@ RUN set -eu; \
         echo "=== Patch $p applied successfully ==="; \
     done
 
-# Build baresip
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_FLAGS="-g -Wno-error=implicit-function-declaration -Wno-error=int-conversion" \
@@ -116,7 +106,6 @@ RUN cmake -B build \
     cp -a dist/* /usr/ && \
     test -s "/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)/baresip/modules/mediasoup_bridge.so"
 
-# Prepare final distribution files
 RUN mkdir -p /root/dist/usr && \
     cp -a /root/re/dist/* /root/dist/usr/ && \
     cp -a /root/baresip/dist/* /root/dist/usr/
@@ -129,7 +118,6 @@ FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopus0 \
     ca-certificates \
@@ -142,7 +130,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     alsa-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy compiled binaries and libraries from builder
 COPY --from=baresip-builder /root/dist/usr/ /usr/
 RUN for module in /usr/lib/*/baresip/modules/mediasoup_bridge.so; do \
         if [ -s "$module" ]; then exit 0; fi; \
@@ -153,7 +140,6 @@ WORKDIR /root
 USER root
 ENV USER=root
 
-# Entrypoint script
 RUN echo '#!/usr/bin/env bash\n\
 set -e\n\
 \n\

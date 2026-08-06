@@ -16,3 +16,6 @@ baresip/.asoundrc
 tests/
 .claude/settings.json
 .vscode
+baresip/config/talktome-bridge.json
+baresip/config/.talktome-bridge.json.*.tmp
+baresip/config/.talktome-bridge.json.transaction-journal

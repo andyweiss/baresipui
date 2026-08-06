@@ -1,6 +1,11 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue';
 import { io, Socket } from 'socket.io-client';
-import type { GpioState, AudioMeter } from '~/types';
+import type {
+  AudioMeter,
+  GpioState,
+  TalktomeBridgeGlobalStatus,
+  TalktomeBridgeStatus,
+} from '~/types';
 import { accountSortFn } from '~/utils/account-sorting';
 
 export const useSocketIO = () => {
@@ -23,6 +28,29 @@ export const useSocketIO = () => {
   const calls = ref<any[]>([]);
   const gpioStates = ref<any[]>([]);
   const audioMeters = reactive<Record<string, AudioMeter>>({});
+  const talktomeBridgeGlobalStatus = ref<TalktomeBridgeGlobalStatus | null>(null);
+  const talktomeBridgeStatuses = ref<TalktomeBridgeStatus[]>([]);
+
+  function setTalktomeBridgeStatus(status: TalktomeBridgeStatus) {
+    const key = status.accountUri.toLowerCase().trim();
+    const index = talktomeBridgeStatuses.value.findIndex(
+      candidate => candidate.accountUri.toLowerCase().trim() === key
+    );
+    if (index >= 0) {
+      talktomeBridgeStatuses.value = [
+        ...talktomeBridgeStatuses.value.slice(0, index),
+        status,
+        ...talktomeBridgeStatuses.value.slice(index + 1),
+      ];
+    } else {
+      talktomeBridgeStatuses.value = [...talktomeBridgeStatuses.value, status];
+    }
+  }
+
+  // Jitter buffer drop rate: drops counted in a 10s rolling window
+  const JBUF_WINDOW_MS = 10_000;
+  const jbufDropWindow: { time: number; count: number }[] = [];
+  const jbufDropRate = ref(0);
 
   const connect = () => {
     socket.value = io({
@@ -110,7 +138,32 @@ export const useSocketIO = () => {
         }
       }
       baresipConnected.value = data.baresipConnected ?? false;
+      talktomeBridgeGlobalStatus.value = data.talktomeBridge?.globalStatus ?? null;
+      talktomeBridgeStatuses.value = data.talktomeBridge?.statuses ?? [];
       sendCommand('uastat');
+    });
+
+    socket.value.on('talktomeBridgeGlobalStatus', (status: TalktomeBridgeGlobalStatus) => {
+      talktomeBridgeGlobalStatus.value = status;
+    });
+
+    socket.value.on('talktomeBridgeStatus', (status: TalktomeBridgeStatus) => {
+      setTalktomeBridgeStatus(status);
+    });
+
+    socket.value.on(
+      'talktomeBridgeStatusRemoved',
+      (data: { accountUri: string } | string) => {
+        const accountUri = typeof data === 'string' ? data : data.accountUri;
+        const key = accountUri.toLowerCase().trim();
+        talktomeBridgeStatuses.value = talktomeBridgeStatuses.value.filter(
+          status => status.accountUri.toLowerCase().trim() !== key
+        );
+      }
+    );
+
+    socket.value.on('talktomeBridgeStatuses', (statuses: TalktomeBridgeStatus[]) => {
+      talktomeBridgeStatuses.value = statuses;
     });
 
     socket.value.on('accountsUpdate', (data: any) => {
@@ -150,6 +203,16 @@ export const useSocketIO = () => {
 
     socket.value.on('audioMeter', (data: AudioMeter) => {
       audioMeters[data.accountUri.toLowerCase()] = data;
+    });
+
+    socket.value.on('jbufDrops', (data: { count: number }) => {
+      const now = Date.now();
+      jbufDropWindow.push({ time: now, count: data.count });
+      // Evict entries older than the window
+      while (jbufDropWindow.length && now - jbufDropWindow[0].time >= JBUF_WINDOW_MS) {
+        jbufDropWindow.shift();
+      }
+      jbufDropRate.value = jbufDropWindow.reduce((s, e) => s + e.count, 0);
     });
 
     socket.value.on('error', (error: any) => {
@@ -218,6 +281,9 @@ export const useSocketIO = () => {
     calls,
     gpioStates,
     audioMeters,
+    talktomeBridgeGlobalStatus,
+    talktomeBridgeStatuses,
+    jbufDropRate,
     sendCommand,
     toggleAutoConnect,
     toggleGpio

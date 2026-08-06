@@ -22,7 +22,10 @@ export default defineNuxtConfig({
     asoundrcPath: process.env.ASOUNDRC_PATH || '/config/.asoundrc',
 
     public: {
-      wsEnabled: true
+      wsEnabled: true,
+      // Runtime deployments override this with
+      // NUXT_PUBLIC_TALKTOME_BRIDGE_ENABLED. Secrets stay server-only.
+      talktomeBridgeEnabled: false
     }
   },
 

@@ -41,9 +41,9 @@ ausrc_format            s16             # s16, float, ..
 auplay_format           s16             # s16, float, ..
 auenc_format            s16             # s16, float, ..
 audec_format            s16             # s16, float, ..
-audio_buffer            100-400          # ms
+audio_buffer            20-80          # ms
 audio_buffer_mode       fixed          # fixed, adaptive
-audio_silence           -0.0           # in [dB]
+audio_silence           -35.0           # in [dB]
 audio_telev_pt          101             # payload type for telephone-event
 
 # Video
@@ -60,8 +60,8 @@ rtp_tos                 184
 rtp_video_tos           136
 rtp_ports               10000-10500
 #rtp_bandwidth          512-1024 # [kbit/s]
-audio_jitter_buffer_type        fixed           # off, fixed, adaptive
-audio_jitter_buffer_ms  100-200         # Min. - Max. [ms]
+audio_jitter_buffer_type        adaptive           # off, fixed, adaptive
+audio_jitter_buffer_ms  5-40         # Min. - Max. [ms]
 audio_jitter_buffer_size        5              # [packets]
 video_jitter_buffer_type        fixed           # off, fixed, adaptive
 video_jitter_buffer_ms  100-200         # Min. - Max. [ms]
@@ -195,6 +195,12 @@ module_app              netroam.so
 
 #------------------------------------------------------------------------------
 # Module parameters
+
+# mediasoup_bridge is not listed in Modules above. The app loads it with
+# insmod only when TALKTOME_BRIDGE_ENABLED=true; these settings are inert
+# while the module is unloaded. The range must match the compose UDP mapping.
+mediasoup_bridge_rtp_ports    40000-40199
+mediasoup_bridge_bind_addr    0.0.0.0
 
 # DTLS SRTP parameters
 #dtls_srtp_use_ec       prime256v1

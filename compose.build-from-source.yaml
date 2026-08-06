@@ -10,6 +10,7 @@ services:
         BARESIP_HOST: baresip
         BARESIP_PORT: 4444
         APP_VERSION: localdevbuild
+        TALKTOME_TESTED_VERSION: ${TALKTOME_TESTED_VERSION:-1.1.3}
     container_name: baresip-ui
     ports:
       - 3000:3000
@@ -18,6 +19,22 @@ services:
       - BARESIP_PORT=4444
       # Enable TCP bus debug logging (shows received data in baresip logs)
       - DEBUG_TCP_BUS=false
+      # Off by default. URL, ID, token, and announce IP are required when enabled.
+      - TALKTOME_BRIDGE_ENABLED=${TALKTOME_BRIDGE_ENABLED:-false}
+      - NUXT_PUBLIC_TALKTOME_BRIDGE_ENABLED=${TALKTOME_BRIDGE_ENABLED:-false}
+      - TALKTOME_BASE_URL=${TALKTOME_BASE_URL:-}
+      - TALKTOME_BRIDGE_ID=${TALKTOME_BRIDGE_ID:-}
+      - TALKTOME_BRIDGE_TOKEN=${TALKTOME_BRIDGE_TOKEN:-}
+      - TALKTOME_MEDIA_ANNOUNCE_IP=${TALKTOME_MEDIA_ANNOUNCE_IP:-}
+      - TALKTOME_BRIDGE_CONFIG_PATH=${TALKTOME_BRIDGE_CONFIG_PATH:-/config/talktome-bridge.json}
+      - TALKTOME_BRIDGE_NAME=${TALKTOME_BRIDGE_NAME:-baresipui}
+      - TALKTOME_BRIDGE_AUTH_MODE=${TALKTOME_BRIDGE_AUTH_MODE:-bearer}
+      - TALKTOME_BRIDGE_AUTO_PROVISION=${TALKTOME_BRIDGE_AUTO_PROVISION:-true}
+      - TALKTOME_BRIDGE_COMMAND_TIMEOUT_MS=${TALKTOME_BRIDGE_COMMAND_TIMEOUT_MS:-5000}
+      - TALKTOME_DEFAULT_AUDIO_SOURCE=${TALKTOME_DEFAULT_AUDIO_SOURCE:-}
+      - TALKTOME_DEFAULT_AUDIO_PLAYER=${TALKTOME_DEFAULT_AUDIO_PLAYER:-}
+      - TALKTOME_TESTED_VERSION=${TALKTOME_TESTED_VERSION:-1.1.3}
+      - TALKTOME_SERVER_VERSION=${TALKTOME_SERVER_VERSION:-}
     depends_on:
       - baresip
     restart: unless-stopped
@@ -46,14 +63,17 @@ services:
     restart: unless-stopped
     init: true
     entrypoint: ["/bin/sh", "-c"]
+    environment:
+      # Compose recreation trigger only; baresip does not load the module from this flag.
+      - TALKTOME_BRIDGE_ENABLED=${TALKTOME_BRIDGE_ENABLED:-false}
     volumes:
       - ./baresip/config:/config
       - ./baresip/.asoundrc:/root/.asoundrc
       - shared-logs:/shared-logs
     ports:
-      - 4444:4444/tcp
       - 5060:5060/udp
       - 10000-10500:10000-10500/udp
+      - "40000-40199:40000-40199/udp"
     command:
       - "/entrypoint.sh baresip -f /config 2>&1 | tee /shared-logs/baresip.log"
     devices:
