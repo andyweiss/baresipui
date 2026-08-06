@@ -138,6 +138,12 @@ FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Debug flags for baresip's startup command. Defaults to verbose SIP tracing
+# for local/dev builds; the release workflow overrides this to empty so
+# published images stay quiet.
+ARG BARESIP_DEBUG_ARGS="-s -v"
+ENV BARESIP_DEBUG_ARGS=${BARESIP_DEBUG_ARGS}
+
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopus0 \
@@ -158,16 +164,13 @@ WORKDIR /root
 USER root
 ENV USER=root
 
+# Bake in the project's default baresip config, used by the entrypoint to
+# seed /config/config when no config has been mounted yet.
+COPY config/config /usr/share/baresip-defaults/config
+
 # Entrypoint script
-RUN echo '#!/usr/bin/env bash\n\
-set -e\n\
-\n\
-if [ "$1" = "baresip" ]; then\n\
-    # Start baresip with User-Agent, SIP trace and verbose debug\n\
-    /usr/bin/baresip -a "Baresip AWAH" -s -v "$@"\n\
-else\n\
-    exec "$@"\n\
-fi' > /entrypoint.sh && chmod +x /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["baresip"]

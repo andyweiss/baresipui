@@ -30,6 +30,8 @@ jobs:
           context: ./baresip
           file: ./baresip/Dockerfile.build-from-source
           push: true
+          build-args: |
+            BARESIP_DEBUG_ARGS=
           tags: |
             ghcr.io/andyweiss/baresip:${{ github.ref_name }}
             ghcr.io/andyweiss/baresip:latest
