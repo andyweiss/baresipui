@@ -218,7 +218,6 @@ export function recordCallEnded(account: string, durationMs: number, remoteUri: 
 
 export function recordJbufDrop(): void {
   jbufDropCounter.inc();
-  stateManager.notifyJbufDrop();
 }
 
 export function recordAlsaError(message: string): void {
