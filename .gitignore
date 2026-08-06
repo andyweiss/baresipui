@@ -15,3 +15,4 @@ baresip/config/call-history.json
 baresip/.asoundrc
 tests/
 .claude/settings.json
+.vscode
