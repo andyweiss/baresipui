@@ -6,3 +6,4 @@ export * from './module-controller';
 export * from './orchestrator';
 export * from './runtime';
 export * from './env';
+export * from './bridge-identity';
