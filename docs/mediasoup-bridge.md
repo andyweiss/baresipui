@@ -97,7 +97,7 @@ receives no API credentials.
 | `TALKTOME_BRIDGE_COMMAND_TIMEOUT_MS` | `5000` | No | ctrl_tcp module-command timeout in milliseconds; valid range is `100`–`120000`. |
 | `TALKTOME_DEFAULT_AUDIO_SOURCE` | empty | No | Source restored if an account has no recorded previous non-bridge source. |
 | `TALKTOME_DEFAULT_AUDIO_PLAYER` | empty | No | Player restored if an account has no recorded previous non-bridge player. |
-| `TALKTOME_TESTED_VERSION` | `1.1.3` | No | Highest talktome server release this bridge build was verified against. Bakeable as a Docker build `ARG`/`ENV`; override at runtime if needed. When the connected server reports a newer `appVersion`, the UI shows a warning. |
+| `TALKTOME_TESTED_VERSION` | `1.1.3` | No | Highest talktome server release this bridge build was verified against. Baked into the image at build time from the repo-root `TALKTOME_TESTED_VERSION` file (read by the release workflow and passed as a Docker build `ARG`); not listed in the shipped compose files. Power users can override it by adding `TALKTOME_TESTED_VERSION=<version>` back to a service's `environment:` (directly or via a compose override file). When the connected server reports a newer `appVersion`, the UI shows a warning. |
 | `TALKTOME_SERVER_VERSION` | empty | No | Optional known server version used only when health/announce omit `appVersion` (as of talktome v1.1.3). Prefer leaving empty so the live probe wins when available. |
 
 The compose files pass every connection setting and secret only to `app` and
@@ -155,8 +155,9 @@ a warning and the bridge logs a warn line. Equal or older versions do not warn.
 As of talktome v1.1.3, `/api/v1/health` still returns only `{ ok, serverStartedAt }`
 and announce does not include `appVersion` (version is on admin status only), so
 auto-detection stays quiet until the server exposes one of those fields—or until
-`TALKTOME_SERVER_VERSION` is set. Bumping `TALKTOME_TESTED_VERSION` after
-re-verifying a newer release suppresses the warning again.
+`TALKTOME_SERVER_VERSION` is set. Bumping the version in the repo-root
+`TALKTOME_TESTED_VERSION` file after re-verifying a newer release (picked up by
+the next image build) suppresses the warning again.
 
 Nuxt public runtime configuration is separate from the server setting: a
 runtime browser override must use the `NUXT_PUBLIC_*` name. Changing only a

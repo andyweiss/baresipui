@@ -57,12 +57,16 @@ FROM libre-builder AS baresip-builder
 ARG BARESIP_VERSION=main
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
+# fdk-aac (needed for the "aac" module) lives in Debian's non-free component,
+# which the slim base image doesn't enable by default.
+RUN sed -i 's/Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y \
     libopus-dev \
     libasound2-dev \
     libmosquitto-dev \
     libspandsp-dev \
     libpulse-dev \
+    libfdk-aac-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/
@@ -118,7 +122,8 @@ FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's/Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     libopus0 \
     ca-certificates \
     openssl \
@@ -128,6 +133,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpulse0 \
     pulseaudio \
     alsa-utils \
+    libfdk-aac2t64 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=baresip-builder /root/dist/usr/ /usr/

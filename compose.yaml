@@ -21,7 +21,9 @@ services:
       - TALKTOME_BRIDGE_COMMAND_TIMEOUT_MS=${TALKTOME_BRIDGE_COMMAND_TIMEOUT_MS:-5000}
       - TALKTOME_DEFAULT_AUDIO_SOURCE=${TALKTOME_DEFAULT_AUDIO_SOURCE:-}
       - TALKTOME_DEFAULT_AUDIO_PLAYER=${TALKTOME_DEFAULT_AUDIO_PLAYER:-}
-      - TALKTOME_TESTED_VERSION=${TALKTOME_TESTED_VERSION:-1.1.3}
+      # TALKTOME_TESTED_VERSION is baked into the image at build time from the
+      # TALKTOME_TESTED_VERSION file. Power users can override by adding
+      # `TALKTOME_TESTED_VERSION=<version>` back here or in an override file.
       - TALKTOME_SERVER_VERSION=${TALKTOME_SERVER_VERSION:-}
     depends_on:
       - baresip

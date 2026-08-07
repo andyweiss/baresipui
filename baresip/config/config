@@ -62,7 +62,7 @@ rtp_ports               10000-10500
 #rtp_bandwidth          512-1024 # [kbit/s]
 audio_jitter_buffer_type        fixed           # off, fixed, adaptive
 audio_jitter_buffer_ms  100-200         # Min. - Max. [ms]
-audio_jitter_buffer_size        5              # [packets]
+audio_jitter_buffer_size        50             # [packets]
 video_jitter_buffer_type        fixed           # off, fixed, adaptive
 video_jitter_buffer_ms  100-200         # Min. - Max. [ms]
 video_jitter_buffer_size        250             # [packets]
@@ -98,6 +98,7 @@ module                  httpd.so
 module                  opus.so
 #module                 amr.so
 #module                 g7221.so
+module                  aac.so
 module                  g722.so
 #module                 g726.so
 module                  g711.so
