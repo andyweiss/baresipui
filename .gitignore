@@ -10,6 +10,14 @@ dist
 baresip/config/accounts
 baresip/config/contacts
 baresip/config/autoconnect.json
+<<<<<<< HEAD
+=======
+baresip/config/talktome-bridge.json
+baresip/config/talktome-bridge.identity.json
+baresip/config/.talktome-bridge.json.*.tmp
+baresip/config/.talktome-bridge.identity.json.*.tmp
+baresip/config/.talktome-bridge.json.transaction-journal
+>>>>>>> 4af7e3c (feat: auto-generate and persist optional TalkToMe bridge id)
 baresip/config/current_contact
 baresip/config/call-history.json
 baresip/.asoundrc

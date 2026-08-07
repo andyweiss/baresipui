@@ -87,7 +87,7 @@ receives no API credentials.
 | `TALKTOME_BRIDGE_ENABLED` | `false` | Yes | Global hard gate. Set exactly `true` to enable. Compose also passes this non-secret value to baresip as a recreation marker. |
 | `NUXT_PUBLIC_TALKTOME_BRIDGE_ENABLED` | server gate value | Yes | Browser runtime gate. Compose derives it from `TALKTOME_BRIDGE_ENABLED`; it contains no secret. |
 | `TALKTOME_BASE_URL` | empty | Yes | talktome origin/base URL. Prefer HTTPS and do not embed credentials in it. |
-| `TALKTOME_BRIDGE_ID` | empty | Yes | Stable ID of this bridge registration. |
+| `TALKTOME_BRIDGE_ID` | empty | No | Optional explicit bridge registration id. When unset, the app generates a UUID once and persists it beside the mapping config as `talktome-bridge.identity.json` (same idea as the official bridge-client storing `bridge.id` in localStorage). Set this only to pin/reuse a known id across hosts. |
 | `TALKTOME_BRIDGE_TOKEN` | empty | Yes | Bridge bearer token or suitably scoped API credential. |
 | `TALKTOME_MEDIA_ANNOUNCE_IP` | empty | Yes | Address through which talktome can reach the Docker host's published bridge RTP ports. |
 | `TALKTOME_BRIDGE_CONFIG_PATH` | `/config/talktome-bridge.json` | No | Persistent per-account mapping file. Keep it on the mounted config volume. |
@@ -105,9 +105,30 @@ explicitly default the global gate to `false`. They derive the browser-safe
 `NUXT_PUBLIC_TALKTOME_BRIDGE_ENABLED` override from that same value and pass
 only the non-secret gate to `baresip`, solely so Compose detects gate changes
 and recreates the process that may contain a dynamically loaded module.
-Configure the four required connection values before setting the gate to
-`true`. A partially configured enabled deployment fails the bridge plugin
-closed.
+Configure the three required connection values (`TALKTOME_BASE_URL`,
+`TALKTOME_BRIDGE_TOKEN`, `TALKTOME_MEDIA_ANNOUNCE_IP`) before setting the gate
+to `true`. `TALKTOME_BRIDGE_ID` is optional (see Bridge ID below). A partially
+configured enabled deployment fails the bridge plugin closed.
+
+### Bridge ID (optional)
+
+TalkToMe Admin does not surface an easy copy-paste bridge id for operators.
+The official `bridge-client` therefore omits the id on first announce (the
+server assigns a UUID) and persists `bridge.id` for later re-announces.
+
+This app mirrors that UX without requiring Admin lookup:
+
+1. If `TALKTOME_BRIDGE_ID` is set, that value is used and written to the
+   identity file.
+2. Else if `<config-basename>.identity.json` next to
+   `TALKTOME_BRIDGE_CONFIG_PATH` already contains a `bridgeId`, that value is
+   reused (default path: `/config/talktome-bridge.identity.json`).
+3. Else the app generates a UUID, persists it, and announces with it.
+
+Successful announce responses also refresh the persisted id from
+`bridge.id`, matching the official client. Keep the identity file on the same
+mounted config volume as the account mappings so the registration stays stable
+across container recreations. The id is not a secret; the bridge token is.
 
 ### Compatibility and server version warning
 
@@ -184,12 +205,15 @@ For a short local ctrl_tcp diagnostic, use a temporary Compose override with
 
 1. Configure the talktome mediasoup worker's `RTC_PORT_RANGE` and
    `announcedIp`. Open that UDP range on the talktome server.
-2. Create a stable bridge ID and announce/register the bridge through the
-   Bridge API. talktome **v1.1.1+** marks a bridge stale after ~45 seconds
-   without a fresh `POST /api/v1/bridge/announce`; this agent re-announces
-   every 10 seconds (same cadence as the official bridge-client). Session
-   SSE/heartbeat keep *sessions* alive, not the registry row in Admin →
-   Status → Bridge Instances.
+2. Leave `TALKTOME_BRIDGE_ID` unset unless you need to pin a specific id.
+   On first start the app generates a UUID and stores it in
+   `talktome-bridge.identity.json` on the config volume (same pattern as the
+   official bridge-client persisting `bridge.id`). Announce/register with the
+   Bridge API using that id. talktome **v1.1.1+** marks a bridge stale after
+   ~45 seconds without a fresh `POST /api/v1/bridge/announce`; this agent
+   re-announces every 10 seconds (same cadence as the official bridge-client).
+   Session SSE/heartbeat keep *sessions* alive, not the registry row in
+   Admin → Status → Bridge Instances.
 3. Store the resulting matching bridge token securely for the app service.
 4. Create one dedicated talktome user per bridged SIP account.
 5. Assign each talktome user as a `user` endpoint or each feed as a `feed`

@@ -30,6 +30,7 @@ import {
 import type { BridgeRuntimeConfig, JsonObject } from './types';
 import { buildVirtualBridgeInventory } from './virtual-inventory';
 import { withTalktomeAccountLifecycleLock } from './account-lifecycle-lock';
+import { persistAnnouncedBridgeId } from './bridge-identity';
 import {
   DEFAULT_TALKTOME_TESTED_VERSION,
   isTalktomeServerNewerThanTested,
@@ -295,6 +296,16 @@ export class TalktomeBridgeRuntime {
           onTally: (update) => this.handleTally(update),
           onAnnouncement: (announcement) => {
             this.remoteConfig = announcement.config;
+            const announcedId =
+              typeof announcement.bridge?.id === 'string'
+                ? announcement.bridge.id.trim()
+                : '';
+            if (announcedId) {
+              void persistAnnouncedBridgeId({
+                configPath: this.options.configPath,
+                bridgeId: announcedId,
+              }).catch((error) => this.reportError(error));
+            }
             // Periodic announce keep-alives should not re-hit /health when the
             // server still omits appVersion (talktome v1.1.3). Only refresh when
             // announce itself carries a version; startup probes once below.
@@ -685,7 +696,6 @@ export function getTalktomeBridgeRuntime(): TalktomeBridgeRuntime | undefined {
 function validateOptions(options: TalktomeBridgeRuntimeOptions): void {
   const required: Array<[string, string]> = [
     ['TALKTOME_BASE_URL', options.baseUrl],
-    ['TALKTOME_BRIDGE_ID', options.bridgeId],
     ['TALKTOME_BRIDGE_TOKEN', options.token],
     ['TALKTOME_MEDIA_ANNOUNCE_IP', options.mediaAnnounceIp],
   ];
@@ -694,6 +704,9 @@ function validateOptions(options: TalktomeBridgeRuntimeOptions): void {
     .map(([name]) => name);
   if (missing.length) {
     throw new Error(`Missing required talktome environment: ${missing.join(', ')}`);
+  }
+  if (!options.bridgeId?.trim()) {
+    throw new Error('Talktome bridgeId is required (set TALKTOME_BRIDGE_ID or persist an identity)');
   }
   if (isIP(options.mediaAnnounceIp.trim()) === 0) {
     throw new Error('TALKTOME_MEDIA_ANNOUNCE_IP must be an IPv4 or IPv6 address');

@@ -259,7 +259,7 @@ docker compose -f compose.build-from-source.yaml up -d
 | `TALKTOME_BRIDGE_ENABLED` | `false` | Global talktome bridge gate; also passed without secrets to baresip as a Compose recreation marker |
 | `NUXT_PUBLIC_TALKTOME_BRIDGE_ENABLED` | value of `TALKTOME_BRIDGE_ENABLED` | Browser-visible runtime gate; compose derives it from the server gate |
 | `TALKTOME_BASE_URL` | empty | talktome base URL; required only when the bridge is enabled |
-| `TALKTOME_BRIDGE_ID` | empty | Stable bridge ID; required only when enabled |
+| `TALKTOME_BRIDGE_ID` | empty | Optional bridge registration id; when unset, a UUID is generated once and persisted next to the mapping config |
 | `TALKTOME_BRIDGE_TOKEN` | empty | Protected bridge/API credential; required only when enabled |
 | `TALKTOME_MEDIA_ANNOUNCE_IP` | empty | Reachable Docker-host media address; required only when enabled |
 | `TALKTOME_BRIDGE_CONFIG_PATH` | `/config/talktome-bridge.json` | Persistent per-account mapping file |
