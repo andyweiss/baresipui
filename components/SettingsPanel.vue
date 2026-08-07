@@ -46,6 +46,12 @@
         <h3 class="text-lg font-semibold text-white mb-4">Account Management</h3>
         <AccountsManager />
       </div>
+      <TalktomeBridgeManager
+        v-if="talktomeBridgeEnabled"
+        :accounts="props.accounts"
+        :global-status="props.talktomeBridgeGlobalStatus"
+        :statuses="props.talktomeBridgeStatuses"
+      />
       <!-- Contact Management Section -->
       <div class="border-b border-gray-700 pb-6">
         <h3 class="text-lg font-semibold text-white mb-4">Contact Management</h3>
@@ -69,15 +75,32 @@
 </template>
 
 <script setup lang="ts">
+import type {
+  Account,
+  TalktomeBridgeGlobalStatus,
+  TalktomeBridgeStatus,
+} from '~/types';
 
 const props = defineProps<{
   reloadConfig: () => void,
   sendCommand?: (cmd: string) => Promise<any>,
+  accounts: Account[],
+  talktomeBridgeGlobalStatus: TalktomeBridgeGlobalStatus | null,
+  talktomeBridgeStatuses: TalktomeBridgeStatus[],
 }>();
 
 const baresipInfo = ref<{ version?: string; uptime?: string; started?: string }>({});
 
 const uiVersion = ref<string>('loading...');
+const runtimeConfig = useRuntimeConfig();
+const talktomeBridgeEnabled = runtimeFlagEnabled(
+  runtimeConfig.public.talktomeBridgeEnabled,
+);
+
+function runtimeFlagEnabled(value: unknown): boolean {
+  return value === true ||
+    (typeof value === 'string' && value.trim().toLowerCase() === 'true');
+}
 
 // Load version from /version.js at runtime
 onMounted(async () => {

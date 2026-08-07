@@ -4,6 +4,46 @@ import { dtmfToGpio, gpioToDtmf } from '~/types';
 import { getBaresipConnection } from './baresip-connection';
 import { recordRegistrationEvent, recordCallStarted, recordCallEnded, recordAlsaError, recordJbufDrop } from './prometheus';
 
+export type BaresipResponseObserver = (
+  response: BaresipCommandResponse,
+) => void | Promise<void>;
+export type BaresipEventObserver = (
+  event: BaresipEvent,
+) => void | Promise<void>;
+
+const responseObservers = new Set<BaresipResponseObserver>();
+const eventObservers = new Set<BaresipEventObserver>();
+
+export function registerBaresipResponseObserver(
+  observer: BaresipResponseObserver,
+): () => void {
+  responseObservers.add(observer);
+  return () => responseObservers.delete(observer);
+}
+
+export function registerBaresipEventObserver(
+  observer: BaresipEventObserver,
+): () => void {
+  eventObservers.add(observer);
+  return () => eventObservers.delete(observer);
+}
+
+function notifyObservers<T>(
+  observers: Set<(value: T) => void | Promise<void>>,
+  value: T,
+  kind: string,
+): void {
+  for (const observer of observers) {
+    try {
+      void Promise.resolve(observer(value)).catch((error) => {
+        console.error(`Baresip ${kind} observer failed:`, error);
+      });
+    } catch (error) {
+      console.error(`Baresip ${kind} observer failed:`, error);
+    }
+  }
+}
+
 // Global queue to serialize auto-connect operations
 let autoConnectQueue: Array<() => void> = [];
 let isProcessingAutoConnect = false;
@@ -73,7 +113,10 @@ export function parseBaresipEventBuffered(buffer: string, stateManager: StateMan
     try {
       const jsonMessage = JSON.parse(messageStr);
       if (jsonMessage.response !== undefined) {
+        // Correlated command promises must resolve only after their response
+        // has been fully applied to state (notably listcalls inventory).
         handleCommandResponse(jsonMessage, stateManager);
+        notifyObservers(responseObservers, jsonMessage, 'response');
       } else if (jsonMessage.event) {
         handleJsonEvent(jsonMessage, stateManager);
       }
@@ -88,10 +131,23 @@ export function parseBaresipEventBuffered(buffer: string, stateManager: StateMan
 function handleCommandResponse(response: BaresipCommandResponse, stateManager: StateManager): void {
   const timestamp = Date.now();
 
+  // Successful correlated commands with empty payloads (e.g. DTMF after callfind)
+  // are already delivered to their waiters; nothing remains to parse.
+  if (
+    response.ok &&
+    response.token &&
+    (response.data === undefined ||
+      response.data === null ||
+      response.data === '')
+  ) {
+    return;
+  }
+
   //  Dispatch-Logic for different response types
   if (typeof response.data === 'string') {
     const data = response.data;
-    
+    const trimmed = data.trim();
+
     // Check if this is getrtcpstats JSON response
     if (data.includes('call_id') && data.startsWith('[')) {
       try {
@@ -100,6 +156,34 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       } catch (e) {
         // Silently ignore parse errors
       }
+    }
+
+    // mediasoup_bridge module command JSON (ms_ctx_* / ms_bridge_* / ms_src_*)
+    if (trimmed.startsWith('{') && trimmed.includes('"key"')) {
+      try {
+        const payload = JSON.parse(trimmed) as unknown;
+        if (isMediasoupBridgeCommandPayload(payload)) {
+          parseMediasoupBridgeCommandResponse(payload, stateManager);
+          return;
+        }
+      } catch {
+        // Fall through to other handlers / unhandled warning.
+      }
+    }
+
+    // Dynamic module load acknowledgement used by the talktome bridge plugin.
+    if (/^loaded module\b/i.test(trimmed)) {
+      stateManager.addLog('info', 'tcp-socket', trimmed);
+      return;
+    }
+
+    // callfind / call-selection text used before DTMF GPIO and tally digits.
+    if (
+      /^ua:\s*sip:/im.test(trimmed) ||
+      /^call uri:/im.test(trimmed) ||
+      /^setting current call:/im.test(trimmed)
+    ) {
+      return;
     }
     
     // 1. System Info
@@ -146,6 +230,176 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
   stateManager.addLog('warn', 'tcp-socket', `Unhandled Command Response: ${responseText}`, undefined, response);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * mediasoup_bridge ctrl_tcp commands always return a JSON object with `key`.
+ * Discriminate on the stable fields emitted by commands.c.
+ */
+function isMediasoupBridgeCommandPayload(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (!isRecord(value) || typeof value.key !== 'string' || !value.key) {
+    return false;
+  }
+  if (typeof value.error === 'string') return true;
+  if (value.tx === 'configured') return true;
+  if (isRecord(value.tx) && 'packets' in value.tx) return true;
+  if (typeof value.mixMode === 'string') return true;
+  if (typeof value.muted === 'boolean') return true;
+  if (typeof value.producerId === 'string') return true;
+  if (typeof value.created === 'boolean') return true;
+  if (
+    value.state === 'open' ||
+    value.state === 'closed' ||
+    value.state === 'active' ||
+    value.state === 'removed'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function parseMediasoupBridgeCommandResponse(
+  payload: Record<string, unknown>,
+  stateManager: StateManager,
+): void {
+  const key = String(payload.key);
+  if (typeof payload.error === 'string' && payload.error) {
+    stateManager.addLog(
+      'warn',
+      'mediasoup-bridge',
+      `mediasoup ${key}: ${payload.error}`,
+      undefined,
+      payload,
+    );
+    return;
+  }
+
+  // Periodic ms_bridge_stat replies are high-frequency; keep a compact debug
+  // line and omit the full payload so Socket.IO logBatch does not rebroadcast
+  // large JSON objects every poll interval.
+  if (isRecord(payload.tx) && 'packets' in payload.tx) {
+    const tx = payload.tx;
+    const packets = typeof tx.packets === 'number' ? tx.packets : '?';
+    const level =
+      typeof tx.levelDbfs === 'number' ? `${tx.levelDbfs.toFixed(1)} dBFS` : '?';
+    const muted = tx.muted === true ? ' muted' : '';
+    const calls = typeof payload.calls === 'number' ? payload.calls : '?';
+    const rx =
+      typeof payload.rxSourceCount === 'number' ? payload.rxSourceCount : '?';
+    stateManager.addLog(
+      'debug',
+      'mediasoup-bridge',
+      `mediasoup ${key}: stat calls=${calls} tx_packets=${packets} level=${level}${muted} rx_sources=${rx}`,
+    );
+    return;
+  }
+
+  if (payload.tx === 'configured') {
+    const localPort =
+      typeof payload.localPort === 'number' ? payload.localPort : '?';
+    stateManager.addLog(
+      'info',
+      'mediasoup-bridge',
+      `mediasoup ${key}: tx configured localPort=${localPort}`,
+      undefined,
+      payload,
+    );
+    return;
+  }
+
+  if (typeof payload.muted === 'boolean') {
+    stateManager.addLog(
+      'info',
+      'mediasoup-bridge',
+      `mediasoup ${key}: tx ${payload.muted ? 'muted' : 'unmuted'}`,
+      undefined,
+      payload,
+    );
+    return;
+  }
+
+  if (typeof payload.mixMode === 'string') {
+    const bitrate =
+      typeof payload.bitrateBps === 'number' ? payload.bitrateBps : '?';
+    stateManager.addLog(
+      'info',
+      'mediasoup-bridge',
+      `mediasoup ${key}: config mixMode=${payload.mixMode} bitrateBps=${bitrate}`,
+      undefined,
+      payload,
+    );
+    return;
+  }
+
+  if (typeof payload.producerId === 'string') {
+    const producerId = payload.producerId;
+    const state =
+      typeof payload.state === 'string' ? payload.state : undefined;
+    const localRecvPort =
+      typeof payload.localRecvPort === 'number'
+        ? payload.localRecvPort
+        : undefined;
+    if (state === 'removed') {
+      stateManager.addLog(
+        'info',
+        'mediasoup-bridge',
+        `mediasoup ${key}: source ${producerId} removed`,
+        undefined,
+        payload,
+      );
+      return;
+    }
+    if (state === 'active') {
+      stateManager.addLog(
+        'info',
+        'mediasoup-bridge',
+        `mediasoup ${key}: source ${producerId} active` +
+          (localRecvPort !== undefined ? ` recvPort=${localRecvPort}` : ''),
+        undefined,
+        payload,
+      );
+      return;
+    }
+    stateManager.addLog(
+      'info',
+      'mediasoup-bridge',
+      `mediasoup ${key}: source ${producerId} reserved` +
+        (localRecvPort !== undefined ? ` recvPort=${localRecvPort}` : ''),
+      undefined,
+      payload,
+    );
+    return;
+  }
+
+  if (payload.state === 'open' || payload.state === 'closed') {
+    const created =
+      typeof payload.created === 'boolean'
+        ? payload.created
+          ? ' created'
+          : ' reused'
+        : '';
+    stateManager.addLog(
+      'info',
+      'mediasoup-bridge',
+      `mediasoup ${key}: context ${payload.state}${created}`,
+      undefined,
+      payload,
+    );
+    return;
+  }
+
+  stateManager.addLog(
+    'info',
+    'mediasoup-bridge',
+    `mediasoup ${key}: ok`,
+    undefined,
+    payload,
+  );
+}
 
 // ************ System Info response Parser ************
 function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: StateManager, timestamp: number): void {
@@ -609,7 +863,7 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
   // Actual baresip v3.16 format:
   // User-Agent: <number>@<sip-domain>
   // --- Active calls (1) ---
-  // > [line 1, id 8fd950528ad2127d]  1:23:38  ESTABLISHED            
+  // > [line 1, id 8fd950528ad2127d]  1:23:38  ESTABLISHED (on hold) sip:peer@example.com
   //
   // Strategy: Last wins for updates - new info overwrites old
   // - listcalls response ADDS/UPDATES calls found (e.g., on UI reconnect)
@@ -617,7 +871,7 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
   // - Events (CALL_CLOSED) handle call removal in real-time
   
   const activeCallIds: Set<string> = new Set();
-  let foundAnyCall = false;
+  const accountsWithCalls = new Set<string>();
   let currentUserAgent: string | null = null;
   
   for (const line of lines) {
@@ -633,14 +887,19 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
       continue;
     }
     
-    // Parse call line: > [line 1, id 8fd950528ad2127d]  1:23:38  ESTABLISHED       
-    const callMatch = line.match(/>\s*\[line\s+\d+,\s*id\s+([a-f0-9]+)\]\s+[\d:]+\s+(\w+)\s+(sip:[^@\s]+@[^\s]+)/i);
+    // The current-call marker is optional. Call IDs are opaque and may contain
+    // non-hex characters; the optional "(on hold)" field sits before peer URI.
+    const callMatch = line.match(
+      /^\s*>?\s*\[line\s+\d+\s*,\s*id\s+([^\]]+?)\]\s+\S+\s+([A-Za-z][A-Za-z0-9_-]*)\s*(.*)$/i,
+    );
     if (callMatch) {
-      foundAnyCall = true;
-      
-      const callId = callMatch[1];
+      const callId = callMatch[1].trim();
       const callState = callMatch[2].trim().toUpperCase();
-      const remoteUri = callMatch[3];
+      const details = callMatch[3];
+      const remoteMatch = details.match(/<?(sips?:[^>\s]+)>?/i);
+      if (!callId || !remoteMatch) continue;
+      const remoteUri = remoteMatch[1];
+      const onHold = /\(\s*on\s+hold\s*\)/i.test(details);
       const localUri = currentUserAgent;
       
       if (!localUri) {
@@ -648,6 +907,7 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
       }
       
       activeCallIds.add(callId);
+      accountsWithCalls.add(localUri.toLowerCase().trim());
       
       // Update account call status
       const account = stateManager.getAccount(localUri);
@@ -685,6 +945,7 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
         remoteUri,
         peerName: remoteUri.split('@')[0].replace('sip:', ''),
         state: callState === 'ESTABLISHED' ? 'Established' : 'Ringing',
+        onHold,
         direction: existingCall?.direction ?? callDirection,
         startTime: existingCall?.startTime || Date.now(),
         answerTime: callState === 'ESTABLISHED' ? (existingCall?.answerTime || Date.now()) : undefined
@@ -700,12 +961,6 @@ function parseCallsResponse(data: string, stateManager: StateManager, autoReset:
   // Auto-Reset only if explicitly enabled (default: disabled)
   if (autoReset) {
     const allAccounts = stateManager.getAccounts();
-    const accountsWithCalls = new Set<string>();
-    
-    // Track which accounts have calls in this response
-    if (currentUserAgent && foundAnyCall) {
-      accountsWithCalls.add(currentUserAgent.toLowerCase().trim());
-    }
     
     for (const account of allAccounts) {
       const accountUri = String(account.uri || '').toLowerCase().trim();
@@ -775,10 +1030,19 @@ function handleVuMeterEvent(jsonEvent: BaresipEvent, stateManager: StateManager,
 
 function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): void {
   const timestamp = Date.now();
+  notifyObservers(eventObservers, jsonEvent, 'event');
 
   // Handle VU meter events (high-frequency, skip logging)
   if (jsonEvent.type === 'VU_TX_REPORT' || jsonEvent.type === 'VU_RX_REPORT') {
     handleVuMeterEvent(jsonEvent, stateManager, timestamp);
+    return;
+  }
+  if (
+    jsonEvent.type === 'MODULE' &&
+    jsonEvent.param?.startsWith('mediasoup_bridge,')
+  ) {
+    // Generic observers consume bridge telemetry; avoid logging its 5 Hz
+    // level reports into the ordinary SIP event log.
     return;
   }
 
@@ -1026,15 +1290,26 @@ function handleJsonEvent(jsonEvent: BaresipEvent, stateManager: StateManager): v
             }
           }
           if (activeDigits.length > 0) {
-            // Send each digit as short command (ctrl_tcp patch adds short command fallback)
+            // Select the exact event call under the correlated command lock.
+            // Account selection is ambiguous when an account has parallel calls.
             const commands: Array<{command: string, params?: string}> = [
-              { command: 'uafind', params: uri }
+              { command: 'callfind', params: jsonEvent.id }
             ];
             for (const digit of activeDigits) {
               commands.push({ command: digit });
             }
-            connection.sendCommandSequence(commands);
-            stateManager.addLog('info', 'parser', `Retransmitted ${activeDigits.length} active GPIO states as DTMF on call connect`, uri);
+            void connection.executeCommandSequence(commands).then(() => {
+              stateManager.addLog('info', 'parser', `Retransmitted ${activeDigits.length} active GPIO states as DTMF on call connect`, uri);
+            }).catch((error) => {
+              stateManager.addLog(
+                'error',
+                'parser',
+                `Failed to retransmit active GPIO states on call ${jsonEvent.id}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+                uri,
+              );
+            });
           }
         }
       }

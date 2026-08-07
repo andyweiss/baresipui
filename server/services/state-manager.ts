@@ -1,4 +1,14 @@
-import type { Account, Contact, ContactConfig, CallInfo, AudioMeter, LogEntry, GpioState } from '~/types';
+import type {
+  Account,
+  Contact,
+  ContactConfig,
+  CallInfo,
+  AudioMeter,
+  LogEntry,
+  GpioState,
+  TalktomeBridgeGlobalStatus,
+  TalktomeBridgeStatus,
+} from '~/types';
 import { createDefaultGpioState } from '~/types';
 import { accountSortFn } from '~/utils/account-sorting';
 
@@ -20,6 +30,14 @@ export class StateManager {
   private readonly LOG_BATCH_INTERVAL = 500; // Batch log broadcasts every 500ms
   private baresipConnected = false; // Track Baresip TCP connection status
   private baresipInfo: { version?: string; uptime?: string; started?: string } = {};
+  private talktomeBridgeGlobalStatus: TalktomeBridgeGlobalStatus = {
+    enabled: false,
+    phase: 'disabled',
+    baresipConnected: false,
+    serverReachable: false,
+    updatedAt: Date.now(),
+  };
+  private talktomeBridgeStatuses = new Map<string, TalktomeBridgeStatus>();
   // contacts API: loads contact names only
   // presence_ts: ONLY source for presence status (checks timestamp age)
 
@@ -87,9 +105,18 @@ export class StateManager {
   setBaresipConnected(connected: boolean): void {
     if (this.baresipConnected !== connected) {
       this.baresipConnected = connected;
+      this.talktomeBridgeGlobalStatus = {
+        ...this.talktomeBridgeGlobalStatus,
+        baresipConnected: connected,
+        updatedAt: Date.now(),
+      };
       this.broadcast({
         type: 'baresipStatus',
         data: { connected }
+      });
+      this.broadcast({
+        type: 'talktomeBridgeGlobalStatus',
+        data: this.getTalktomeBridgeGlobalStatus(),
       });
       if (!connected) {
         // Also send dedicated disconnect event
@@ -102,6 +129,59 @@ export class StateManager {
 
   getBaresipConnected(): boolean {
     return this.baresipConnected;
+  }
+
+  setTalktomeBridgeGlobalStatus(status: TalktomeBridgeGlobalStatus): void {
+    this.talktomeBridgeGlobalStatus = { ...status };
+    this.broadcast({
+      type: 'talktomeBridgeGlobalStatus',
+      data: this.getTalktomeBridgeGlobalStatus(),
+    });
+  }
+
+  getTalktomeBridgeGlobalStatus(): TalktomeBridgeGlobalStatus {
+    return { ...this.talktomeBridgeGlobalStatus };
+  }
+
+  setTalktomeBridgeStatus(status: TalktomeBridgeStatus): void {
+    const key = status.accountUri.toLowerCase().trim();
+    this.talktomeBridgeStatuses.set(key, {
+      ...status,
+      activeCallIds: [...status.activeCallIds],
+    });
+    this.broadcast({
+      type: 'talktomeBridgeStatus',
+      data: this.getTalktomeBridgeStatus(status.accountUri),
+    });
+  }
+
+  getTalktomeBridgeStatus(accountUri: string): TalktomeBridgeStatus | undefined {
+    const status = this.talktomeBridgeStatuses.get(accountUri.toLowerCase().trim());
+    return status
+      ? { ...status, activeCallIds: [...status.activeCallIds] }
+      : undefined;
+  }
+
+  getTalktomeBridgeStatuses(): TalktomeBridgeStatus[] {
+    return [...this.talktomeBridgeStatuses.values()].map((status) => ({
+      ...status,
+      activeCallIds: [...status.activeCallIds],
+    }));
+  }
+
+  removeTalktomeBridgeStatus(accountUri: string): void {
+    const key = accountUri.toLowerCase().trim();
+    if (this.talktomeBridgeStatuses.delete(key)) {
+      this.broadcast({
+        type: 'talktomeBridgeStatusRemoved',
+        data: { accountUri },
+      });
+    }
+  }
+
+  clearTalktomeBridgeStatuses(): void {
+    this.talktomeBridgeStatuses.clear();
+    this.broadcast({ type: 'talktomeBridgeStatuses', data: [] });
   }
 
   getContactConfig(contact: string): ContactConfig | undefined {
@@ -261,7 +341,11 @@ export class StateManager {
       baresipConnected: this.baresipConnected,
       calls: this.getCalls(),
       audioMeters: this.getAllAudioMeters(),
-      gpioStates: this.getAllGpioStates()
+      gpioStates: this.getAllGpioStates(),
+      talktomeBridge: {
+        globalStatus: this.getTalktomeBridgeGlobalStatus(),
+        statuses: this.getTalktomeBridgeStatuses(),
+      }
     };
   }
 
@@ -378,8 +462,9 @@ export class StateManager {
   }
 
   getCallsByAccount(accountUri: string): CallInfo[] {
+    const normalized = String(accountUri || '').toLowerCase().trim();
     return Array.from(this.activeCalls.values())
-      .filter(call => call.localUri === accountUri);
+      .filter(call => String(call.localUri || '').toLowerCase().trim() === normalized);
   }
 
   // Audio Meter Management

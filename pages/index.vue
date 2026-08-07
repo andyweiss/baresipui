@@ -159,6 +159,9 @@
           ref="settingsPanelRef"
           :reloadConfig="reloadConfig"
           :sendCommand="sendCommand"
+          :accounts="accounts"
+          :talktomeBridgeGlobalStatus="talktomeBridgeGlobalStatus"
+          :talktomeBridgeStatuses="talktomeBridgeStatuses"
         />
       </section>
     </main>
@@ -169,7 +172,18 @@
 import { useSocketIO } from '@/composables/useSocketIO';
 
 // Use Socket.IO instead of WebSocket
-const { connected, accounts, contacts, calls, gpioStates, audioMeters, sendCommand, toggleGpio } = useSocketIO();
+const {
+  connected,
+  accounts,
+  contacts,
+  calls,
+  gpioStates,
+  audioMeters,
+  talktomeBridgeGlobalStatus,
+  talktomeBridgeStatuses,
+  sendCommand,
+  toggleGpio,
+} = useSocketIO();
 
 // Track already-recorded call IDs to avoid duplicates
 const recordedCallIds = new Set<string>();

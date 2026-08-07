@@ -1,9 +1,44 @@
 import net from 'node:net';
+import { randomUUID } from 'node:crypto';
 import { createNetstring } from '../utils/netstring';
 import { stateManager } from './state-manager';
-import { parseBaresipEventBuffered } from './baresip-parser';
+import {
+  parseBaresipEventBuffered,
+  registerBaresipResponseObserver,
+} from './baresip-parser';
 import { getAutoConnectConfigManager } from './autoconnect-config';
 import { getBaresipLogger } from '../utils/logger';
+import type { BaresipCommandResponse } from '~/types';
+
+export interface ExecuteCommandOptions {
+  timeoutMs?: number;
+  token?: string;
+}
+
+export interface BaresipSequenceCommand {
+  command: string;
+  params?: string;
+  token?: string;
+}
+
+export class BaresipCommandError extends Error {
+  constructor(
+    message: string,
+    readonly response?: BaresipCommandResponse,
+  ) {
+    super(message);
+    this.name = 'BaresipCommandError';
+  }
+}
+
+interface PendingCommand {
+  command: string;
+  timeout: ReturnType<typeof setTimeout>;
+  resolve: (response: BaresipCommandResponse) => void;
+  reject: (error: Error) => void;
+}
+
+export type BaresipConnectionStatusListener = (connected: boolean) => void;
 
 export class BaresipConnection {
   private client: net.Socket | null = null;
@@ -15,15 +50,26 @@ export class BaresipConnection {
   private callStatsPollingInterval: NodeJS.Timeout | null = null;
   private readonly CALL_STATS_POLL_INTERVAL = 3000; // Poll RTCP stats every 3 seconds
   private tcpBuffer = ''; // Persistent buffer for fragmented TCP netstrings
-  private uafindLock: Promise<void> = Promise.resolve(); // Serialize uafind+command sequences
+  private commandSequenceLock: Promise<void> = Promise.resolve();
+  private readonly pendingCommands = new Map<string, PendingCommand>();
+  private readonly statusListeners = new Set<BaresipConnectionStatusListener>();
+  private connected = false;
 
   constructor(
     private host: string,
     private port: number
-  ) {}
+  ) {
+    registerBaresipResponseObserver((response) => {
+      this.handleCorrelatedResponse(response);
+    });
+  }
 
   async connect(): Promise<void> {
     if (this.client) {
+      this.setConnected(false);
+      this.rejectPendingCommands(
+        new BaresipCommandError('Baresip connection was replaced before command response'),
+      );
       this.client.removeAllListeners(); // Prevent old close handler from triggering zombie reconnect
       this.client.destroy();
       this.client = null;
@@ -37,6 +83,7 @@ export class BaresipConnection {
 
     this.client.connect(this.port, this.host, () => {
       this.reconnectAttempts = 0;
+      this.setConnected(true);
       stateManager.setBaresipConnected(true);
 
       // Log successful connection
@@ -113,7 +160,11 @@ export class BaresipConnection {
     });
 
     this.client.on('close', () => {
+      this.setConnected(false);
       stateManager.setBaresipConnected(false);
+      this.rejectPendingCommands(
+        new BaresipCommandError('Baresip disconnected before command response'),
+      );
       
       // Log TCP disconnect
       try {
@@ -200,14 +251,54 @@ export class BaresipConnection {
    * TCP guarantees ordering, so baresip processes them sequentially.
    * The lock prevents other sendCommandSequence calls from interleaving.
    */
-  sendCommandSequence(commands: Array<{command: string, params?: string, token?: string}>): void {
-    this.uafindLock = this.uafindLock.then(async () => {
+  sendCommandSequence(commands: BaresipSequenceCommand[]): void {
+    const operation = this.commandSequenceLock.then(async () => {
       for (const cmd of commands) {
         this.sendCommand(cmd.command, cmd.params, cmd.token);
       }
       // Small yield to ensure TCP write is flushed before releasing lock
       await new Promise(r => setTimeout(r, 10));
     });
+    this.commandSequenceLock = operation.catch(() => undefined);
+  }
+
+  /**
+   * Executes and correlates each command under the same global sequence lock.
+   * A failed selection command rejects immediately, so later commands (for
+   * example a DTMF digit after callfind) are never sent to the wrong call.
+   */
+  executeCommandSequence(
+    commands: BaresipSequenceCommand[],
+    options: Omit<ExecuteCommandOptions, 'token'> = {},
+  ): Promise<BaresipCommandResponse[]> {
+    const operation = this.commandSequenceLock.then(async () => {
+      const responses: BaresipCommandResponse[] = [];
+      for (const command of commands) {
+        const response = await this.executeCommand(
+          command.command,
+          command.params,
+          {
+            ...options,
+            ...(command.token ? { token: command.token } : {}),
+          },
+        );
+        if (responseTextIndicatesError(response)) {
+          throw new BaresipCommandError(
+            `Baresip command "${command.command}" failed: ${String(
+              response.data,
+            ).trim()}`,
+            response,
+          );
+        }
+        responses.push(response);
+      }
+      return responses;
+    });
+    this.commandSequenceLock = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
 
   private stopCallStatsPolling(): void {
@@ -240,8 +331,8 @@ export class BaresipConnection {
     stateManager.broadcast(stateManager.getInitData());
   }
 
-  sendCommand(command: string, params?: string, token?: string): void {
-    if (this.client && !this.client.destroyed) {
+  sendCommand(command: string, params?: string, token?: string): boolean {
+    if (this.isConnected() && this.client) {
       const jsonMessage: any = {
         command: command,
         ...(params && { params: params }),
@@ -270,6 +361,108 @@ export class BaresipConnection {
           // Logger might not be available
         }
       }
+      return true;
+    }
+    return false;
+  }
+
+  executeCommand(
+    command: string,
+    params?: string,
+    options: ExecuteCommandOptions = {},
+  ): Promise<BaresipCommandResponse> {
+    const timeoutMs = options.timeoutMs ?? 5_000;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
+      return Promise.reject(
+        new Error('Baresip command timeout must be between 1 and 120000 ms'),
+      );
+    }
+    if (!this.isConnected()) {
+      return Promise.reject(new BaresipCommandError('Baresip is not connected'));
+    }
+
+    const token = options.token?.trim() || `baresipui-${randomUUID()}`;
+    if (!token || /[\s\r\n\0]/.test(token)) {
+      return Promise.reject(new Error('Baresip command token is invalid'));
+    }
+    if (this.pendingCommands.has(token)) {
+      return Promise.reject(new Error(`Baresip command token is already pending: ${token}`));
+    }
+
+    return new Promise<BaresipCommandResponse>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingCommands.delete(token);
+        reject(
+          new BaresipCommandError(
+            `Baresip command "${command}" timed out after ${timeoutMs} ms`,
+          ),
+        );
+      }, timeoutMs);
+      timeout.unref?.();
+      this.pendingCommands.set(token, { command, timeout, resolve, reject });
+
+      try {
+        if (!this.sendCommand(command, params, token)) {
+          clearTimeout(timeout);
+          this.pendingCommands.delete(token);
+          reject(new BaresipCommandError('Baresip disconnected before command write'));
+        }
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pendingCommands.delete(token);
+        reject(
+          error instanceof Error
+            ? error
+            : new BaresipCommandError('Baresip command write failed'),
+        );
+      }
+    });
+  }
+
+  onConnectionStatusChange(listener: BaresipConnectionStatusListener): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
+  private handleCorrelatedResponse(response: BaresipCommandResponse): void {
+    if (!response.token) return;
+    const pending = this.pendingCommands.get(response.token);
+    if (!pending) return;
+    this.pendingCommands.delete(response.token);
+    clearTimeout(pending.timeout);
+    if (!response.ok) {
+      const detail =
+        typeof response.data === 'string' && response.data.trim()
+          ? `: ${response.data.trim()}`
+          : '';
+      pending.reject(
+        new BaresipCommandError(
+          `Baresip command "${pending.command}" failed${detail}`,
+          response,
+        ),
+      );
+      return;
+    }
+    pending.resolve(response);
+  }
+
+  private rejectPendingCommands(error: Error): void {
+    for (const pending of this.pendingCommands.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(error);
+    }
+    this.pendingCommands.clear();
+  }
+
+  private setConnected(connected: boolean): void {
+    if (this.connected === connected) return;
+    this.connected = connected;
+    for (const listener of this.statusListeners) {
+      try {
+        listener(connected);
+      } catch (error) {
+        console.error('Baresip connection status listener failed:', error);
+      }
     }
   }
 
@@ -285,7 +478,10 @@ export class BaresipConnection {
   }
 
   isConnected(): boolean {
-    return this.client !== null && !this.client.destroyed;
+    return this.client !== null &&
+      !this.client.destroyed &&
+      this.client.writable &&
+      this.client.readyState === 'open';
   }
 }
 
@@ -296,4 +492,17 @@ export function getBaresipConnection(host: string, port: number): BaresipConnect
     baresipConnection = new BaresipConnection(host, port);
   }
   return baresipConnection;
+}
+
+function responseTextIndicatesError(
+  response: BaresipCommandResponse,
+): boolean {
+  if (typeof response.data !== 'string') return false;
+  const text = response.data.trim();
+  return (
+    /\bERROR\b/.test(text) ||
+    /(?:^|\n)\s*(?:error|failed|invalid)\b/i.test(text) ||
+    /\b(?:call|account)\s+not\s+found\b/i.test(text) ||
+    /\bno\s+(?:active\s+)?call\b/i.test(text)
+  );
 }

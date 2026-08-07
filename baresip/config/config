@@ -196,6 +196,12 @@ module_app              netroam.so
 #------------------------------------------------------------------------------
 # Module parameters
 
+# mediasoup_bridge is not listed in Modules above. The app loads it with
+# insmod only when TALKTOME_BRIDGE_ENABLED=true; these settings are inert
+# while the module is unloaded. The range must match the compose UDP mapping.
+mediasoup_bridge_rtp_ports    40000-40199
+mediasoup_bridge_bind_addr    0.0.0.0
+
 # DTLS SRTP parameters
 #dtls_srtp_use_ec       prime256v1
 
