@@ -7,7 +7,7 @@ See details here: [Readme Docker](https://github.com/andyweiss/baresipui/new/mai
 ## Screenshots
 
 ### Accounts Dashboard
-![Accounts](https://github.com/andyweiss/baresipui/blob/main/screenshots/Dashboard_v1.4.png?raw=true)
+![Accounts](https://github.com/andyweiss/baresipui/blob/main/screenshots/Dashboard_v1.4.jpg)
 
 ### Talktome Bridge
 
