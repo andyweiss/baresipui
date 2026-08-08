@@ -89,7 +89,8 @@ function extractParam(paramStr: string, key: string): string | undefined {
   return match?.[1];
 }
 
-function serializeAccount(entry: AccountFileEntry): string {
+/** Full account line in the same grammar baresip's accounts file (and the `uanew` command) expect, without the `#` disabled-prefix. */
+export function formatAccountLine(entry: AccountFileEntry): string {
   const params = [
     `transport=${entry.transport}`,
     `auth_pass=${entry.auth_pass}`,
@@ -101,7 +102,11 @@ function serializeAccount(entry: AccountFileEntry): string {
     `inreq_allowed=${entry.inreq_allowed ? 'yes' : 'no'}`
   ].join(';');
 
-  const line = `"${entry.name}"<${entry.uri}>;${params}`;
+  return `"${entry.name}"<${entry.uri}>;${params}`;
+}
+
+function serializeAccount(entry: AccountFileEntry): string {
+  const line = formatAccountLine(entry);
   return entry.enabled ? line : `#${line}`;
 }
 

@@ -10,6 +10,10 @@ import { accountSortFn } from '~/utils/account-sorting';
 
 export const useSocketIO = () => {
     function mergeAndSortAccounts(incoming: any[]) {
+      // The server always sends its full, authoritative account list here -
+      // drop any locally held accounts that are no longer part of it (e.g. after uadel).
+      const incomingUris = new Set(incoming.map(a => a.uri));
+      accounts.value = accounts.value.filter(a => incomingUris.has(a.uri));
       for (const acc of incoming) {
         const idx = accounts.value.findIndex(a => a.uri === acc.uri);
         if (idx >= 0) {
@@ -26,6 +30,7 @@ export const useSocketIO = () => {
   const accounts = ref<any[]>([]);
   const contacts = ref<any[]>([]);
   const contactsPendingRestart = ref(false);
+  const accountsPendingRestart = ref(false);
   const calls = ref<any[]>([]);
   const gpioStates = ref<any[]>([]);
   const audioMeters = reactive<Record<string, AudioMeter>>({});
@@ -188,6 +193,10 @@ export const useSocketIO = () => {
       contactsPendingRestart.value = !!data?.pending;
     });
 
+    socket.value.on('accountsPendingRestart', (data: any) => {
+      accountsPendingRestart.value = !!data?.pending;
+    });
+
     socket.value.on('gpioUpdate', (data: GpioState) => {
       const idx = gpioStates.value.findIndex(
         s => s.accountUri.toLowerCase() === data.accountUri.toLowerCase()
@@ -269,6 +278,7 @@ export const useSocketIO = () => {
     accounts,
     contacts,
     contactsPendingRestart,
+    accountsPendingRestart,
     calls,
     gpioStates,
     audioMeters,

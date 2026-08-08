@@ -1,5 +1,8 @@
 import { parseAccountsFile, writeAccountsFile } from '../../services/accounts-file';
 import { parseRequestBody } from '../../utils/request';
+import { getBaresipConnection } from '../../services/baresip-connection';
+import { syncLiveAccount } from '../../services/account-runtime';
+import { stateManager } from '../../services/state-manager';
 import type { AccountFileEntry } from '~/types';
 
 export default defineEventHandler(async (event) => {
@@ -20,7 +23,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, message: 'Account with this URI already exists' });
   }
 
-  entries.push({
+  const newEntry: AccountFileEntry = {
     name: entry.name.trim(),
     uri: entry.uri.trim(),
     enabled: entry.enabled !== false,
@@ -32,8 +35,19 @@ export default defineEventHandler(async (event) => {
     audio_player: entry.audio_player || '',
     pubint: entry.pubint ?? 0,
     inreq_allowed: entry.inreq_allowed !== false
-  });
+  };
+  entries.push(newEntry);
 
   await writeAccountsFile(config.accountsConfigPath as string, entries);
+
+  try {
+    const connection = getBaresipConnection(config.baresipHost as string, parseInt(config.baresipPort as string));
+    await syncLiveAccount(connection, newEntry);
+    connection.sendCommand('uastat'); // refresh UI immediately instead of waiting for a REGISTER event
+  } catch (err) {
+    console.error('accounts: live uanew failed, falling back to restart-required', err);
+    stateManager.broadcast({ type: 'accountsPendingRestart', pending: true });
+  }
+
   return { success: true, entries };
 });

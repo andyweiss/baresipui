@@ -176,6 +176,8 @@
 <script setup lang="ts">
 import type { AccountFileEntry } from '~/types';
 
+defineProps<{ pendingRestart?: boolean }>();
+
 const SENTINEL_PASSWORD = '********';
 
 const entries = ref<AccountFileEntry[]>([]);
@@ -184,7 +186,6 @@ const audioOutputs = ref<string[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const toggling = ref<string | null>(null);
-const pendingRestart = ref(false);
 const modalOpen = ref(false);
 const editEntry = ref<AccountFileEntry | null>(null);
 const deleteTarget = ref<AccountFileEntry | null>(null);
@@ -266,7 +267,6 @@ async function toggle(entry: AccountFileEntry) {
       `/api/accounts/${encodeURIComponent(entry.uri)}/toggle`, { method: 'POST' }
     );
     entries.value = res.entries;
-    pendingRestart.value = true;
   } catch (err: any) {
     alert(err?.data?.message || err?.message || 'Error');
   } finally {
@@ -294,7 +294,6 @@ async function save() {
     } else {
       await $fetch('/api/accounts', { method: 'POST', body: payload });
     }
-    pendingRestart.value = true;
     modalOpen.value = false;
     await load();
   } catch (err: any) {
@@ -309,7 +308,6 @@ async function deleteConfirmed() {
   saving.value = true;
   try {
     await $fetch(`/api/accounts/${encodeURIComponent(deleteTarget.value.uri)}`, { method: 'DELETE' });
-    pendingRestart.value = true;
     deleteTarget.value = null;
     await load();
   } catch (err: any) {

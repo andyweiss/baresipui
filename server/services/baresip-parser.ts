@@ -219,8 +219,23 @@ function handleCommandResponse(response: BaresipCommandResponse, stateManager: S
       return;
     }
     // 5. uastat -> Account status with full SIP status codes (--- sip:... --- blocks)
-    if (data.includes('--- sip:') && data.includes('Account:')) {
+    // "(no user-agent)" is baresip's uastat reply once the last UA was removed (e.g. via uadel) -
+    // still route it so the reconciliation loop below can prune the now-stale account from state.
+    if ((data.includes('--- sip:') && data.includes('Account:')) || data.trim() === '(no user-agent)') {
       parseAccountStatusResponse(data, stateManager);
+      return;
+    }
+    // 6. uanew/uadel/uadelall/uareg -> short registration summary (--- User Agents (N) ---)
+    // printed by baresip's ua_print_reg_status() at the end of these commands' own response.
+    if (data.includes('--- User Agents (')) {
+      parseUserAgentsListResponse(data, stateManager);
+      return;
+    }
+    // 7. uanew/uadel confirmation lines with no attached summary, and uadel's "not found"
+    // error once a duplicate/stale UA has been fully purged - both benign, just log them.
+    if (/^creating ua for\b/i.test(trimmed) || /^deleting ua:/i.test(trimmed) ||
+        /^no such file or directory\b/i.test(trimmed)) {
+      stateManager.addLog('debug', 'tcp-socket', trimmed);
       return;
     }
   }
@@ -440,8 +455,11 @@ function parseSysinfoResponse(response: BaresipCommandResponse, stateManager: St
 function parseAccountStatusResponse(data: string, stateManager: StateManager): void {
   // Remove ANSI color codes
   const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '');
-  // Split into blocks per account
-  const blocks = cleanData.split(/--- sip:/g).map(b => b.trim()).filter(Boolean);
+  // "(no user-agent)" means baresip has zero UAs left - nothing to parse, just let the
+  // reconciliation loop below prune every remaining account from state.
+  const blocks = cleanData.trim() === '(no user-agent)'
+    ? []
+    : cleanData.split(/--- sip:/g).map(b => b.trim()).filter(Boolean);
   
   for (const block of blocks) {
     // The URI is in the first line of the block
@@ -557,6 +575,56 @@ function parseAccountStatusResponse(data: string, stateManager: StateManager): v
   }
 }
 
+// ************ User Agents list response Parser (uanew/uadel/uadelall/uareg summary) ************
+// Short registration overview baresip appends via ua_print_reg_status(), e.g.:
+//   --- User Agents (7) ---
+//   0 - sip:2061616@sip.srgssr.ch                  OK  Expires 30s
+//   2 - sip:2061619@sip.srgssr.wronuri                ERR
+//   6 - sip:2061226@sip.srgssr.ch                     zzz
+function parseUserAgentsListResponse(data: string, stateManager: StateManager): void {
+  const cleanData = data.replace(/\x1b\[[0-9;]*[mK]/g, '');
+  const seenUris = new Set<string>();
+
+  for (const line of cleanData.split('\n')) {
+    const match = line.trim().match(/^\d+\s*-\s*(\S+)\s+(OK|ERR|zzz)\b(?:\s+Expires\s+(\d+)s)?/);
+    if (!match) continue;
+
+    const [, uri, status] = match;
+    seenUris.add(uri.toLowerCase());
+
+    const existingAccount = stateManager.getAccount(uri);
+    const account: any = {
+      uri,
+      registered: status === 'OK',
+      callStatus: existingAccount?.callStatus || 'Idle',
+      callId: existingAccount?.callId,
+      autoConnectContact: existingAccount?.autoConnectContact,
+      autoConnectStatus: existingAccount?.autoConnectStatus || 'Off',
+      lastEvent: Date.now(),
+      configured: true,
+      displayName: existingAccount?.displayName,
+      registrationError: status === 'OK'
+        ? undefined
+        : status === 'zzz'
+          ? 'Waiting for response...'
+          : (existingAccount?.registrationError || 'Unknown error')
+    };
+
+    stateManager.setAccount(uri, account);
+    stateManager.broadcast({ type: 'accountStatus', data: account });
+
+    if (account.registered && account.callStatus === 'Idle') {
+      checkAutoConnectForAccount(uri, stateManager);
+    }
+  }
+
+  // Remove accounts that no longer appear in this summary (e.g. fully purged duplicates)
+  for (const existingUri of stateManager.getAccounts().map(a => a.uri.toLowerCase())) {
+    if (!seenUris.has(existingUri)) {
+      stateManager.removeAccount(existingUri);
+    }
+  }
+}
 
 // ************ Contacts Response Parser ************
 function parseContactsFromResponse(data: string, stateManager: StateManager): void {

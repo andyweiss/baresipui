@@ -21,30 +21,10 @@
       </div>
     </div>
     <div class="space-y-6">
-      <!-- Configuration Section -->
-      <div class="border-b border-gray-700 pb-6">
-        <h3 class="text-lg font-semibold text-white mb-4">Configuration</h3>
-        <div class="space-y-4">
-          <div class="flex items-center justify-between p-4 bg-gray-700 rounded-lg hover:bg-gray-650 transition-colors">
-            <div>
-              <h4 class="text-white font-medium">Reload Configuration</h4>
-              <p class="text-sm text-gray-400">Reload config files without restarting</p>
-            </div>
-            <div class="flex gap-2">
-              <button
-                @click="reloadConfig"
-                class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors"
-              >
-                Reload Config
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
       <!-- Account Management Section -->
       <div class="border-b border-gray-700 pb-6">
         <h3 class="text-lg font-semibold text-white mb-4">Account Management</h3>
-        <AccountsManager />
+        <AccountsManager :pending-restart="props.accountsPendingRestart" />
       </div>
       <TalktomeBridgeManager
         v-if="talktomeBridgeEnabled"
@@ -77,11 +57,11 @@ import type {
 } from '~/types';
 
 const props = defineProps<{
-  reloadConfig: () => void,
   sendCommand?: (cmd: string) => Promise<any>,
   accounts: Account[],
   talktomeBridgeGlobalStatus: TalktomeBridgeGlobalStatus | null,
   talktomeBridgeStatuses: TalktomeBridgeStatus[],
+  accountsPendingRestart?: boolean,
 }>();
 
 const baresipInfo = ref<{ version?: string; uptime?: string; started?: string }>({});

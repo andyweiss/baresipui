@@ -1,5 +1,8 @@
 import { parseAccountsFile, writeAccountsFile } from '../../services/accounts-file';
 import { parseRequestBody } from '../../utils/request';
+import { getBaresipConnection } from '../../services/baresip-connection';
+import { syncLiveAccount } from '../../services/account-runtime';
+import { stateManager } from '../../services/state-manager';
 import type { AccountFileEntry } from '~/types';
 
 const SENTINEL_PASSWORD = '********';
@@ -34,7 +37,7 @@ export default defineEventHandler(async (event) => {
   const keepPassword = !update.auth_pass || update.auth_pass === SENTINEL_PASSWORD;
   const auth_pass = keepPassword ? entries[idx].auth_pass : update.auth_pass;
 
-  entries[idx] = {
+  const newEntry: AccountFileEntry = {
     name: update.name.trim(),
     uri: newUri,
     enabled: update.enabled !== false,
@@ -47,7 +50,21 @@ export default defineEventHandler(async (event) => {
     pubint: update.pubint ?? 0,
     inreq_allowed: update.inreq_allowed !== false
   };
+  entries[idx] = newEntry;
 
   await writeAccountsFile(filePath, entries);
+
+  try {
+    const connection = getBaresipConnection(config.baresipHost as string, parseInt(config.baresipPort as string));
+    // Baresip has no in-place account editor - purge every live UA under the old (and new,
+    // in case of leftover duplicates) AOR, then recreate if enabled. uadel only removes one
+    // matching UA per call, so syncLiveAccount retries until none are left.
+    await syncLiveAccount(connection, newEntry, oldUri);
+    connection.sendCommand('uastat'); // refresh UI immediately instead of waiting for a REGISTER event
+  } catch (err) {
+    console.error('accounts: live uadel/uanew failed, falling back to restart-required', err);
+    stateManager.broadcast({ type: 'accountsPendingRestart', pending: true });
+  }
+
   return { success: true, entries };
 });

@@ -165,11 +165,11 @@
       <section v-show="activeTab === 'settings'">
         <SettingsPanel
           ref="settingsPanelRef"
-          :reloadConfig="reloadConfig"
           :sendCommand="sendCommand"
           :accounts="accounts"
           :talktomeBridgeGlobalStatus="talktomeBridgeGlobalStatus"
           :talktomeBridgeStatuses="talktomeBridgeStatuses"
+          :accountsPendingRestart="accountsPendingRestart"
         />
       </section>
     </main>
@@ -185,6 +185,7 @@ const {
   accounts,
   contacts,
   contactsPendingRestart,
+  accountsPendingRestart,
   calls,
   gpioStates,
   audioMeters,
@@ -285,14 +286,6 @@ const handleHangup = async (accountUri: string, callId?: string) => {
     alert('Error hanging up: ' + (err?.message || err));
   } finally {
     pendingHangups.delete(accountUri);
-  }
-};
-
-const reloadConfig = async () => {
-  try {
-    await sendCommand('regall');
-  } catch (err: any) {
-    alert('Error reloading config: ' + (err?.message || err));
   }
 };
 
