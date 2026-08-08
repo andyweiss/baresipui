@@ -7,7 +7,19 @@ See details here: [Readme Docker](https://github.com/andyweiss/baresipui/new/mai
 ## Screenshots
 
 ### Accounts Dashboard
-![Accounts](https://github.com/andyweiss/baresipui/blob/f91b252f2a1966ea08af1fb9ef3e179d8238de6e/screenshots/BassresipUI%20Dashboard.png)
+![Accounts](https://github.com/andyweiss/baresipui/blob/main/screenshots/Dashboard_v1.4.png?raw=true)
+
+### Talktome Bridge
+
+The Talktome Bridge is a SIP-to-Talktome gateway that enables bidirectional SIP calls to be connected directly to the [Talktome](https://github.com/thepoison606/talktome) intercom. 
+
+See details to the Bridge [here](https://github.com/andyweiss/baresipui/blob/main/docs/mediasoup-bridge.md)
+
+![Talktomebridge](https://github.com/andyweiss/baresipui/blob/main/screenshots/Talktome_Bridge3.jpg)
+
+With the mapping settings, individual accounts can be assigned to specific conferences.
+
+![Talktome mapping](https://github.com/andyweiss/baresipui/blob/main/screenshots/Talktomemapping2.jpg)
 
 
 ### Contacts
