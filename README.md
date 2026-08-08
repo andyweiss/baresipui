@@ -27,4 +27,4 @@ With the mapping settings, individual accounts can be assigned to specific confe
 
 
 ### Logs
-![Logs](https://github.com/andyweiss/baresipui/blob/main/screenshots/BaresipUI%20Logs.png)
+![Logs](https://github.com/andyweiss/baresipui/blob/main/screenshots/BaresipUI%20Logs_2.jpg)
