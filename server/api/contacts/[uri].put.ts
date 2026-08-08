@@ -1,6 +1,7 @@
-import { parseContactsFile, writeContactsFile } from '../../services/contacts-file';
+import { parseContactsFile, writeContactsFile, formatContactLine } from '../../services/contacts-file';
 import { parseRequestBody } from '../../utils/request';
 import { stateManager } from '../../services/state-manager';
+import { getBaresipConnection } from '../../services/baresip-connection';
 
 export default defineEventHandler(async (event) => {
   const encodedUri = getRouterParam(event, 'uri')!;
@@ -33,7 +34,14 @@ export default defineEventHandler(async (event) => {
   entries[idx] = { ...entries[idx], name: name.trim(), uri: uri.trim() };
   await writeContactsFile(filePath, entries);
 
-  stateManager.broadcast({ type: 'contactsPendingRestart', pending: true });
+  try {
+    const connection = getBaresipConnection(config.baresipHost as string, parseInt(config.baresipPort as string));
+    await connection.executeCommand('rmcontact', oldUri);
+    await connection.executeCommand('addcontact', formatContactLine(entries[idx]));
+    connection.sendCommand('contacts'); // refresh UI immediately instead of waiting for the next poll
+  } catch (err) {
+    stateManager.broadcast({ type: 'contactsPendingRestart', pending: true });
+  }
 
   return { success: true, entries };
 });

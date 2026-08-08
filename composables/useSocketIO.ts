@@ -25,6 +25,7 @@ export const useSocketIO = () => {
   const baresipConnected = ref(false);      // TCP connection to Baresip
   const accounts = ref<any[]>([]);
   const contacts = ref<any[]>([]);
+  const contactsPendingRestart = ref(false);
   const calls = ref<any[]>([]);
   const gpioStates = ref<any[]>([]);
   const audioMeters = reactive<Record<string, AudioMeter>>({});
@@ -183,6 +184,10 @@ export const useSocketIO = () => {
       contacts.value = data.contacts || [];
     });
 
+    socket.value.on('contactsPendingRestart', (data: any) => {
+      contactsPendingRestart.value = !!data?.pending;
+    });
+
     socket.value.on('gpioUpdate', (data: GpioState) => {
       const idx = gpioStates.value.findIndex(
         s => s.accountUri.toLowerCase() === data.accountUri.toLowerCase()
@@ -263,6 +268,7 @@ export const useSocketIO = () => {
     baresipConnected,
     accounts,
     contacts,
+    contactsPendingRestart,
     calls,
     gpioStates,
     audioMeters,

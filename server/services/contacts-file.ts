@@ -49,15 +49,17 @@ export async function parseContactsFile(filePath: string): Promise<ContactFileEn
   return entries;
 }
 
+export function formatContactLine(entry: ContactFileEntry): string {
+  let line = `"${entry.name}" <${entry.uri}>;presence=${entry.presence}`;
+  if (entry.access) line += `;access=${entry.access}`;
+  return line;
+}
+
 export async function writeContactsFile(filePath: string, entries: ContactFileEntry[]): Promise<void> {
   const dir = path.dirname(filePath);
   await fs.mkdir(dir, { recursive: true });
 
-  const lines = entries.map(e => {
-    let line = `"${e.name}" <${e.uri}>;presence=${e.presence}`;
-    if (e.access) line += `;access=${e.access}`;
-    return line;
-  });
+  const lines = entries.map(formatContactLine);
 
   await fs.writeFile(filePath, HEADER + lines.join('\n') + '\n', 'utf-8');
 }

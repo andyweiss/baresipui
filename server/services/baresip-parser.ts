@@ -565,6 +565,7 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
   const lines = cleanData.split('\n');
 
   let contactCount = 0;
+  const seenContacts = new Set<string>();
   for (const line of lines) {
     if (!line.includes('<sip:')) continue;
 
@@ -574,7 +575,8 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
     if (!sipMatch) continue;
 
     const contact = sipMatch[1];
-    
+    seenContacts.add(contact);
+
     // Extract name: everything before '<', remove markers, status and whitespace
     const beforeUri = line.substring(0, line.indexOf('<')).trim();
     const name = beforeUri
@@ -596,8 +598,18 @@ function parseContactsFromResponse(data: string, stateManager: StateManager): vo
     contactCount++;
   }
 
-  // Broadcast updated contact list if any contacts were found
-  if (contactCount > 0) {
+  // Remove contacts from state that no longer appear in this contacts response
+  // (e.g. a contact that was renamed/removed at runtime via addcontact/rmcontact)
+  let removed = false;
+  for (const existingContact of stateManager.getContacts().map(c => c.contact)) {
+    if (!seenContacts.has(existingContact)) {
+      stateManager.removeContactConfig(existingContact);
+      removed = true;
+    }
+  }
+
+  // Broadcast updated contact list if anything changed
+  if (contactCount > 0 || removed) {
     stateManager.broadcast({
       type: 'contactsUpdate',
       contacts: stateManager.getContacts()

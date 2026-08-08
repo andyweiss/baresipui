@@ -130,6 +130,11 @@
 
       <!-- Contacts Tab -->
       <section v-show="activeTab === 'contacts'">
+        <div class="flex items-center justify-end mb-4">
+          <button @click="contactsManagerRef?.openAdd()" class="px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded transition">
+            + Add Contact
+          </button>
+        </div>
         <div v-if="contacts.length === 0" class="bg-gray-800 rounded-lg shadow-lg p-8 text-center">
           <p class="text-gray-400">No contacts configured</p>
           <p class="text-sm text-gray-500 mt-2">Add contacts via API or configuration</p>
@@ -140,8 +145,11 @@
             :key="contact.contact"
             :contact="contact"
             :accounts="accounts"
+            @edit="(uri) => contactsManagerRef?.openEditByUri(uri)"
+            @delete="(uri) => contactsManagerRef?.deleteByUri(uri)"
           />
         </div>
+        <ContactsManager ref="contactsManagerRef" :pending-restart="contactsPendingRestart" />
       </section>
 
       <!-- Logs Tab -->
@@ -176,6 +184,7 @@ const {
   connected,
   accounts,
   contacts,
+  contactsPendingRestart,
   calls,
   gpioStates,
   audioMeters,
@@ -215,6 +224,7 @@ watch(calls, (newCalls) => {
 // Active tab state
 const activeTab = ref('accounts');
 const settingsPanelRef = ref();
+const contactsManagerRef = ref();
 
 // On tab change: fetch baresip info for settings, and uastat + calls for accounts
 watch(activeTab, (newTab) => {

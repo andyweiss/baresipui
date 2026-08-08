@@ -52,11 +52,6 @@
         :global-status="props.talktomeBridgeGlobalStatus"
         :statuses="props.talktomeBridgeStatuses"
       />
-      <!-- Contact Management Section -->
-      <div class="border-b border-gray-700 pb-6">
-        <h3 class="text-lg font-semibold text-white mb-4">Contact Management</h3>
-        <ContactsManager />
-      </div>
       <!-- Audio Codec Settings -->
       <div class="border-b border-gray-700 pb-6">
         <h3 class="text-lg font-semibold text-white mb-4">Audio Settings</h3>

@@ -1,6 +1,7 @@
-import { parseContactsFile, writeContactsFile } from '../../services/contacts-file';
+import { parseContactsFile, writeContactsFile, formatContactLine } from '../../services/contacts-file';
 import { parseRequestBody } from '../../utils/request';
 import { stateManager } from '../../services/state-manager';
+import { getBaresipConnection } from '../../services/baresip-connection';
 
 export default defineEventHandler(async (event) => {
   const body = await parseRequestBody(event);
@@ -22,10 +23,17 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, message: 'Contact with this URI already exists' });
   }
 
-  entries.push({ name: name.trim(), uri: uri.trim(), presence: 'p2p' });
+  const newEntry = { name: name.trim(), uri: uri.trim(), presence: 'p2p' as const };
+  entries.push(newEntry);
   await writeContactsFile(filePath, entries);
 
-  stateManager.broadcast({ type: 'contactsPendingRestart', pending: true });
+  try {
+    const connection = getBaresipConnection(config.baresipHost as string, parseInt(config.baresipPort as string));
+    await connection.executeCommand('addcontact', formatContactLine(newEntry));
+    connection.sendCommand('contacts'); // refresh UI immediately instead of waiting for the next poll
+  } catch (err) {
+    stateManager.broadcast({ type: 'contactsPendingRestart', pending: true });
+  }
 
   return { success: true, entries };
 });

@@ -196,6 +196,13 @@ export class StateManager {
     return this.autoConnectConfig.has(contact);
   }
 
+  removeContactConfig(contact: string): void {
+    this.autoConnectConfig.delete(contact);
+    this.contactPresence.delete(contact);
+    this.contactLastSeen.delete(contact);
+    this.contactCallFailureTimestamp.delete(contact);
+  }
+
   getContactPresence(contact: string): string {
     return this.contactPresence.get(contact) || 'unknown';
   }
