@@ -13,8 +13,8 @@ pcm.ravenna_shared_out {
         channels 64
         rate 48000
         format S32_LE
-        period_time 128
-        buffer_time 512
+        period_time 4096
+        buffer_time 16384
         periods 4
     }
 }
@@ -27,8 +27,8 @@ pcm.ravenna_shared_in {
         channels 64
         rate 48000
         format S32_LE
-        period_time 128
-        buffer_time 512
+        period_time 4096
+        buffer_time 16384
         periods 4
     }
 }
