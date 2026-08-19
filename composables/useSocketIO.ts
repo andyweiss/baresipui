@@ -217,6 +217,12 @@ export const useSocketIO = () => {
     socket.value.on('error', (error: any) => {
       console.error('Socket.IO Error:', error);
     });
+
+    socket.value.on('connect_error', (error: any) => {
+      if (error?.message === 'unauthorized') {
+        window.location.href = '/login';
+      }
+    });
   };
 
   const sendCommand = async (command: string, params?: string) => {

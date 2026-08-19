@@ -32,14 +32,23 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="flex items-center justify-between">
           <h1 class="text-3xl font-bold text-white">Baresip Control Dashboard</h1>
-          <div class="flex items-center gap-2">
-            <div
-              class="w-3 h-3 rounded-full"
-              :class="connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"
-            ></div>
-            <span class="text-sm text-gray-300">
-              {{ connected ? 'Connected' : 'Disconnected' }}
-            </span>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+              <div
+                class="w-3 h-3 rounded-full"
+                :class="connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"
+              ></div>
+              <span class="text-sm text-gray-300">
+                {{ connected ? 'Connected' : 'Disconnected' }}
+              </span>
+            </div>
+            <button
+              v-if="authEnabled"
+              @click="handleLogout"
+              class="text-sm text-gray-400 hover:text-white transition"
+            >
+              Log out
+            </button>
           </div>
         </div>
       </div>
@@ -226,6 +235,25 @@ watch(calls, (newCalls) => {
 const activeTab = ref('accounts');
 const settingsPanelRef = ref();
 const contactsManagerRef = ref();
+
+// Only show the logout control when the server has AUTH_USERNAME/AUTH_PASSWORD configured
+const authEnabled = ref(false);
+onMounted(async () => {
+  try {
+    const status: any = await $fetch('/api/auth/status');
+    authEnabled.value = !!status.enabled;
+  } catch {
+    // Leave the logout button hidden if the status check fails
+  }
+});
+
+const handleLogout = async () => {
+  try {
+    await $fetch('/api/auth/logout', { method: 'POST' });
+  } finally {
+    window.location.href = '/login';
+  }
+};
 
 // On tab change: fetch baresip info for settings, and uastat + calls for accounts
 watch(activeTab, (newTab) => {

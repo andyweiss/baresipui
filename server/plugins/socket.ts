@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { stateManager } from '../services/state-manager';
 import { getBaresipLogger } from '../utils/logger';
+import { AUTH_COOKIE_NAME, getAuthEnv, getCookieValue, isSessionValid } from '../utils/auth';
 import type { NitroApp } from 'nitropack';
 
 let io: SocketIOServer | null = null;
@@ -19,6 +20,14 @@ function initSocketIO(httpServer: any) {
     pingInterval: 10000,   // Send ping every 10s (default: 25s)
     pingTimeout: 60000,    // Wait 60s for pong before disconnect (default: 20s)
     connectTimeout: 10000
+  });
+
+  io.use((socket, next) => {
+    const authEnv = getAuthEnv();
+    if (!authEnv.enabled) return next();
+    const token = getCookieValue(socket.request.headers.cookie, AUTH_COOKIE_NAME);
+    if (isSessionValid(token, authEnv)) return next();
+    next(new Error('unauthorized'));
   });
 
   io.on('connection', (socket) => {

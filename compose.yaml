@@ -7,6 +7,9 @@ services:
     environment:
       - BARESIP_HOST=baresip
       - BARESIP_PORT=4444
+      # Off by default. Set both to require a username/password login.
+      - AUTH_USERNAME=${AUTH_USERNAME:-}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-}
       # Off by default. URL, ID, token, and announce IP are required when enabled.
       - TALKTOME_BRIDGE_ENABLED=${TALKTOME_BRIDGE_ENABLED:-false}
       - NUXT_PUBLIC_TALKTOME_BRIDGE_ENABLED=${TALKTOME_BRIDGE_ENABLED:-false}
