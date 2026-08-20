@@ -162,12 +162,8 @@
       </section>
 
       <!-- Logs Tab -->
-      <section v-show="activeTab === 'logs'">
-        <iframe
-          src="/baresip-logs"
-          class="w-full bg-gray-800 rounded-lg shadow-lg"
-          style="height: calc(100vh - 300px); min-height: 600px;"
-        ></iframe>
+      <section v-show="activeTab === 'logs'" class="bg-gray-800 rounded-lg shadow-lg p-4">
+        <BaresipLogsViewer ref="logsViewerRef" max-height="calc(100vh - 300px)" min-height="600px" />
       </section>
 
       <!-- Settings Tab -->
@@ -235,6 +231,7 @@ watch(calls, (newCalls) => {
 const activeTab = ref('accounts');
 const settingsPanelRef = ref();
 const contactsManagerRef = ref();
+const logsViewerRef = ref();
 
 // Only show the logout control when the server has AUTH_USERNAME/AUTH_PASSWORD configured
 const authEnabled = ref(false);
@@ -257,6 +254,9 @@ const handleLogout = async () => {
 
 // On tab change: fetch baresip info for settings, and uastat + calls for accounts
 watch(activeTab, (newTab) => {
+  if (newTab === 'logs') {
+    logsViewerRef.value?.enableAutoScroll();
+  }
   if (newTab === 'settings' && settingsPanelRef.value?.fetchBaresipInfo) {
     settingsPanelRef.value.fetchBaresipInfo();
   }
