@@ -59,6 +59,10 @@ docker compose -f compose.build-from-source.yaml up -d
 - **Health**: http://localhost:3000/api/health
 - **Metrics**: http://localhost:3000/Metrics
 
+If `AUTH_USERNAME`/`AUTH_PASSWORD` are set (see
+[Authentication](#authentication-optional)), all of the above except
+`/api/health` redirect to `/login` until you sign in.
+
 ## Optional talktome mediasoup bridge
 
 Both custom baresip image builds always include `mediasoup_bridge.so`, but it
@@ -129,6 +133,13 @@ failure isolation, and troubleshooting.
 - Automatic logging of incoming calls
 - Stored persistently in `baresip/config/call-history.json`
 
+### Authentication (optional)
+- Off by default; set both `AUTH_USERNAME` and `AUTH_PASSWORD` to require login
+- Single shared username/password gate — not a multi-user account system
+- Login page at `/login`; unauthenticated requests to the dashboard, `/api/*`, and Socket.IO are redirected/rejected
+- Session persists via an HTTP-only cookie for 30 days; "Log out" button appears in the dashboard header when enabled
+- `/api/health` stays open (unauthenticated) so the Docker healthcheck keeps working
+
 ## Logging Architecture
 
 Logs come from two independent sources, unified into a single format:
@@ -172,6 +183,9 @@ interface LogEntry {
 | POST | `/api/command` | Send command to baresip (`{ command, params }`) |
 | POST | `/api/autoconnect/assign` | Assign auto-connect contact (`{ account, contact }`) |
 | POST | `/api/logs/clear` | Clear all logs |
+| POST | `/api/auth/login` | Log in with `{ username, password }`; sets the session cookie. 404 when auth is not enabled |
+| POST | `/api/auth/logout` | Clear the session cookie |
+| GET | `/api/auth/status` | `{ enabled, authenticated }` — whether login is required and whether the caller is logged in |
 
 ## Socket.IO Events
 
@@ -256,6 +270,8 @@ docker compose -f compose.build-from-source.yaml up -d
 | `BARESIP_PORT` | `4444` | TCP control port |
 | `BARESIP_LOG_FILE` | `/shared-logs/baresip.log` | Path to shared log file |
 | `DEBUG_TCP_BUS` | `false` | Enable raw TCP data logging |
+| `AUTH_USERNAME` | empty | Login username. Authentication is disabled unless this and `AUTH_PASSWORD` are both set |
+| `AUTH_PASSWORD` | empty | Login password. Authentication is disabled unless this and `AUTH_USERNAME` are both set |
 | `TALKTOME_BRIDGE_ENABLED` | `false` | Global talktome bridge gate; also passed without secrets to baresip as a Compose recreation marker |
 | `NUXT_PUBLIC_TALKTOME_BRIDGE_ENABLED` | value of `TALKTOME_BRIDGE_ENABLED` | Browser-visible runtime gate; compose derives it from the server gate |
 | `TALKTOME_BASE_URL` | empty | talktome base URL; required only when the bridge is enabled |
@@ -286,11 +302,18 @@ compose-file option) so both startup state and the baresip process are fresh.
 
 ## Security
 
-The dashboard and its HTTP, WebSocket, and configuration APIs do not provide
-built-in user authentication. Port 3000 can issue baresip commands and mutate
-configuration, so restrict it with host firewall rules or an authenticated
-TLS reverse proxy. Plain bridge RTP is not encrypted; use a trusted network,
-private interconnect, or VPN.
+By default the dashboard and its HTTP, WebSocket, and configuration APIs do
+not require authentication. Set both `AUTH_USERNAME` and `AUTH_PASSWORD` to
+require a username/password login for the dashboard, `/api/*`, and Socket.IO
+(see [Authentication](#authentication-optional) above); `/api/health` stays
+open so the Docker healthcheck keeps working. This is a single shared
+credential, not per-user accounts, and the compose files serve plain HTTP —
+it raises the bar against casual/opportunistic access but is not a
+substitute for network-level controls. Port 3000 can issue baresip commands
+and mutate configuration, so still restrict it with host firewall rules or
+front it with an authenticated TLS reverse proxy, especially if
+`AUTH_USERNAME`/`AUTH_PASSWORD` are left unset. Plain bridge RTP is not
+encrypted; use a trusted network, private interconnect, or VPN.
 
 The unauthenticated baresip `ctrl_tcp` listener on port 4444 is reachable by
 the app over the private Docker network but is not published on the host.
