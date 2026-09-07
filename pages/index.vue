@@ -175,6 +175,7 @@
           :talktomeBridgeGlobalStatus="talktomeBridgeGlobalStatus"
           :talktomeBridgeStatuses="talktomeBridgeStatuses"
           :accountsPendingRestart="accountsPendingRestart"
+          :configPendingRestart="configPendingRestart"
         />
       </section>
     </main>
@@ -191,6 +192,7 @@ const {
   contacts,
   contactsPendingRestart,
   accountsPendingRestart,
+  configPendingRestart,
   calls,
   gpioStates,
   audioMeters,

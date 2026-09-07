@@ -32,18 +32,10 @@
         :global-status="props.talktomeBridgeGlobalStatus"
         :statuses="props.talktomeBridgeStatuses"
       />
-      <!-- Audio Codec Settings -->
+      <!-- Baresip core config -->
       <div class="border-b border-gray-700 pb-6">
-        <h3 class="text-lg font-semibold text-white mb-4">Audio Settings</h3>
-        <div class="space-y-4">
-          <div class="p-4 bg-gray-700 rounded-lg">
-            <h4 class="text-white font-medium mb-2">Default Audio Codecs</h4>
-            <p class="text-sm text-gray-400 mb-4">Configure default audio codec preferences</p>
-            <div class="text-sm text-gray-500">
-              This feature is available in a future update, please edit config files manually for now
-            </div>
-          </div>
-        </div>
+        <h3 class="text-lg font-semibold text-white mb-4">Baresip Settings</h3>
+        <BaresipCoreConfig :pending-restart="props.configPendingRestart" />
       </div>
     </div>
   </div>
@@ -62,6 +54,7 @@ const props = defineProps<{
   talktomeBridgeGlobalStatus: TalktomeBridgeGlobalStatus | null,
   talktomeBridgeStatuses: TalktomeBridgeStatus[],
   accountsPendingRestart?: boolean,
+  configPendingRestart?: boolean,
 }>();
 
 const baresipInfo = ref<{ version?: string; uptime?: string; started?: string }>({});

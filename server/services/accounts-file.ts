@@ -402,7 +402,7 @@ function uriParameters(angleUri: string): string {
   return separator === -1 ? '' : angleUri.slice(separator);
 }
 
-function lineSpans(
+export function lineSpans(
   content: string,
 ): Array<{ line: string; start: number; end: number }> {
   const spans: Array<{ line: string; start: number; end: number }> = [];
@@ -467,7 +467,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function writeRawAtomic(
+export async function writeRawAtomic(
   filePath: string,
   content: string,
   mode: number,

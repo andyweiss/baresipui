@@ -31,6 +31,7 @@ export const useSocketIO = () => {
   const contacts = ref<any[]>([]);
   const contactsPendingRestart = ref(false);
   const accountsPendingRestart = ref(false);
+  const configPendingRestart = ref(false);
   const calls = ref<any[]>([]);
   const gpioStates = ref<any[]>([]);
   const audioMeters = reactive<Record<string, AudioMeter>>({});
@@ -197,6 +198,10 @@ export const useSocketIO = () => {
       accountsPendingRestart.value = !!data?.pending;
     });
 
+    socket.value.on('configPendingRestart', (data: any) => {
+      configPendingRestart.value = !!data?.pending;
+    });
+
     socket.value.on('gpioUpdate', (data: GpioState) => {
       const idx = gpioStates.value.findIndex(
         s => s.accountUri.toLowerCase() === data.accountUri.toLowerCase()
@@ -285,6 +290,7 @@ export const useSocketIO = () => {
     contacts,
     contactsPendingRestart,
     accountsPendingRestart,
+    configPendingRestart,
     calls,
     gpioStates,
     audioMeters,

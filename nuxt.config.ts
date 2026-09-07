@@ -20,6 +20,7 @@ export default defineNuxtConfig({
     contactsConfigPath: process.env.CONTACTS_CONFIG_PATH || '/config/contacts',
     accountsConfigPath: process.env.ACCOUNTS_CONFIG_PATH || '/config/accounts',
     asoundrcPath: process.env.ASOUNDRC_PATH || '/config/.asoundrc',
+    baresipConfigPath: process.env.BARESIP_CONFIG_PATH || '/config/config',
 
     public: {
       wsEnabled: true,
