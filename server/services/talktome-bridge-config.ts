@@ -9,6 +9,7 @@ import type {
   TalktomeTallyConfig,
   TalktomeTarget,
 } from '~/types';
+import { TALKTOME_MAX_TALK_GROUP, sameTalktomeTarget } from '~/types';
 
 export type {
   TalktomeAccountMapping,
@@ -462,6 +463,7 @@ function normalizeMapping(
       'talktomeUserId',
       'talktomeFeedId',
       'target',
+      'targets',
       'ptt',
       'tally',
       'mixLocalCallers',
@@ -516,10 +518,25 @@ function normalizeMapping(
     );
   }
 
-  const target =
-    endpointKind === 'feed'
-      ? normalizeFeedTarget(value.target, `${location}.target`, issues)
+  let target: TalktomeTarget | null | undefined;
+  let targets: TalktomeTarget[] | undefined;
+  if (endpointKind === 'feed') {
+    target = normalizeFeedTarget(value.target, `${location}.target`, issues);
+    if (value.targets !== undefined) {
+      issues.push(`${location}.targets is only supported for user endpoints`);
+    }
+  } else {
+    // A talk group may stand alone; its first entry is the primary target.
+    targets = value.targets === undefined
+      ? undefined
+      : normalizeTargets(value.targets, `${location}.targets`, issues);
+    target = value.target === undefined && targets?.length
+      ? { ...targets[0] }
       : normalizeTarget(value.target, `${location}.target`, issues);
+    if (target && targets?.length && !sameTalktomeTarget(target, targets[0])) {
+      issues.push(`${location}.target must be the first entry of targets`);
+    }
+  }
   const ptt = normalizePtt(value.ptt, `${location}.ptt`, issues);
   const tally = normalizeTally(value.tally, `${location}.tally`, issues);
   if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
@@ -578,7 +595,12 @@ function normalizeMapping(
     endpointKind,
     ...(endpointKind === 'feed'
       ? { talktomeFeedId: feedId as number, target: null }
-      : { talktomeUserId: userId as number, target: target as TalktomeTarget }),
+      : {
+          talktomeUserId: userId as number,
+          target: target as TalktomeTarget,
+          // A single target is stored the old way, so existing configs stay byte-identical.
+          ...(targets && targets.length > 1 ? { targets } : {}),
+        }),
     ptt,
     tally,
     mixLocalCallers:
@@ -655,6 +677,30 @@ function normalizeTarget(
     : undefined;
 }
 
+function normalizeTargets(
+  value: unknown,
+  location: string,
+  issues: string[],
+): TalktomeTarget[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    issues.push(`${location} must be a non-empty array`);
+    return undefined;
+  }
+  if (value.length > TALKTOME_MAX_TALK_GROUP) {
+    issues.push(`${location} must have at most ${TALKTOME_MAX_TALK_GROUP} entries`);
+    return undefined;
+  }
+  const unique: TalktomeTarget[] = [];
+  value.forEach((entry, index) => {
+    const target = normalizeTarget(entry, `${location}[${index}]`, issues);
+    if (target && !unique.some((existing) => sameTalktomeTarget(existing, target))) {
+      unique.push(target);
+    }
+  });
+  // Invalid entries already added an issue; duplicates are dropped silently.
+  return unique.length ? unique : undefined;
+}
+
 function normalizeFeedTarget(
   value: unknown,
   location: string,
@@ -691,8 +737,8 @@ function normalizePtt(
   const gpi = optionalGpo(
     value.gpi === undefined ? TALKTOME_ACCOUNT_DEFAULTS.gpi : value.gpi,
   );
-  if (mode !== 'audio-level' && mode !== 'external') {
-    issues.push(`${location}.mode must be audio-level or external`);
+  if (mode !== 'audio-level' && mode !== 'always-on' && mode !== 'external') {
+    issues.push(`${location}.mode must be audio-level, always-on or external`);
   }
   if (!Number.isFinite(thresholdDb) || thresholdDb < -120 || thresholdDb > -10) {
     issues.push(`${location}.thresholdDb must be between -120 and -10`);
@@ -703,7 +749,7 @@ function normalizePtt(
   if (gpi === undefined) {
     issues.push(`${location}.gpi must be an integer from 1 to 6`);
   }
-  return (mode === 'audio-level' || mode === 'external') &&
+  return (mode === 'audio-level' || mode === 'always-on' || mode === 'external') &&
     Number.isFinite(thresholdDb) &&
     holdMs !== undefined &&
     gpi !== undefined
@@ -806,9 +852,12 @@ function cloneMapping(mapping: TalktomeAccountMapping): TalktomeAccountMapping {
   return {
     ...mapping,
     target: mapping.target ? { ...mapping.target } : null,
+    ...(mapping.endpointKind === 'user' && mapping.targets
+      ? { targets: mapping.targets.map((target) => ({ ...target })) }
+      : {}),
     ptt: { ...mapping.ptt },
     tally: { ...mapping.tally },
-  };
+  } as TalktomeAccountMapping;
 }
 
 function cloneConfig(config: TalktomeBridgeConfig): TalktomeBridgeConfig {

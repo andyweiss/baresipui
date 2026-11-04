@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import type {
   BaresipEvent,
@@ -30,6 +31,15 @@ import {
 import type { BridgeRuntimeConfig, JsonObject } from './types';
 import { buildVirtualBridgeInventory } from './virtual-inventory';
 import { withTalktomeAccountLifecycleLock } from './account-lifecycle-lock';
+import { resolveBridgeClientVersion } from './version';
+
+function readTextFile(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
 import { persistAnnouncedBridgeId } from './bridge-identity';
 import {
   DEFAULT_TALKTOME_TESTED_VERSION,
@@ -230,6 +240,9 @@ export class TalktomeBridgeRuntime {
             target: port.trigger.target
               ? { ...port.trigger.target }
               : null,
+            ...(Array.isArray(port.trigger.targets)
+              ? { targets: port.trigger.targets.map((target) => ({ ...target })) }
+              : {}),
             thresholdDb: port.trigger.thresholdDb,
           },
           triggerTargets: port.triggerTargets.map((target) => ({
@@ -278,6 +291,7 @@ export class TalktomeBridgeRuntime {
             timeoutMs: this.commandTimeoutMs,
           }),
       });
+      const clientVersion = resolveBridgeClientVersion(process.env, readTextFile);
       const orchestrator = new TalktomeBridgeOrchestrator({
         enabled: true,
         bridgeId: this.options.bridgeId,
@@ -289,6 +303,7 @@ export class TalktomeBridgeRuntime {
           bridgeId: this.options.bridgeId,
           name: this.options.bridgeName || 'baresipui',
           platform: `baresipui-${process.platform}`,
+          ...(clientVersion ? { clientVersion } : {}),
           inventory: buildVirtualBridgeInventory(this.options.mediaAnnounceIp),
         },
         callbacks: {

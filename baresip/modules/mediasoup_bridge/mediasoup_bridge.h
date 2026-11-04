@@ -31,6 +31,9 @@ enum {
 	MS_BITRATE_DEFAULT   = 64000,
 	MS_BITRATE_MIN       = 6000,
 	MS_BITRATE_MAX       = 510000,
+	MS_GAIN_UNITY        = 1000,
+	/* +40 dB, talktome's port gain limit */
+	MS_GAIN_MAX          = 100000,
 };
 
 #define MS_ACTIVITY_DBFS (-60.0)
@@ -126,6 +129,9 @@ struct ms_source {
 	uint64_t decode_errors;
 	double level_dbfs;
 	uint64_t telemetry_ms;
+	/* Playout gain in 1/1000: talktome target volume x member level x
+	 * port output gain. */
+	uint32_t gain_permille;
 };
 
 
@@ -151,6 +157,8 @@ struct ms_context {
 	uint64_t tx_socket_generation;
 	bool tx_ready;
 	bool tx_muted;
+	/* Port input gain in 1/1000, applied before encoding. */
+	uint32_t tx_gain_permille;
 	bool mix_local_callers;
 	bool closing;
 	int bitrate_bps;
@@ -199,6 +207,8 @@ size_t ms_audio_active_devices(void);
 int ms_tx_configure(struct ms_context *ctx, const struct sa *remote,
 		    uint8_t pt, uint32_t ssrc, bool *changed);
 int ms_tx_set_mute(struct ms_context *ctx, bool mute, bool *changed);
+int ms_tx_set_gain(struct ms_context *ctx, uint32_t permille, bool *changed);
+void ms_apply_gain(int16_t *sampv, size_t sampc, uint32_t permille);
 
 int ms_port_pool_init(uint16_t first, uint16_t last);
 void ms_port_pool_close(void);
@@ -219,6 +229,8 @@ int ms_source_activate(struct ms_source *src, const struct sa *remote,
 		       uint8_t pt, uint32_t ssrc, bool *changed);
 int ms_source_remove(struct ms_context *ctx, const char *producer_id,
 		     bool *changed);
+int ms_source_set_gain(struct ms_context *ctx, const char *producer_id,
+		       uint32_t permille, bool *changed);
 void ms_source_keepalive(struct ms_source *src, uint64_t now);
 
 int ms_commands_register(void);

@@ -567,6 +567,13 @@ function parseSession(value: unknown): BridgeSessionResponse {
   return {
     sessionId: expectString(object.sessionId, 'sessionId'),
     port: expectRecord(object.port, 'port') as unknown as BridgeSessionResponse['port'],
+    // Remote panel state, absent before talktome v1.5.12.
+    ...(object.panelSettings && typeof object.panelSettings === 'object' && !Array.isArray(object.panelSettings)
+      ? { panelSettings: object.panelSettings as BridgeSessionResponse['panelSettings'] }
+      : {}),
+    ...(Array.isArray(object.targetAudioStates)
+      ? { targetAudioStates: object.targetAudioStates as BridgeSessionResponse['targetAudioStates'] }
+      : {}),
   };
 }
 
@@ -763,5 +770,7 @@ const CONTROL_EVENTS = new Set<BridgeControlEvent['event']>([
   'incoming-talk-state',
   'api-talk-command',
   'api-target-audio-command',
+  'panel-command',
+  'panel-state-request',
   'session-kicked',
 ]);

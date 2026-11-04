@@ -1,5 +1,6 @@
 import type {
   TalktomeAccountMapping,
+  TalktomePttMode,
   TalktomeTarget,
   TalktomeTargetType,
 } from '../talktome-bridge-config';
@@ -36,6 +37,8 @@ export interface BridgeAnnounceRequest {
   bridgeName?: string;
   name?: string;
   platform: string;
+  /** baresipui release, shown on the talktome admin status page. */
+  clientVersion?: string;
   inventory: BridgeInventory;
 }
 
@@ -58,8 +61,11 @@ export interface BridgePortDeviceSelection {
 }
 
 export interface BridgeTriggerConfig {
-  mode: 'audio-level' | 'external';
+  mode: TalktomePttMode;
+  /** Legacy first entry of `targets`. */
   target: TalktomeTarget | null;
+  /** Talk group (talktome v1.5.21+); older servers send only `target`. */
+  targets?: TalktomeTarget[];
   thresholdDb: number;
 }
 
@@ -78,7 +84,22 @@ export interface BridgeUserPort {
   output: BridgePortDeviceSelection;
   trigger: BridgeTriggerConfig;
   triggerTargets: BridgeTriggerTarget[];
+  /** Port gain and mute set in talktome Admin (v1.5.13+). */
+  audioLevels?: BridgePortAudioLevels;
   updatedAt: string | null;
+}
+
+export interface BridgePortAudioLevel {
+  /** -40 to +40 dB. */
+  gainDb: number;
+  muted: boolean;
+}
+
+export interface BridgePortAudioLevels {
+  /** SIP caller toward talktome. */
+  input: BridgePortAudioLevel;
+  /** talktome toward the SIP caller; feeds have none. */
+  output?: BridgePortAudioLevel;
 }
 
 export interface BridgeFeedPort {
@@ -90,6 +111,7 @@ export interface BridgeFeedPort {
   enabled: boolean;
   input: BridgePortDeviceSelection;
   output: null;
+  audioLevels?: BridgePortAudioLevels;
   updatedAt: string | null;
 }
 
@@ -127,7 +149,12 @@ export interface BridgeUserEndpointUpdate {
   outputDevice?: string;
   outputLeftChannel?: number | null;
   outputRightChannel?: number | null;
-  triggerMode: 'audio-level' | 'external';
+  triggerMode: TalktomePttMode;
+  /**
+   * Whole talk group. Always sent: without it talktome stores only the
+   * legacy single target and drops the rest of a group.
+   */
+  triggerTargets: TalktomeTarget[];
   triggerTargetType?: TalktomeTargetType | '';
   triggerTargetId?: number | null;
   triggerThresholdDb?: number;
@@ -142,6 +169,9 @@ export interface BridgeFeedEndpointUpdate {
 export interface BridgeSessionResponse {
   sessionId: string;
   port: BridgePort;
+  /** Remote panel state of the bridge user (talktome v1.5.12+). */
+  panelSettings?: JsonObject | null;
+  targetAudioStates?: JsonValue[];
 }
 
 export type BridgeSessionEndpoint =
@@ -234,6 +264,8 @@ export type BridgeControlEventName =
   | 'incoming-talk-state'
   | 'api-talk-command'
   | 'api-target-audio-command'
+  | 'panel-command'
+  | 'panel-state-request'
   | 'session-kicked';
 
 export interface BridgeProducerEventPayload {
@@ -252,8 +284,13 @@ export interface BridgeConsumerClosedPayload {
 }
 
 export interface BridgeIncomingTalkEntry {
-  targetType: 'user' | 'conference';
-  targetId: number;
+  targetType: 'user' | 'conference' | 'guest';
+  targetId: number | string;
+  /** Where Reply talks to: the caller, or the conference they used. */
+  replyTargetType?: 'user' | 'conference' | 'guest';
+  replyTargetId?: number | string;
+  /** False when the bridge may not talk into that conference. */
+  canReply?: boolean;
   at: number;
 }
 
@@ -303,12 +340,52 @@ export interface BridgeTalkStateResponse {
 }
 
 export interface BridgeCommandResultRequest {
-  commandId: string;
+  /** Omitted when only refreshing the remote panel report. */
+  commandId?: string;
   ok: boolean;
   action?: string;
   targetType?: string;
   targetId?: number;
   reason?: string;
+  message?: string;
+  volume?: number;
+  muted?: boolean;
+  report?: BridgePanelReport;
+}
+
+export type BridgePanelCommandKind =
+  | 'talk'
+  | 'target-audio'
+  | 'audio-settings'
+  | 'preferences'
+  | 'production'
+  | 'order';
+
+/** Remote panel change forwarded to the bridge session (talktome v1.5.12+). */
+export interface BridgePanelCommandPayload {
+  commandId?: string;
+  kind: BridgePanelCommandKind;
+  action?: 'press' | 'release' | 'lock' | 'unlock' | 'stop';
+  targetType?: 'conference' | 'user' | 'feed' | 'reply';
+  targetId?: number;
+  inputKey?: string;
+  audio?: JsonObject;
+  patch?: JsonObject;
+  panelSettings?: JsonObject;
+}
+
+/** What the remote panel shows for this bridge user. */
+export interface BridgePanelReport {
+  revision: number;
+  storage: Record<string, string>;
+  audioStates: Array<{ targetType: string; targetId: number; volume: number; muted: boolean }>;
+  runtime: {
+    devices: [];
+    outputSupported: false;
+    talking: boolean;
+    targets: Array<{ type: string; id: number }>;
+    lockedTargets: Array<{ type: string; id: number }>;
+  };
 }
 
 export interface BridgeMediaDiagnostics {

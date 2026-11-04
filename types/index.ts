@@ -14,7 +14,8 @@ export interface Account {
 }
 
 export type TalktomeTargetType = 'conference' | 'user';
-export type TalktomePttMode = 'audio-level' | 'external';
+/** `always-on` keeps the producer live while the session is up (talktome v1.5.21+). */
+export type TalktomePttMode = 'audio-level' | 'always-on' | 'external';
 export type TalktomeEndpointKind = 'user' | 'feed';
 
 export interface TalktomeTarget {
@@ -28,6 +29,22 @@ export interface TalktomePttConfig {
   holdMs: number;
   /** Inbound GPIO selected as the external PTT source (1-6). */
   gpi: number;
+}
+
+/** Local sanity bound for a talk group; talktome itself sets no limit. */
+export const TALKTOME_MAX_TALK_GROUP = 64;
+
+export function sameTalktomeTarget(a: TalktomeTarget, b: TalktomeTarget): boolean {
+  return a.type === b.type && a.id === b.id;
+}
+
+/** Talk group of a mapping: `targets` when set, else the single `target`. */
+export function talktomeTalkGroup(mapping: {
+  target: TalktomeTarget | null;
+  targets?: TalktomeTarget[];
+}): TalktomeTarget[] {
+  if (mapping.targets?.length) return mapping.targets.map((target) => ({ ...target }));
+  return mapping.target ? [{ ...mapping.target }] : [];
 }
 
 export interface TalktomeTallyConfig {
@@ -50,7 +67,13 @@ export interface TalktomeUserAccountMapping extends TalktomeAccountMappingBase {
   endpointKind: 'user';
   talktomeUserId: number;
   talktomeFeedId?: never;
+  /** Primary talk target; always the first entry of `targets`. */
   target: TalktomeTarget;
+  /**
+   * Talk group: every target the bridge talks to at once. Omitted for a
+   * single target, which keeps configs from before talk groups unchanged.
+   */
+  targets?: TalktomeTarget[];
 }
 
 export interface TalktomeFeedAccountMapping extends TalktomeAccountMappingBase {
@@ -75,6 +98,7 @@ export interface TalktomeAccountMappingInput {
   talktomeUserId?: number;
   talktomeFeedId?: number;
   target?: TalktomeTarget | null;
+  targets?: TalktomeTarget[];
   ptt?: Partial<TalktomePttConfig>;
   tally?: TalktomeTallyConfig;
   mixLocalCallers?: boolean;
@@ -139,9 +163,13 @@ export interface TalktomeBridgeServerUserPort {
   enabled: boolean;
   trigger: {
     mode: TalktomePttMode;
+    /** Legacy first entry of `targets`. */
     target: TalktomeTarget | null;
+    /** Talk group (talktome v1.5.21+). */
+    targets?: TalktomeTarget[];
     thresholdDb: number;
   };
+  /** Catalog of every user and conference the bridge may talk to. */
   triggerTargets: Array<TalktomeTarget & { name: string }>;
 }
 

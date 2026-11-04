@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type { TalktomeAccountMapping } from '~/server/services/talktome-bridge-config';
+import { talktomeTalkGroup } from '~/types';
 import type {
   BridgeActiveProducer,
   BridgeAnnounceResponse,
@@ -81,9 +82,13 @@ export function makeUserPort(mapping: TalktomeAccountMapping): BridgeUserPort {
     trigger: {
       mode: mapping.ptt.mode,
       target: { ...mapping.target },
+      ...(mapping.targets ? { targets: talktomeTalkGroup(mapping) } : {}),
       thresholdDb: mapping.ptt.thresholdDb,
     },
-    triggerTargets: [{ ...mapping.target, name: 'Configured target' }],
+    triggerTargets: talktomeTalkGroup(mapping).map((target) => ({
+      ...target,
+      name: 'Configured target',
+    })),
     updatedAt: null,
   };
 }
@@ -287,6 +292,8 @@ export function makeBridgeHarness(
       order.push(`add:${endpoint.producerId}`);
     }),
     removeSource: vi.fn(async () => undefined),
+    setSourceGain: vi.fn(async () => undefined),
+    setTransmitGain: vi.fn(async () => undefined),
     getStats: vi.fn(async () => ({ packets: 10 })),
   };
 

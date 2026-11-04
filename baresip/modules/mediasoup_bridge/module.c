@@ -131,6 +131,7 @@ static int context_alloc(struct ms_context **ctxp, const char *key)
 
 	ctx->mix_local_callers = true;
 	ctx->bitrate_bps = MS_BITRATE_DEFAULT;
+	ctx->tx_gain_permille = MS_GAIN_UNITY;
 	ctx->tx_level_dbfs = MS_DBFS_FLOOR;
 	str_ncpy(ctx->key, key, sizeof(ctx->key));
 	list_init(&ctx->callers);

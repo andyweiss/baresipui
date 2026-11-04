@@ -90,10 +90,28 @@ static int send_rtp_locked(struct ms_context *ctx, const uint8_t *payload,
 }
 
 
+/* Scales in place, saturating instead of wrapping above unity. */
+void ms_apply_gain(int16_t *sampv, size_t sampc, uint32_t permille)
+{
+	size_t i;
+
+	if (!sampv || permille == MS_GAIN_UNITY)
+		return;
+
+	for (i = 0; i < sampc; ++i) {
+		int64_t v = (int64_t)sampv[i] * permille / MS_GAIN_UNITY;
+
+		sampv[i] = (int16_t)(v > INT16_MAX ? INT16_MAX :
+				     v < INT16_MIN ? INT16_MIN : v);
+	}
+}
+
+
 static void tx_mix_handler(const int16_t *sampv, size_t sampc, void *arg)
 {
 	struct ms_context *ctx = arg;
 	int16_t silence[MS_FRAME_SAMPC] = {0};
+	int16_t scaled[MS_FRAME_SAMPC];
 	uint8_t packet[MS_OPUS_MAX_PACKET];
 	const int16_t *input = sampv;
 	int encoded;
@@ -116,8 +134,14 @@ static void tx_mix_handler(const int16_t *sampv, size_t sampc, void *arg)
 		return;
 	}
 
-	if (ctx->tx_muted)
+	if (ctx->tx_muted) {
 		input = silence;
+	}
+	else if (ctx->tx_gain_permille != MS_GAIN_UNITY) {
+		memcpy(scaled, sampv, sizeof(scaled));
+		ms_apply_gain(scaled, MS_FRAME_SAMPC, ctx->tx_gain_permille);
+		input = scaled;
+	}
 
 	encoded = opus_encode(ctx->encoder, input, MS_FRAME_SAMP_PER_CH,
 			      packet, sizeof(packet));
@@ -414,6 +438,25 @@ int ms_tx_set_mute(struct ms_context *ctx, bool mute, bool *changed)
 	if (changed)
 		*changed = ctx->tx_muted != mute;
 	ctx->tx_muted = mute;
+	mtx_unlock(ctx->mutex);
+
+	return 0;
+}
+
+
+int ms_tx_set_gain(struct ms_context *ctx, uint32_t permille, bool *changed)
+{
+	if (!ctx || permille > MS_GAIN_MAX)
+		return EINVAL;
+
+	mtx_lock(ctx->mutex);
+	if (ctx->closing) {
+		mtx_unlock(ctx->mutex);
+		return ESHUTDOWN;
+	}
+	if (changed)
+		*changed = ctx->tx_gain_permille != permille;
+	ctx->tx_gain_permille = permille;
 	mtx_unlock(ctx->mutex);
 
 	return 0;

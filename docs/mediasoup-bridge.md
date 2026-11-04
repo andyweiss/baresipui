@@ -331,7 +331,9 @@ then provides an independent per-account opt-in. A mapped account needs:
 - enabled/disabled state;
 - a stable context key, normally the talktome user ID;
 - the talktome endpoint: either a user endpoint or a feed endpoint;
-- for user endpoints, one allowed conference target;
+- for user endpoints, a talk target: one conference or user, or a talk group
+  of several that PTT reaches at once (`target`, plus `targets` for a group,
+  whose first entry is `target`);
 - for user endpoints, PTT mode and its settings;
 - optional tally GPO assignments;
 - `mixLocalCallers`, normally `true`;
@@ -427,12 +429,31 @@ the module's local transmit mute:
 
 - `audio-level`: caller speech drives VAD. `thresholdDb` is the activation
   threshold and `holdMs` prevents rapid release between words.
+- `always-on` (talktome v1.5.21+): the producer goes live as soon as the
+  session is up and stays live; a release or lock change cannot close it.
 - `external`: `ptt.gpi` selects the inbound GPI index (1 through 6) whose
   existing SIP DTMF/GPI path drives press/release. Companion or API `press`,
   `release`, and `lock-toggle` commands use the same state machine.
 
 `lock-toggle` latches transmission until released. If a producer remains
 paused, SIP audio can be healthy while the conference hears nothing.
+
+Talk always reaches the whole talk group. A Companion, API or panel command
+may name any group member; a Reply talks to the group plus the last caller
+from `incoming-talk-state` (`replyTargetType`/`replyTargetId`), unless talktome
+marks it `canReply: false`. Guests are not Reply destinations for a bridge.
+
+In `audio-level` and `always-on` mode talktome joins the bridge user to its
+conference targets, which also opens the conference's return audio. In
+`external` mode it does not: assign the bridge user to those conferences in
+the talktome Matrix, or the bridge neither hears nor reaches them. The UI
+warns about this.
+
+baresipui's mapping is authoritative for the endpoint trigger: provisioning
+sends the whole group (`triggerTargets`) and the mode, and compares the group
+regardless of order. A change made only in talktome Admin is overwritten the
+next time the account is provisioned, so change talk groups in baresipui.
+Device-only updates pass the server's group through unchanged.
 
 Tally always uses the existing GPO-to-DTMF path:
 
@@ -464,6 +485,52 @@ remain `party-line` and 64000 bit/s. Configuration is applied before creating
 the talktome session or binding TX. Changing the mix mode, bitrate, or PTT
 mapping revalidates/provisions the endpoint trigger and safely restarts an
 active bridge session and context while preserving the SIP call set.
+
+## Remote panel and receive levels
+
+talktome's remote panel (Admin → Users → Panel, talktome v1.5.12 and newer)
+controls a bridge user like any other user. The bridge applies and confirms
+each change; an unanswered command fails in the panel after 5 s.
+
+- **Target volume and mute:** the level of the bridge's conference, of a
+  direct call from a user, or of a feed.
+- **Conference members:** per-member level and listen on/off inside the
+  conference. The panel lists members only when the talktome server includes
+  them for bridge targets.
+- **Talk:** press, lock and stop drive the same PTT state as Companion's
+  `api-talk-command`, for the configured target or Reply.
+- Audio devices and the production are configured in baresipui and talktome
+  Admin, so the bridge rejects those panel changes.
+
+Each received stream plays at the target volume times the speaker's member
+level times the port's output gain, silent when any of them is muted; without
+a saved state talktome's default of 0.9 applies. The app sets it with:
+
+```text
+ms_src_gain <key> <producerId> <permille 0..100000>
+```
+
+The gain is set before a new consumer is resumed, so a muted member is never
+heard. `ms_bridge_stat` reports `gainPermille` per source; `levelDbfs` is
+measured before the gain, like talktome's incoming meters. With an older
+baresip image that lacks `ms_src_gain`, the app logs the error and streams
+keep playing at full level. Companion's `api-target-audio-command`
+(`volume-up`, `volume-down`, `mute-toggle`) uses the same states.
+
+### Port gain and mute
+
+talktome Admin stores a gain (-40 to +40 dB) and mute per bridge port
+(`audioLevels.input` and, for user ports, `audioLevels.output`). The bridge
+applies them itself: the input level scales the SIP callers' mix before Opus
+encoding (`ms_ctx_gain <key> <permille 0..100000>`), the output level is
+folded into each received stream's `ms_src_gain`. Both saturate instead of
+wrapping. Changes arrive with the next announce keep-alive (10 s), as with
+the official bridge-client. `ms_bridge_stat` reports `tx.gainPermille`.
+
+### Bridge version
+
+The bridge also announces its own release (`APP_VERSION`, the image tag) as
+`clientVersion`; talktome shows it on the Admin status page next to the bridge.
 
 ## Failure isolation
 

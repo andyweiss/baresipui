@@ -226,7 +226,7 @@
             </div>
             <div v-if="!isFeedMapping(entry.mapping)">
               <dt class="text-xs uppercase tracking-wide text-gray-500">Target</dt>
-              <dd class="mt-1 text-gray-200">{{ targetLabel(entry.mapping.target) }}</dd>
+              <dd class="mt-1 text-gray-200">{{ talktomeTalkGroup(entry.mapping).map(targetLabel).join(', ') }}</dd>
             </div>
             <div>
               <dt class="text-xs uppercase tracking-wide text-gray-500">Context key</dt>
@@ -239,7 +239,7 @@
                   Send-only, streams while the SIP call is up
                 </template>
                 <template v-else>
-                  {{ entry.mapping.ptt.mode === 'audio-level' ? `${entry.mapping.ptt.thresholdDb} dB` : `External GPI ${entry.mapping.ptt.gpi}` }}
+                  {{ pttLabel(entry.mapping) }}
                   · {{ entry.mapping.ptt.holdMs }} ms
                 </template>
               </dd>
@@ -505,6 +505,29 @@
                     {{ target.name }} — {{ target.type }} {{ target.id }}
                   </option>
                 </select>
+                <details class="mt-3" :open="form.extraTargets.length > 0">
+                  <summary class="cursor-pointer text-xs font-medium uppercase tracking-wide text-gray-400">
+                    Also talk to ({{ form.extraTargets.length }})
+                  </summary>
+                  <p class="mt-2 text-xs text-gray-500">
+                    The primary target and these form a talk group: PTT talks to all of them at once.
+                  </p>
+                  <div class="mt-2 grid max-h-48 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
+                    <label
+                      v-for="target in extraTargetOptions"
+                      :key="`extra-${target.type}:${target.id}`"
+                      class="flex items-center gap-2 text-sm text-gray-200"
+                    >
+                      <input
+                        v-model="form.extraTargets"
+                        type="checkbox"
+                        :value="`${target.type}:${target.id}`"
+                        class="rounded border-gray-600 bg-gray-700"
+                      >
+                      {{ target.name }} <span class="text-xs text-gray-500">{{ target.type }}</span>
+                    </label>
+                  </div>
+                </details>
               </div>
               <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -551,6 +574,7 @@
                     class="w-full rounded bg-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="audio-level">Audio level</option>
+                    <option value="always-on">Always on</option>
                     <option value="external">External GPI</option>
                   </select>
                 </div>
@@ -569,7 +593,7 @@
                     class="w-full rounded bg-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                 </div>
-                <div v-else>
+                <div v-else-if="form.pttMode === 'external'">
                   <label for="talktome-gpi" class="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">
                     External GPI
                   </label>
@@ -599,6 +623,13 @@
                   >
                 </div>
               </div>
+              <p
+                v-if="form.pttMode === 'external' && formTalkGroup().some(target => target.type === 'conference')"
+                class="mt-3 text-xs text-yellow-300"
+              >
+                With External GPI, talktome does not join the bridge to its conference targets:
+                assign the bridge user to the conference in the talktome Matrix, or it neither hears nor reaches it.
+              </p>
             </fieldset>
 
             <fieldset class="rounded-lg border border-gray-700 p-4">
@@ -726,6 +757,7 @@ import type {
   TalktomeTarget,
   TalktomeTargetType,
 } from '~/types';
+import { talktomeTalkGroup } from '~/types';
 
 const props = defineProps<{
   accounts: Account[];
@@ -747,6 +779,8 @@ type MappingForm = {
   talktomeFeedId: number;
   targetType: TalktomeTargetType;
   targetId: number;
+  /** Further talk group members as `type:id`. */
+  extraTargets: string[];
   pttMode: TalktomePttMode;
   thresholdDb: number;
   holdMs: number;
@@ -790,6 +824,7 @@ const form = reactive<MappingForm>({
   talktomeFeedId: 0,
   targetType: 'conference',
   targetId: 0,
+  extraTargets: [],
   pttMode: 'audio-level',
   thresholdDb: -45,
   holdMs: 300,
@@ -892,6 +927,26 @@ const targetValue = computed(
   () => `${form.targetType}:${form.targetId}`,
 );
 
+const extraTargetOptions = computed(() =>
+  targetOptions.value.filter(target => `${target.type}:${target.id}` !== targetValue.value),
+);
+
+/** Talk group from the form: the primary target first, then the extras. */
+function formTalkGroup(): TalktomeTarget[] {
+  const group: TalktomeTarget[] = [{ type: form.targetType, id: Number(form.targetId) }];
+  for (const value of form.extraTargets) {
+    const [type, rawId] = value.split(':');
+    const id = Number(rawId);
+    if ((type !== 'conference' && type !== 'user') || !Number.isSafeInteger(id) || id < 1) continue;
+    if (!group.some(target => target.type === type && target.id === id)) group.push({ type, id });
+  }
+  return group;
+}
+
+function extraTargetValues(targets: TalktomeTarget[] | undefined): string[] {
+  return (targets ?? []).slice(1).map(target => `${target.type}:${target.id}`);
+}
+
 async function loadConfig() {
   loading.value = true;
   fetchError.value = '';
@@ -933,6 +988,7 @@ function openAdd() {
       talktomeFeedId: port?.kind === 'feed' ? port.feedId : 0,
       targetType: target?.type ?? 'conference',
       targetId: target?.id ?? 0,
+      extraTargets: port?.kind === 'user' ? extraTargetValues(port.trigger.targets) : [],
       pttMode: port?.kind === 'user' ? port.trigger.mode : 'audio-level',
       thresholdDb: port?.kind === 'user' ? port.trigger.thresholdDb : -45,
       holdMs: 300,
@@ -959,6 +1015,7 @@ function openEdit(accountUri: string, mapping: TalktomeAccountMapping) {
     talktomeFeedId: mapping.talktomeFeedId ?? 0,
     targetType: mapping.target?.type ?? 'conference',
     targetId: mapping.target?.id ?? 0,
+    extraTargets: extraTargetValues(talktomeTalkGroup(mapping)),
     pttMode: mapping.ptt.mode,
     thresholdDb: mapping.ptt.thresholdDb,
     holdMs: mapping.ptt.holdMs,
@@ -1005,11 +1062,12 @@ function applyEndpointDefaults() {
   form.talktomeUserId = port.userId;
   form.pttMode = port.trigger.mode;
   form.thresholdDb = port.trigger.thresholdDb;
-  const target = port.trigger.target ?? port.triggerTargets[0];
+  const target = port.trigger.targets?.[0] ?? port.trigger.target ?? port.triggerTargets[0];
   if (target) {
     form.targetType = target.type;
     form.targetId = target.id;
   }
+  form.extraTargets = extraTargetValues(port.trigger.targets);
 }
 
 function setEndpointFromValue(value: string) {
@@ -1116,6 +1174,7 @@ function formPayload(): TalktomeAccountMappingInput {
             type: form.targetType,
             id: Number(form.targetId),
           },
+          ...(formTalkGroup().length > 1 ? { targets: formTalkGroup() } : {}),
         }),
     ptt: {
       mode: form.pttMode,
@@ -1145,6 +1204,7 @@ function mappingPayload(
       : {
           talktomeUserId: mapping.talktomeUserId,
           target: mapping.target ? { ...mapping.target } : null,
+          ...(mapping.targets ? { targets: mapping.targets.map(target => ({ ...target })) } : {}),
         }),
     ptt: { ...mapping.ptt },
     tally: { ...mapping.tally },
@@ -1187,6 +1247,14 @@ function validateForm(): string {
       )
     ) {
       return 'Select a target allowed for this TalkToMe user endpoint.';
+    }
+    if (
+      allowedTargets.length &&
+      formTalkGroup().some(
+        member => !allowedTargets.some(target => target.type === member.type && target.id === member.id),
+      )
+    ) {
+      return 'Every talk group target must be allowed for this TalkToMe user endpoint.';
     }
   }
   if (
@@ -1304,6 +1372,12 @@ function preferredEndpoint(
   ports: Array<TalktomeBridgeServerUserPort | TalktomeBridgeServerFeedPort>,
 ): TalktomeBridgeServerUserPort | TalktomeBridgeServerFeedPort | undefined {
   return ports.find(port => port.enabled) ?? ports[0];
+}
+
+function pttLabel(mapping: TalktomeAccountMapping): string {
+  if (mapping.ptt.mode === 'always-on') return 'Always on';
+  if (mapping.ptt.mode === 'audio-level') return `${mapping.ptt.thresholdDb} dB`;
+  return `External GPI ${mapping.ptt.gpi}`;
 }
 
 function preferredTarget(

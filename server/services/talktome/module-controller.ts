@@ -37,6 +37,10 @@ export interface TalktomeModuleController {
   reserveSource(key: string, producerId: string): Promise<ReservedModuleSource>;
   addSource(key: string, endpoint: ModuleSourceEndpoint): Promise<void>;
   removeSource(key: string, producerId: string): Promise<void>;
+  /** Linear playout gain from 0 (silent) through 1 (unchanged) to 100 (+40 dB). */
+  setSourceGain(key: string, producerId: string, gain: number): Promise<void>;
+  /** Linear port input gain toward talktome, 0 to 100 (+40 dB). */
+  setTransmitGain(key: string, gain: number): Promise<void>;
   getStats(key: string): Promise<JsonObject>;
 }
 
@@ -133,6 +137,18 @@ export class CtrlTcpTalktomeModuleController implements TalktomeModuleController
     ]);
   }
 
+  async setSourceGain(key: string, producerId: string, gain: number): Promise<void> {
+    await this.command('ms_src_gain', [
+      contextKey(key),
+      token(producerId, 'producer ID'),
+      gainPermille(gain, 'Source gain'),
+    ]);
+  }
+
+  async setTransmitGain(key: string, gain: number): Promise<void> {
+    await this.command('ms_ctx_gain', [contextKey(key), gainPermille(gain, 'Transmit gain')]);
+  }
+
   async getStats(key: string): Promise<JsonObject> {
     const response = await this.command('ms_bridge_stat', [contextKey(key)]);
     const decoded = decodeCommandPayload(response);
@@ -219,6 +235,14 @@ function payloadType(value: number): string {
     throw new Error('RTP payload type must be an integer from 0 to 127');
   }
   return String(value);
+}
+
+/** The module takes integer permille so it never parses decimals. */
+function gainPermille(gain: number, label: string): string {
+  if (typeof gain !== 'number' || !Number.isFinite(gain) || gain < 0 || gain > 100) {
+    throw new Error(`${label} must be a number from 0 to 100`);
+  }
+  return String(Math.round(gain * 1000));
 }
 
 function positiveInteger(value: number, label: string): string {

@@ -24,6 +24,7 @@ RUN npm run build
 
 FROM node:20-alpine
 
+ARG APP_VERSION=unknown
 ARG TALKTOME_TESTED_VERSION=1.1.3
 
 WORKDIR /app
@@ -35,6 +36,8 @@ EXPOSE 3000
 
 ENV HOST=0.0.0.0
 ENV PORT=3000
+# Announced to talktome as the bridge version (admin status page).
+ENV APP_VERSION=${APP_VERSION}
 ENV TALKTOME_TESTED_VERSION=${TALKTOME_TESTED_VERSION}
 
 CMD ["node", ".output/server/index.mjs"]

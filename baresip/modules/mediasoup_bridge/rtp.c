@@ -249,7 +249,10 @@ static void source_put_pcm(struct ms_source *src, size_t sampc)
 	if (!src || !src->mix_source || !sampc)
 		return;
 
+	/* The level is reported before the playout gain, like talktome's
+	 * incoming meters. */
 	src->level_dbfs = ms_level_dbfs(src->decode_buf, sampc);
+	ms_apply_gain(src->decode_buf, sampc, src->gain_permille);
 	(void)aumix_source_put(src->mix_source, src->decode_buf, sampc);
 }
 
@@ -490,6 +493,7 @@ int ms_source_reserve(struct ms_context *ctx, const char *producer_id,
 	src->ctx = ctx;
 	src->pool_index = MS_PORT_NONE;
 	src->level_dbfs = MS_DBFS_FLOOR;
+	src->gain_permille = MS_GAIN_UNITY;
 	str_ncpy(src->producer_id, producer_id, sizeof(src->producer_id));
 
 	err = ms_rtp_socket_alloc(&src->rtp, &src->pool_index,
@@ -680,6 +684,30 @@ int ms_source_remove(struct ms_context *ctx, const char *producer_id,
 
 	if (changed)
 		*changed = true;
+	return 0;
+}
+
+
+int ms_source_set_gain(struct ms_context *ctx, const char *producer_id,
+		       uint32_t permille, bool *changed)
+{
+	struct ms_source *src;
+
+	if (!ctx || !ms_valid_identifier(producer_id, MS_PRODUCER_SIZE) ||
+	    permille > MS_GAIN_MAX)
+		return EINVAL;
+
+	mtx_lock(ctx->mutex);
+	src = ms_source_find(ctx, producer_id);
+	if (!src) {
+		mtx_unlock(ctx->mutex);
+		return ENOENT;
+	}
+
+	if (changed)
+		*changed = src->gain_permille != permille;
+	src->gain_permille = permille;
+	mtx_unlock(ctx->mutex);
 	return 0;
 }
 

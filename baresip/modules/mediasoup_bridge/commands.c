@@ -417,6 +417,84 @@ static int cmd_bridge_delsrc(struct re_printf *pf, void *arg)
 }
 
 
+/* ms_ctx_gain <key> <permille 0..100000>: port input gain toward talktome */
+static int cmd_ctx_gain(struct re_printf *pf, void *arg)
+{
+	struct command_params params;
+	struct ms_context *ctx = NULL;
+	uint32_t permille;
+	bool changed;
+	int err;
+
+	err = parse_params(&params, arg, 2, 2);
+	if (err)
+		return command_error(pf, "", "invalid-parameters", err);
+
+	err = parse_u32(params.argv[1], &permille);
+	if (err || permille > MS_GAIN_MAX)
+		return command_error(pf, params.argv[0], "invalid-gain",
+				     EINVAL);
+
+	err = command_context(&ctx, pf, params.argv[0]);
+	if (err)
+		return err;
+
+	err = ms_tx_set_gain(ctx, permille, &changed);
+	if (err) {
+		mem_deref(ctx);
+		return command_error(pf, params.argv[0], "gain-failed", err);
+	}
+
+	err = re_hprintf(pf,
+			 "{\"key\":\"%s\",\"txGainPermille\":%u,"
+			 "\"changed\":%s}",
+			 ctx->key, permille, changed ? "true" : "false");
+	mem_deref(ctx);
+	return err;
+}
+
+
+/* ms_src_gain <key> <producerId> <permille 0..100000> */
+static int cmd_src_gain(struct re_printf *pf, void *arg)
+{
+	struct command_params params;
+	struct ms_context *ctx = NULL;
+	uint32_t permille;
+	bool changed;
+	int err;
+
+	err = parse_params(&params, arg, 3, 3);
+	if (err)
+		return command_error(pf, "", "invalid-parameters", err);
+
+	err = parse_u32(params.argv[2], &permille);
+	if (err || permille > MS_GAIN_MAX)
+		return command_error(pf, params.argv[0], "invalid-gain",
+				     EINVAL);
+
+	err = command_context(&ctx, pf, params.argv[0]);
+	if (err)
+		return err;
+
+	err = ms_source_set_gain(ctx, params.argv[1], permille, &changed);
+	if (err) {
+		mem_deref(ctx);
+		return command_error(pf, params.argv[0],
+				     err == ENOENT ? "source-not-found"
+						   : "source-gain-failed",
+				     err);
+	}
+
+	err = re_hprintf(pf,
+			 "{\"key\":\"%s\",\"producerId\":\"%s\","
+			 "\"gainPermille\":%u,\"changed\":%s}",
+			 ctx->key, params.argv[1], permille,
+			 changed ? "true" : "false");
+	mem_deref(ctx);
+	return err;
+}
+
+
 static int print_source_stat(struct re_printf *pf,
 			     const struct ms_source *src)
 {
@@ -437,7 +515,7 @@ static int print_source_stat(struct re_printf *pf,
 		"\"latchedSsrc\":%u,\"rxPackets\":%llu,\"rxBytes\":%llu,"
 		"\"rxInvalid\":%llu,\"rxLost\":%llu,\"plcFrames\":%llu,"
 		"\"decodeErrors\":%llu,\"jbufDepth\":%u,"
-		"\"jbufDelayMs\":%u,\"levelDbfs\":%.1f}",
+		"\"jbufDelayMs\":%u,\"levelDbfs\":%.1f,\"gainPermille\":%u}",
 		src->producer_id, src->active ? "active" : "reserved",
 		src->local_port, remote,
 		src->active ? sa_port(&src->remote) : 0,
@@ -448,7 +526,8 @@ static int print_source_stat(struct re_printf *pf,
 		(unsigned long long)src->rx_lost,
 		(unsigned long long)src->plc_frames,
 		(unsigned long long)src->decode_errors,
-		jstat.c_packets, jstat.c_delay, src->level_dbfs);
+		jstat.c_packets, jstat.c_delay, src->level_dbfs,
+		(unsigned)src->gain_permille);
 }
 
 
@@ -487,7 +566,8 @@ static int cmd_bridge_stat(struct re_printf *pf, void *arg)
 		"\"tx\":{\"configured\":%s,\"muted\":%s,"
 		"\"localPort\":%u,\"remoteIp\":\"%s\",\"remotePort\":%u,"
 		"\"payloadType\":%u,\"ssrc\":%u,\"packets\":%llu,"
-		"\"bytes\":%llu,\"errors\":%llu,\"levelDbfs\":%.1f},"
+		"\"bytes\":%llu,\"errors\":%llu,\"levelDbfs\":%.1f,"
+		"\"gainPermille\":%u},"
 		"\"rxSourceCount\":%zu,"
 		"\"ports\":{\"inUse\":%zu,\"capacity\":%zu,"
 		"\"purpose\":\"remote-receive\","
@@ -502,6 +582,7 @@ static int cmd_bridge_stat(struct re_printf *pf, void *arg)
 		(unsigned long long)ctx->tx_packets,
 		(unsigned long long)ctx->tx_bytes,
 		(unsigned long long)ctx->tx_errors, ctx->tx_level_dbfs,
+		(unsigned)ctx->tx_gain_permille,
 		source_count, ports_used, ms_port_pool.count);
 
 	for (le = ctx->sources.head; !err && le; le = le->next) {
@@ -537,6 +618,10 @@ static const struct cmd commandv[] = {
 	 cmd_bridge_addsrc},
 	{"ms_bridge_delsrc", 0, CMD_PRM, "Remove a mediasoup RTP source",
 	 cmd_bridge_delsrc},
+	{"ms_src_gain", 0, CMD_PRM, "Set a mediasoup RTP source playout gain",
+	 cmd_src_gain},
+	{"ms_ctx_gain", 0, CMD_PRM, "Set mediasoup transmit (input) gain",
+	 cmd_ctx_gain},
 	{"ms_bridge_stat", 0, CMD_PRM, "Show mediasoup bridge statistics",
 	 cmd_bridge_stat},
 };

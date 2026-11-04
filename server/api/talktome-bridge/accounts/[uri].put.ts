@@ -2,6 +2,7 @@ import type {
   TalktomeAccountMapping,
   TalktomeAccountMappingInput,
 } from '~/types';
+import { sameTalktomeTarget, talktomeTalkGroup } from '~/types';
 import { withAccountAudioTransaction } from '../../../services/accounts-file';
 import {
   getTalktomeBridgeConfigManager,
@@ -102,10 +103,9 @@ export default defineEventHandler(async (event) => {
               );
               if (
                 serverPort &&
-                !serverPort.triggerTargets.some(
-                  (target) =>
-                    target.type === mapping.target.type &&
-                    target.id === mapping.target.id,
+                talktomeTalkGroup(mapping).some(
+                  (member) =>
+                    !serverPort.triggerTargets.some((target) => sameTalktomeTarget(target, member)),
                 )
               ) {
                 throw createError({
@@ -229,6 +229,7 @@ function mappingAffectsRuntime(
     previous.talktomeFeedId !== next.talktomeFeedId ||
     previous.target?.type !== next.target?.type ||
     previous.target?.id !== next.target?.id ||
+    talkGroupKey(previous) !== talkGroupKey(next) ||
     previous.ptt.mode !== next.ptt.mode ||
     previous.ptt.thresholdDb !== next.ptt.thresholdDb ||
     previous.ptt.holdMs !== next.ptt.holdMs ||
@@ -236,6 +237,13 @@ function mappingAffectsRuntime(
     previous.mixLocalCallers !== next.mixLocalCallers ||
     previous.bitrateBps !== next.bitrateBps
   );
+}
+
+function talkGroupKey(mapping: TalktomeAccountMapping): string {
+  return talktomeTalkGroup(mapping)
+    .map(target => `${target.type}:${target.id}`)
+    .sort()
+    .join(',');
 }
 
 function capturePreviousDevice(value: string, fallback: string): string {

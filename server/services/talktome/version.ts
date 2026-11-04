@@ -111,6 +111,33 @@ export function resolveTalktomeTestedVersion(
   return DEFAULT_TALKTOME_TESTED_VERSION;
 }
 
+/** talktome accepts this as a bridge `clientVersion` and shows `v<version>`. */
+const BRIDGE_CLIENT_VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$/;
+
+/** Release tag such as `v1.4.1` → `1.4.1`; `unknown`, `dev` and junk → undefined. */
+export function normalizeBridgeClientVersion(value: string | undefined): string | undefined {
+  const trimmed = String(value ?? '').trim().replace(/^v(?=\d)/i, '');
+  if (!trimmed || ['unknown', 'dev'].includes(trimmed.toLowerCase())) return undefined;
+  return BRIDGE_CLIENT_VERSION_RE.test(trimmed) ? trimmed : undefined;
+}
+
+/**
+ * baresipui's own release for the talktome announce: `APP_VERSION` from the
+ * image, else the `version.js` the image build writes for the web UI.
+ */
+export function resolveBridgeClientVersion(
+  env: Record<string, string | undefined>,
+  readText: (path: string) => string | undefined,
+): string | undefined {
+  const fromEnv = normalizeBridgeClientVersion(env.APP_VERSION);
+  if (fromEnv) return fromEnv;
+  for (const path of ['.output/public/version.js', 'public/version.js']) {
+    const fromFile = normalizeBridgeClientVersion(readText(path));
+    if (fromFile) return fromFile;
+  }
+  return undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
