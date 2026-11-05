@@ -132,11 +132,13 @@ across container recreations. The id is not a secret; the bridge token is.
 
 ### Compatibility and server version warning
 
-This bridge is verified against **talktome v1.1.3**. The Bridge Plain-RTP HTTP
-API used by baresipui is unchanged from v1.1.1 for our call path (`announce`,
-sessions, producers/consumers, talk-state, and `retainOnly` active-producer
-delivery). Operator-only additions in v1.1.3 (per-member conference listen
-controls, left-hand mode) do not affect the bridge agent.
+This bridge targets **talktome v1.5.22** (`TALKTOME_TESTED_VERSION`). The
+Bridge Plain-RTP call path (`announce`, sessions, producers/consumers,
+talk-state, and `retainOnly` active-producer delivery) is unchanged since
+v1.1.1. Newer releases add what this bridge now handles: remote panel
+commands and port audio levels (v1.5.12+), and talk groups with the
+`always-on` trigger (v1.5.22). Against an older server those parts stay
+unused.
 
 The release-note “version check” in talktome v1.1.3 is their packaging CI
 (synchronizing Bridge client metadata and verifying macOS/Windows installer
@@ -429,7 +431,7 @@ the module's local transmit mute:
 
 - `audio-level`: caller speech drives VAD. `thresholdDb` is the activation
   threshold and `holdMs` prevents rapid release between words.
-- `always-on` (talktome v1.5.21+): the producer goes live as soon as the
+- `always-on` (talktome v1.5.22+): the producer goes live as soon as the
   session is up and stays live; a release or lock change cannot close it.
 - `external`: `ptt.gpi` selects the inbound GPI index (1 through 6) whose
   existing SIP DTMF/GPI path drives press/release. Companion or API `press`,

@@ -64,7 +64,7 @@ export interface BridgeTriggerConfig {
   mode: TalktomePttMode;
   /** Legacy first entry of `targets`. */
   target: TalktomeTarget | null;
-  /** Talk group (talktome v1.5.21+); older servers send only `target`. */
+  /** Talk group (talktome v1.5.22+); older servers send only `target`. */
   targets?: TalktomeTarget[];
   thresholdDb: number;
 }

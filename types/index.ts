@@ -14,7 +14,7 @@ export interface Account {
 }
 
 export type TalktomeTargetType = 'conference' | 'user';
-/** `always-on` keeps the producer live while the session is up (talktome v1.5.21+). */
+/** `always-on` keeps the producer live while the session is up (talktome v1.5.22+). */
 export type TalktomePttMode = 'audio-level' | 'always-on' | 'external';
 export type TalktomeEndpointKind = 'user' | 'feed';
 
@@ -165,7 +165,7 @@ export interface TalktomeBridgeServerUserPort {
     mode: TalktomePttMode;
     /** Legacy first entry of `targets`. */
     target: TalktomeTarget | null;
-    /** Talk group (talktome v1.5.21+). */
+    /** Talk group (talktome v1.5.22+). */
     targets?: TalktomeTarget[];
     thresholdDb: number;
   };
